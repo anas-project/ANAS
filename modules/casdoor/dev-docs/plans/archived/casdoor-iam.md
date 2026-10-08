@@ -2,14 +2,14 @@
 doc_type: plan
 status: done
 created: 2026-08-26
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Casdoor IAM Provider 实施计划
 
 当前 r10 的正式双架构镜像、OIDC/Nextcloud、目录撤权、受管凭据轮换、空工作区恢复与
 生命周期验收已通过，Module 已标为 `release`，见
-[2026-10-06 发布验收](../../../../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md)。
+[2026-10-06 发布验收](casdoor-iam.md)。
 ARM64 为 QEMU 目标 helper 执行，SAML 应用会话终止与 SLO 待实现；首次建号延迟保留观察。
 以下 M1—M5 的历史快照仍记录 2026-08-26—27 的实现，不用历史 r8 结果代替当前 r10 验收。
 
@@ -157,3 +157,16 @@ bash -n test-env/scripts/server-casdoor-key-rotation-e2e.sh
   数据恢复和升级/回滚运行矩阵在 amd64 隔离部署完成，未声明 arm64 性能或宿主特定结论。
 - 制品回滚不会回退数据；R036 只验证 `data_touched=false`。需要回退数据时必须使用独立、显式的
   snapshot restore 流程，不能把两者混为同一操作。
+
+
+## 当前发布范围验收结论（2026-10-06，2026-10-07 整理）
+
+验收依据为当前 Casdoor 需求矩阵。已确认的发布范围以 OIDC 为主，SAML SLO/应用会话终止列为后续待实现，首发不要求旧账号迁移；不把该范围扩大为全部 SAML 功能通过。
+
+正式 Dockerfile amd64/arm64 构建、OIDC 身份/refresh/UserInfo、目录撤权/持久重试与双 client 隔离、真实 Nextcloud 改名原 UID/文件与 Cookie 撤权、恢复管理员/签名密钥/Portal secret 轮换及注入失败恢复、Btrfs 空工作区恢复、冷启动/直接重启/临时 revision 切换和回滚全部通过。可选 SAML 签名协议回归通过，SLO 未执行且未声明。ARM64 仅完成 QEMU 目标 helper 探针，不代表完整 ARM 服务器部署。Module 已标 release，没有据此推送镜像或发布外部发行版。
+
+amd64 镜像：`sha256:9c843a8e6300beb659b05872f8a646715ad50f2bf2c318939e585e4f46559b04`；ARM64 导出索引：`sha256:89432941730c0ea5d351803d16d98ad7dfa9e6a65e51f36163e207303a0cd7a8`。20 个生产文件和 4 个生命周期/轮换脚本摘要与当轮本地一致。首次建号延迟和一次 45 秒回调超时原因仍待定位；后续复验通过不能解释为根因已修复，不自动新增性能门槛，若需要新门槛须先确认需求。
+
+远端证据：finance `/home/whl/anas-casdoor-test-20261003/casdoor-release-20261006/`，包含正式构建、各阶段失败与最终复验。原始凭据和恢复包不进入 Git。本地脱敏 evidence、source-hashes、test-hashes 及原报告已迁入 Git 忽略的 `test-env/reports/2026-10-07-review-consolidation/`，逐文件 SHA-256 见该目录 manifest；本机副本尚未成为共享持久归档。
+
+下一步：当前已确认 OIDC 发布验收范围无阻塞；SAML SLO/应用会话退出仍按已有待办推进，首次建号延迟继续观察。

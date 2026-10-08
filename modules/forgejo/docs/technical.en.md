@@ -21,7 +21,7 @@ exists. The engine user manager explicitly depends on successful completion. The
 generic autoload directory and ordinary guest programs do not acquire this permission. A changed recipe
 requires a new immutable revision and native checks of automatic loading, generic-userns denial and real
 OCI execution. Root-cause observations, the separate candidate-policy control and actual new-image results
-are tracked in [`2026-09-24-forgejo-runner-userns-policy.md`](../../../dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md).
+are tracked in [`2026-09-24-forgejo-runner-userns-policy.md`](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md).
 
 The first new policy image built, exported and reused successfully, but failed generic-userns refusal
 and is not admitted as runtime-ready. The official parser package also enabled a distribution-wide
@@ -57,7 +57,7 @@ state and credentials when cleanup is uncertain. Soft-deleted Forgejo registrati
 as active; read-only database facts and the live scoped API are checked separately without deleting
 history. Normal shutdown and unchanged physical-host Docker/network baselines were verified. This is
 not default-DROP Docker compatibility or a complete IAM/PostgreSQL business-stack acceptance. See the
-[combined-stop evidence](../../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md).
+[combined-stop evidence](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md).
 
 ## Internal CA projection to the Runner
 
@@ -67,7 +67,7 @@ retained-state crash recovery and unapproved-repository scenarios passed. The pr
 no manual guest-trust adapter. An independent live observation also matched the system roots to the baked
 image and the temporary bundle to those roots plus the public fixture CA. Resource cleanup, normal VM exit
 and the physical host Docker/network comparison passed. See the
-[acceptance record](../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md).
+[acceptance record](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md).
 
 The Actions controller and preflight mount only the fixed public `anas-internal-ca.crt` read-only, not
 its private key or the containing certificate directory. When Actions is enabled, the opened single-link
@@ -152,7 +152,7 @@ directory. The service requests cgroup delegation; this does not enable privileg
 volumes. The later Provider namespace-policy adjustment needed for actual OCI execution is described below.
 
 These are source corrections; actual candidate-image and one-job acceptance is recorded in
-[the runtime review](../../../dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md).
+[the runtime review](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md).
 
 This document records the `forgejo` container adapter, hook, security boundaries, and validation entry points.
 

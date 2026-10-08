@@ -62,13 +62,13 @@ anchor UIDs and technical paths; human names still come from directory attribute
 
 | Directory change | LLNG behavior | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` renamed | Fresh authentication reads the new label while OIDC `sub` stays unchanged. Anchor consumers reuse their account. Stable SAML NameID remains pending | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| `sAMAccountName` renamed | Fresh authentication reads the new label while OIDC `sub` stays unchanged. Anchor consumers reuse their account. Stable SAML NameID remains pending | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 | `mail` / UPN changed | Fresh directory authentication reads new attributes without changing OIDC `sub` | `inferred`; no dedicated change probe this round |
 | `displayName` / other profile fields changed | Fresh authentication reads directory values; existing sessions can retain older values | Read path `verified`; change-specific behavior `inferred` |
 | Direct / recursive groups changed | Fresh authentication recomputes membership; directory-event revocation of existing sessions is not implemented | Historical admission matrix `verified`; live revocation pending |
 | Account disabled | Enabled filter rejects fresh directory authentication; existing SSO sessions still require administrative removal | Historical admission matrix `verified`; not rerun this round |
 | Account deleted | Fresh directory authentication fails; existing SSO and consumer sessions require separate revocation | `inferred`; no deletion probe this round |
-| Login label recycled | A new directory object receives a different anchor; OIDC consumers must not reuse the old account | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| Login label recycled | A new directory object receives a different anchor; OIDC consumers must not reuse the old account | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 
 **Fallback:** after disabling, deleting or removing groups, delete all of the user's SSO
 sessions in LLNG Manager, checking old and new login labels, and revoke consumers according

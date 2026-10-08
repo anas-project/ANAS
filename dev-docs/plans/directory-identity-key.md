@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-20
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # 目录身份键实施计划
@@ -111,7 +111,7 @@ updated: 2026-10-06
 [固定源码可行性核实](../../docs/research/casdoor-directory-subject.md)。两份生产补丁已接入 r10 Dockerfile；源码测试仍**不记为 `R-008` 的实机通过**。独立实机结果见
 [2026-10-04 验收记录](../reviews/2026-10-04-casdoor-directory-identity-acceptance.md)。
 2026-10-06：Casdoor r10 正式双架构构建、OIDC/真实 Nextcloud、轮换、恢复和生命周期验收通过，
-已标为 `release`，见 [发布验收](../reviews/2026-10-06-casdoor-release-acceptance.md)。
+已标为 `release`，见 [发布验收](../../modules/casdoor/dev-docs/plans/archived/casdoor-iam.md)。
 SAML 应用会话/SLO 仍待实现；其他 Provider、Consumer 和客户端的待办不因此变为完成。
 产品尚未发版，无需迁移或兼容映射。
 
@@ -130,7 +130,7 @@ SAML 应用会话/SLO 仍待实现；其他 Provider、Consumer 和客户端的�
 - [ ] SAML NameID 与真实应用会话验收列为待实现，不作为本轮主要协议。
 - [ ] Samba AD 事件触发的既有会话撤销仍未实现；不能把 Portal 登出当作目录事件撤权。
 
-证据见[LLNG r12 隔离实机验收](../reviews/2026-10-05-llng-anchor-sub-acceptance.md)。
+证据见[LLNG r12 隔离实机验收](directory-identity-key.md)。
 产品尚未发版，不实现旧账号迁移。M2/M3 仍是跨 Provider、跨 Consumer 的实施中里程碑。
 
 ### 跨 Provider 检查表
@@ -287,3 +287,19 @@ Authentik 已过时，不纳入当前发布整改；客户端体验、独立 LDA
 - `forgejo`、`vikunja` 等其他 Consumer 的主体稳定性及账号归属仍需实机验证；LLNG 已有独立协议与 Nextcloud 探针，不再属于未核实链路。
 - M3 的 Casdoor / LLNG + Nextcloud 改名及标签回收已通过；其他 Provider、Consumer、桌面/移动客户端仍待完成。
 - LLNG 的 Samba AD 事件监听与实时会话撤销待实现；现有会话可能保留旧目录属性。
+
+
+## 9. 已执行的局部验收与未完成范围
+
+| 日期与候选 | 对应需求 | 验收结果与限制 |
+| --- | --- | --- |
+| 2026-10-05，LLNG 2.23.2-r12 正式 Linux/amd64 镜像 | DIRKEY-R-001/002/003/007/008/009/012/013 的 LLNG OIDC 与 Nextcloud 子集 | 六项真实断言通过：首次登录、签名主体/UserInfo/refresh、Portal 注销、改名原账号和文件、标签回收新身份隔离、缺 anchor 拒绝；Provider 配置恢复、测试账号清理 |
+| 2026-10-05，Nextcloud 34.0.2-r11 + 官方原样 user_oidc 8.11.0 | DIRKEY-R-003/010/013 的 Nextcloud 子集 | 正式 amd64 构建/启动、插件完整性、anchor 内部 UID、可读姓名、改名同 UID/原文件、组撤权后 Cookie 失效和无关用户保留通过 |
+
+以上仅是明确子集验收成功，M2/M3 的全 Provider × Consumer × 协议矩阵仍未完成。LLNG 保持 developing，SAML NameID、目录事件实时撤权、全新 workspace apply、ARM64、历史升级与全 Consumer 未验收。Nextcloud 保持 developing，桌面/移动客户端、ARM64 和完整升级/编辑矩阵未验收；不能把身份子集通过当作整个 Module 发布通过。
+
+LLNG 镜像摘要：`2df0357521b47b31a9df85bfb218c17fe71225e1deee05fea73cd93643b9d950`。Nextcloud 镜像摘要：`89bb0c1f8f896444cedd386998971ed4ba952504e3ea3b568263583b9d3e4593`；官方 user_oidc 归档 SHA-256：`887920504c2f0e0d055abd66225ee7b66d756f50fe5a3739779d6b2ce108633f`。
+
+执行入口为 `test-env/scripts/server-llng-nextcloud-identity-e2e.py` 与 `server-casdoor-nextcloud-identity-e2e.py`。远端材料保留于 finance `/home/whl/anas-casdoor-test-20261003/`（LLNG 位于 `llng-anchor/`）。本地原报告与脱敏 evidence、源码/夹具摘要已迁入 Git 忽略的 `test-env/reports/2026-10-07-review-consolidation/`；这是本机副本，未发布共享归档。完整材料可按本地 manifest 逐文件校验。
+
+下一步：完成现有矩阵的其他 Consumer 和协议；新增验收条件先确认再更新需求，既有未通过项继续修复。

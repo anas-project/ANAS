@@ -59,13 +59,13 @@ Netbird 会把 `sub` 放入普通用户 API URL，尚无 anchor 投影例外；c
 
 | 目录变化 | LLNG 的动作 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改名 | 重新登录读取新标签，OIDC `sub` 不变；支持 anchor 的 Consumer 继续使用原账号。SAML NameID 稳定性待实现 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| `sAMAccountName` 改名 | 重新登录读取新标签，OIDC `sub` 不变；支持 anchor 的 Consumer 继续使用原账号。SAML NameID 稳定性待实现 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 | `mail` / UPN 改变 | 下次目录认证更新属性；不改变 OIDC `sub` | `推断`；本轮未跑邮箱/UPN 专项 |
 | `displayName` 等属性变化 | 下次目录认证重新读取；已建立会话可能保留旧值 | 读取链路 `已验证`；变更专项 `推断` |
 | 直接或递归组变化 | 下次目录认证重新计算组；没有目录事件驱动的既有会话撤权 | 历史准入矩阵 `已验证`；实时撤权尚未实现 |
 | 账号停用 | 新目录认证被 enabled filter 拒绝；管理员仍需删除已有 SSO 会话 | 历史准入矩阵 `已验证`；本轮未复验 |
 | 账号删除 | 不再通过目录认证；已有 SSO 与 Consumer 会话需另行撤销 | `推断`；本轮未跑删除专项 |
-| 登录名回收再分配 | 新目录对象取得不同 anchor，OIDC Consumer 不应复用旧账号 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-llng-anchor-sub-acceptance.md) |
+| 登录名回收再分配 | 新目录对象取得不同 anchor，OIDC Consumer 不应复用旧账号 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 
 **兜底路径**：停用、删除或撤组后，在 LLNG Manager 删除该人的所有 SSO 会话，
 按旧/新登录名核对，并按各 Consumer 的文档完成撤权。Portal 浏览器登出会发送已注册的

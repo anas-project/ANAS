@@ -27,7 +27,7 @@ Casdoor 保持 `developing`。本轮完成已授权的统一目录主体与 OIDC
   临时 Compose override 仅重建隔离 Web/cron，没有修改冻结 deployment 的 `.env` 或 Compose。
 
 脱敏日志、运行摘要、清理状态与健康回读保存于
-[evidence.json](assets/2026-10-04-casdoor-directory-identity/evidence.json)。最终 watcher 为
+[evidence.json](../../test-env/reports/2026-10-07-review-consolidation/assets/2026-10-04-casdoor-directory-identity/evidence.json)。最终 watcher 为
 `ready=true`、`pending_logouts=0`、`last_error=""`，测试 Consumer 容器已清理，Casdoor/Nextcloud
 候选均 healthy。只读回查的业务基线 24 个容器仍存在并运行，但部分 StartedAt 晚于 10 月 3 日的
 基线文件时间，不能据此断言整个期间业务容器完全未重启；本任务的变更命令均指向隔离 socket 与前缀。

@@ -121,7 +121,7 @@ Linux/Incus 破坏性删除验收。
 不可变归档、重复 build 复用，以及真实 Provider multipart 导入、重复 ensure 和受限容器启动。
 真实 Runner 13.2.0 与 one-job 参数检查通过，但 rootless Podman API 子项退出 125，整个镜像
 smoke 仍失败；未执行真实 workflow，也未解除正式签名发布或其他架构/隔离档的门禁。完整证据见
-[构建恢复核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md)。
+[构建恢复核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md)。
 
 本机单元测试证明的是字节校验、归档恢复、Runner 到 Provider 的只读挂载接线、Provider 控制流和
 dry-run 计划。它不证明：

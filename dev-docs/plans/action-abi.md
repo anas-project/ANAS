@@ -30,7 +30,7 @@ executor 协议与取消语义，因此落地时要一并处理那部分既有�
 构造命令，使启动受取消/期限约束；`Cmd.Cancel=nil` 保留原 pidfd/进程组监督唯一的杀进程与
 收割路径，不引入第二条默认 leader-kill。进程清理失败仍归 unknown/containment，不降为 cancelled。
 `cmd/anasd` 的子进程清单门禁已通过，没有添加忽略项。相关 Linux 测试仅交叉编译，未宣称原生
-监督已验收。详见[本轮验证记录](../reviews/2026-09-18-incus-implementation-verification.md)；
+监督已验收。详见[本轮验证记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-18-incus-implementation-verification.md)；
 以下早期“未测试”记录保留其历史语境，不能替代本轮的具体执行范围。
 
 ## 2. 与既有实现的关系

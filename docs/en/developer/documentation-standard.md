@@ -187,3 +187,14 @@ Reference pages can instead use scope, field or command tables, errors and bound
 - [ ] `npm run docs:build` passes, along with relevant code tests.
 
 See [Documentation site](documentation.md) for preview, build, and publishing instructions.
+
+
+### Acceptance results and evidence
+
+Keep acceptance criteria in the requirement matrix and execution results in the paired plan, keyed by stable requirement IDs. Record the date, tested source and artifact baseline, environment, passed/failed/blocked/not-run results, reasons for non-applicability, evidence locations and essential checksums, blockers, and next actions. Do not create duplicate acceptance reports in reviews. A passing subset does not establish acceptance of the entire topic.
+
+Acceptance succeeds only when every applicable criterion in the confirmed scope passes. Failed, blocked, or unexecuted criteria prevent milestone completion and plan archival. Unit tests do not replace required real-host or browser checks. If later verification fails an existing criterion, move the plan back to the active directory and reopen the affected milestone, retaining the historical passing baseline.
+
+Fix failures against existing criteria without asking to add them again. Ask the user before adding newly discovered criteria, resolving material ambiguities, or narrowing scope. Optional improvements do not automatically become acceptance gates; do not exclude failures to obtain a passing result.
+
+Keep raw logs, screenshots, execution JSON, and retry artifacts outside tracked Git files. Preserve locations and key source/artifact checksums in plans before removing obsolete reviews. The ignored test-env/reports directory is a local copy, not a shared durable archive; record a shared location only when one actually exists. Remove duplicate reports after their useful conclusions are absorbed; retain independent reviews with unresolved findings.

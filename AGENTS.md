@@ -52,6 +52,22 @@
   defects, design debt, and unverified hypotheses. Report checks that failed or
   were not run; do not infer real-host acceptance from unit tests.
 - Keep research and proposed architecture separate from implemented behavior.
+- Record acceptance conclusions, tested source/artifact baselines, results by
+  requirement ID, blockers, and next actions in the paired plan. Requirements
+  define criteria; plans carry execution results. Do not create duplicate
+  acceptance reports under reviews/.
+- Acceptance succeeds only when every applicable criterion in the confirmed
+  scope passes. Failed, blocked, and unexecuted criteria prevent completion and
+  archiving. Reopen a completed plan when later verification fails an existing
+  criterion, preserving the historical passing baseline.
+- Fix failures against existing requirements without asking to add them again.
+  Ask the user before adding newly discovered criteria, resolving material
+  ambiguities, or narrowing acceptance scope; do not silently waive failures.
+- Keep raw logs, screenshots, execution JSON, and retries outside tracked Git
+  files. Preserve evidence locations and essential artifact/checksum summaries
+  in plans. A Git-ignored local copy is not a shared durable archive. Remove
+  reviews only after useful conclusions are absorbed and evidence is preserved.
+
 
 ## Responses
 

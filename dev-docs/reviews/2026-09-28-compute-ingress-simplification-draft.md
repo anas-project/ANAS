@@ -120,7 +120,7 @@ Docker 又放行容器出站，所以现在任何 Docker 容器都能连到租�
 中介没有特权、没有状态、不持有密钥，由谁运行只是装配上的选择：
 
 - **建议：anasd 进程内。** anasd 已经是常驻进程，也已经负责纠正出站用的 Traefik 地址清单（`INCUS-R-118`）。
-  放进去的只是文件读写，不是简化评审和 [owner 对比](2026-09-27-incus-runtime-owner-candidates.md)担心的特权
+  放进去的只是文件读写，不是简化评审和 [owner 对比](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-27-incus-runtime-owner-candidates.md)担心的特权
   内核写入（候选 B2）。
 - 备选：部署里的一个常驻 Compose 服务，例如 Traefik Module 的伴随服务。它随部署启停、不依赖 anasd；代价是多
   一个镜像，而且要把所有租约的请求目录都挂进去。

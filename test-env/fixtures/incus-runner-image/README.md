@@ -155,7 +155,7 @@ passed, as did the real Runner 13.2.0 and one-job CLI checks. The rootless engin
 API check exited 125, so the overall baked-image smoke **failed**. The recorded
 archive is retained for byte-identical restoration; do not rebuild that revision
 or relax project/device restrictions to mask the unresolved failure. See the
-[recovery review](../../../dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md).
+[recovery review](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md).
 
 ## Real scoped Forgejo API, independently of image boot
 

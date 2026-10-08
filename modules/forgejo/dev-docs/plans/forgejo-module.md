@@ -13,7 +13,7 @@ updated: 2026-09-25
 仍阻止停止和撤权，失败状态与原口令保留。公开归档、正常关机及物理宿主对照已独立
 验证。此处采用显式可路由Docker、SQLite和准备的生命周期workspace，不是完整公开
 CLI业务部署或默认DROP网络兼容验收；参见
-[本轮记录](../../../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+[本轮记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
 
 2026-09-24 账号生命周期接续：固定 Forgejo 15.0.7、真实入口 helper 和 controller 在全新
 Debian 13 amd64 VM 通过完整 **17 项**账号/状态门禁：管理口令关闭后失效、重复不旋转、
@@ -21,14 +21,14 @@ Debian 13 amd64 VM 通过完整 **17 项**账号/状态门禁：管理口令关�
 不会被当作清理完成。Hook 增加同容器清理等待、上下文下传与严格状态观察。本机回归与
 账号 API 原生验收不代替完整 Core/Compose 开关和真实 guest 排空；站点管理员权限偏差
 及 state volume 丢失仍未解决。证据见
-[账号停用接续](../../../../dev-docs/reviews/2026-09-24-forgejo-actions-account-lifecycle.md)。
+[账号停用接续](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-actions-account-lifecycle.md)。
 
 2026-09-24 继续真实消费者接入：发现早期 one-job 夹具以管理权限向 guest 手工安装公开
 CA，而生产 controller 只交付 token。现已把公开部署 CA 接到两个固定只读挂载，并经
 原 stdin 通道按长度/摘要投影到单次 Runner 的临时 trust bundle；guest 系统根、engine
 和工作流镜像不被修改，token 仍不进入 argv/env/state。已删除原生入口的手工信任替身，
 新 recipe/不可变 revision 必须独立通过烘焙与 TLS 工作流，不能继承 lab-r11 的通过状态。
-本轮结果及范围见[Runner 信任接续](../../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
+本轮结果及范围见[Runner 信任接续](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
 
 该新修订 `trust-r2` 随后完成真实 bake/export/重复复用、9 项镜像门禁及五种工作流场景；
 四种执行场景均清空实例/根盘/注册/state，未授权仓库保持等待。原生入口没有手工 CA
@@ -79,7 +79,7 @@ M0/M1 的 10 项已完成，M2/M3 的 21 项处于实现与外部验收阶段。
 测试已加入 CI。增强后的镜像原生门禁提供就绪等待与固定类别诊断，但本轮指定主机 SSH
 握手失败，未运行新实机测试。旧 `lab-r4` 的 exit 125 保留为未解决问题，不因本轮本机
 测试而标记 M3/M5 完成；构建/实机分层状态见
-[本轮核对](../../../../dev-docs/reviews/2026-09-22-incus-runner-engine-admission.md)。
+[本轮核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-runner-engine-admission.md)。
 
 | 范围 | 状态 | 当前边界 |
 | --- | --- | --- |

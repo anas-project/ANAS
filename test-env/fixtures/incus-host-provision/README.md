@@ -97,7 +97,7 @@ skip 或 fail 均不通过。子项覆盖未确认/过期计划拒绝、无宿�
 实际 daemon 的拆包归属，以及网络枚举顺序引起的错误计划漂移。第五轮全新 Ubuntu 26.04
 amd64 VM 的完整 11 项已全部通过；失败证据分别保留，不能用监督器单测或某一阶段通过
 替代完整结果。实际摘要、工件身份和收尾见
-[本轮记录](../../../dev-docs/reviews/2026-09-23-incus-service-execution-budgets.md)。
+[本轮记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-23-incus-service-execution-budgets.md)。
 
 跳过后的 `Disabled` 状态必须在管理连接验证并持久化之后才解除；失败的 trust/endpoint
 不得恢复功能，成功登记仍保持 `compute_ready=false`，由其他运行门禁独立决定可用性。

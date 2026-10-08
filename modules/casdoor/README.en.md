@@ -6,7 +6,7 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 > The lifecycle is `release`. Formal builds for both architectures, directory-driven OIDC
 > revocation, real Nextcloud anchor UID/rename/file ownership, backup restoration, credential
 > rotation, and lifecycle acceptance pass. See the
-> [2026-10-06 release acceptance](../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md).
+> [2026-10-06 release acceptance](dev-docs/plans/archived/casdoor-iam.md).
 > OIDC is the primary supported protocol. SAML application-session logout is future work and does
 > not block the current OIDC release. Netbird registration is rejected because
 > it projects `sub` into ordinary users' API URLs.
