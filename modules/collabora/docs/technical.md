@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `collabora` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `26.4.2-r5` / `anas.module/v1`.
+> 状态：当前实现；对应 `26.4.2-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_collabora` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1` | `` | 0 |
+| `anas_collabora` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -77,6 +77,12 @@
 
 ## Hook、变更与回滚
 
+冻结的 `.hook.bin --container-start` 同时作为容器入口。它把 `/opt/cool/systemplate` 与 `/opt/collaboraoffice` 复制到单个受管挂载 `/var/lib/anas-collabora` 下的 `systemplate` 与 `office`。复制保留权限、所有权、符号链接和硬链接，遇到特殊文件拒绝启动；两份模板完成后才写固定镜像版本标记。入口只清理本实例可丢弃的 `child-roots` 和 `cache`，清空补充组并降为 GID/UID `1001:1001`，然后 `exec coolwsd`，使 Docker 正常停止信号直接到达应用。
+
+原有 `--use-env-vars`、文件服务、日志与配置变更停止参数保持有效。模板、jail 和缓存都指向受管树，`--lo-template-path` 选择复制后的 office 模板；`mount_jail_tree=false` 避免增加挂载特权。Compose 以 `0:0` 完成初始化，只读挂载冻结 Hook，并提供 180 秒正常停止等待。该实现不依赖镜像内 shell、`cp` 或 `setpriv`，不新增服务，也不重建上游镜像。Runner 生成带 `create_host_path: false` 的临时 bind，并核验实际挂载与持久租约一致。
+
+Compose 健康检查执行同一冻结 Go Hook 的 `/usr/local/bin/anas-collabora-start --container-probe` 入口；该入口拒绝额外参数，只 `exec /usr/bin/coolwsd --probe` 并保留原生退出码。Compose 的初始化身份仍为 `0:0`，健康入口先清空补充组，再固定降为 GID/UID `1001:1001`；任何降权失败均拒绝执行 probe，不能退回 root。该入口不初始化模板、不清空 `child-roots` 或 `cache`，也不启动 `coolwsd` 服务。原生 probe 的结果继续决定健康状态，健康检查不会用 discovery 或初始化标记替代它。
+
 - Hook command: `go run ./hook`
 - `credential_rotate`、`data_migrate` 和 `immutable` 禁止普通编辑；声明的生命周期操作必须更新应用持久状态。
 - 本地管理员轮换只在 Module handler 成功后提交生成 Secret；失败会保留或恢复旧应用凭据。
@@ -84,6 +90,7 @@
 ## 测试与实现位置
 
 - [`main_test.go`](../hook/main_test.go)
+- [`container_start_test.go`](../hook/container_start_test.go)：模板完整性、权限、链接及特殊文件拒绝反例
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

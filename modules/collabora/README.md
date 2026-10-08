@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `collabora` |
-| 版本 / revision | `26.4.2-r5` |
+| 版本 / revision | `26.4.2-r6` |
 | 状态 | `release` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -86,12 +86,18 @@ anas config secret get COLLABORA_ADMIN_PASSWORD -w /srv/anas
 
 ## 存储、备份与验证
 
+文档临时树由 `temporary_directories.runtime` 显式声明，挂载到 `/var/lib/anas-collabora`；Runner 在 workspace 的临时根下分配本实例目录。默认根为 `<workspace>/tmp`，可通过 `global.temp_path` 选择外部绝对路径。分配前要求至少 8 GiB 可用空间、20,000 个可用 inode，并支持执行文件和硬链接。这个下限用于启动检查，不是容量配额。
+
+初始化会把固定镜像中的 systemplate 和 LibreOffice 模板复制到同一受管文件系统，然后以 UID/GID `1001:1001` 启动 Collabora；jail、缓存和文档临时内容也使用该目录。临时内容不进入 workspace 备份或快照。改变临时根会停止并重建全部已启用 Module，正在编辑的会话会中断；正常停止等待最多 180 秒，由应用完成保存。释放容器引用后才允许清理旧树。
+
 持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
 
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list collabora -w /srv/anas
 anas status -w /srv/anas
+anas temp status -w /srv/anas
+anas temp gc --dry-run -w /srv/anas
 ```
 
 ## 当前限制
@@ -107,7 +113,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`26.4.2-r5`（reviewed 2026-08-13）
+- Module version / 版本：`26.4.2-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`container` — The Collabora service receives TZ through the module .env.
 - Language scope / 语言范围：Collabora Online editor UI and document locale
 - Selection / 选择方式：`integration`

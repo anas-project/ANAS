@@ -1,20 +1,23 @@
 package runner
 
+// TEST_CASES: TEMP-T-010
+
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/application"
+	"github.com/anas-project/ANAS/internal/compose"
 )
 
-// NewWorkspaceQueryService is the daemon query boundary. In contrast with the
-// CLI-compatible application constructor it always binds a live Compose probe,
-// so persisted active.yml runtime_status can never masquerade as current state.
+// NewWorkspaceQueryService binds the live probe used by CLI and HTTP queries,
+// so persisted active.yml runtime_status cannot masquerade as current state.
 func NewWorkspaceQueryService(workspace string) *application.Service {
 	return application.NewService(workspace).WithRuntimeProbe(workspaceRuntimeProbe{})
 }
@@ -34,7 +37,7 @@ func (workspaceRuntimeProbe) InspectRuntime(ctx context.Context, workspace, depl
 	if err := validateDeploymentID(deploymentID); err != nil {
 		return application.RuntimeSummary{}, err
 	}
-	cli, err := detectComposeForExecution(ctx, true)
+	cli, err := compose.DetectContext(ctx, runtimeProbeEnvironment())
 	if err != nil {
 		return application.RuntimeSummary{}, fmt.Errorf("detect Compose: %w", err)
 	}
@@ -44,7 +47,9 @@ func (workspaceRuntimeProbe) InspectRuntime(ctx context.Context, workspace, depl
 	}
 	app.commandContext = ctx
 	app.restrictedProcessEnvironment = true
+	temporary, temporaryErr := app.temporaryStorageStatus()
 	modules := make([]application.ModuleRuntimeStatus, 0, len(app.order))
+	var inspectionErrors []error
 	for _, name := range app.order {
 		module := app.reg[name]
 		if module.RuntimeType != "compose" {
@@ -54,19 +59,107 @@ func (workspaceRuntimeProbe) InspectRuntime(ctx context.Context, workspace, depl
 			continue
 		}
 		dir := filepath.Join(moduleRoot, name)
-		environment := app.commandEnvironment(app.moduleEnv(dir))
-		output, outputErr := cli.OutputFileContext(ctx, dir, name, app.releaseComposeFile(name), environment, true,
-			"ps", "--all", "--format", "json")
+		if module.SourceDir != "" {
+			dir = module.SourceDir
+		}
+		output, outputErr := app.outputCompose(dir, name, app.releaseComposeFile(name), app.moduleEnv(dir), "ps", "--all", "--format", "json")
+		summary := application.ModuleRuntimeStatus{Module: name, Runtime: "unknown", Health: "none"}
 		if outputErr != nil {
-			return application.RuntimeSummary{}, fmt.Errorf("inspect module %s containers: %w", name, outputErr)
+			inspectionErrors = append(inspectionErrors, fmt.Errorf("inspect module %s containers: %w", name, outputErr))
+		} else {
+			records, parseErr := parseComposePSRecords([]byte(output))
+			if parseErr != nil {
+				inspectionErrors = append(inspectionErrors, fmt.Errorf("parse module %s container status: %w", name, parseErr))
+			} else {
+				summary = summarizeModuleRuntime(name, records)
+			}
 		}
-		records, parseErr := parseComposePSRecords([]byte(output))
-		if parseErr != nil {
-			return application.RuntimeSummary{}, fmt.Errorf("parse module %s container status: %w", name, parseErr)
+		summary.TempStorage = summarizeModuleTemporaryStorage(module, temporary, temporaryErr)
+		if summary.TempStorage != nil && summary.TempStorage.State != "ok" && summary.TempStorage.State != "not_applicable" {
+			summary.Health = "unhealthy"
 		}
-		modules = append(modules, summarizeModuleRuntime(name, records))
+		modules = append(modules, summary)
 	}
-	return summarizeDeploymentRuntime(modules), nil
+	return summarizeDeploymentRuntime(modules), errors.Join(inspectionErrors...)
+}
+
+// Runtime queries use the operator's Docker endpoint while keeping ambient
+// process values restricted. Deployment values cannot select another daemon.
+func runtimeProbeEnvironment() []string {
+	environment := restrictedBaseProcessEnvironment()
+	for _, key := range []string{"DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH"} {
+		if value, present := os.LookupEnv(key); present {
+			environment = append(environment, key+"="+value)
+		}
+	}
+	return environment
+}
+
+func summarizeModuleTemporaryStorage(module Module, storage TemporaryStorageStatus, inspectionErr error) *application.ModuleTemporaryStorageStatus {
+	if len(module.TemporaryDirectories) == 0 {
+		return nil
+	}
+	result := &application.ModuleTemporaryStorageStatus{State: "ok", Issues: []application.ModuleTemporaryStorageIssue{}}
+	if inspectionErr != nil {
+		result.State = "unknown"
+		result.Issues = append(result.Issues, application.ModuleTemporaryStorageIssue{Code: "temp_inspection_failed", Name: ""})
+		return result
+	}
+	appliedRoot := storage.AppliedRoot
+	if appliedRoot == "" {
+		appliedRoot = storage.DesiredRoot
+	}
+	expected := map[string]TemporaryDirectory{}
+	for _, declaration := range module.TemporaryDirectories {
+		expected[declaration.Service+"\x00"+declaration.Name] = declaration
+	}
+	present := map[string]bool{}
+	active := map[string]bool{}
+	for _, directory := range storage.Directories {
+		if directory.Module != module.Name || (directory.State != "active" && directory.State != "reserved") || directory.Root != appliedRoot {
+			continue
+		}
+		key := directory.Service + "\x00" + directory.Name
+		if _, declared := expected[key]; !declared {
+			continue
+		}
+		active[directory.ID] = true
+		present[key] = true
+		if directory.FreeBytes != nil && (result.FreeBytes == nil || *directory.FreeBytes < *result.FreeBytes) {
+			result.FreeBytes = directory.FreeBytes
+		}
+		if directory.FreeInodes != nil && (result.FreeInodes == nil || *directory.FreeInodes < *result.FreeInodes) {
+			result.FreeInodes = directory.FreeInodes
+		}
+	}
+	for _, issue := range storage.Issues {
+		if issue.Module != module.Name || !active[issue.LeaseID] {
+			continue
+		}
+		name := ""
+		for _, declaration := range module.TemporaryDirectories {
+			if declaration.Name == issue.Name {
+				name = declaration.Name
+				break
+			}
+		}
+		result.Issues = append(result.Issues, application.ModuleTemporaryStorageIssue{Code: issue.Code, Name: name})
+		switch issue.Code {
+		case "temp_low_space":
+			if result.State == "ok" {
+				result.State = "low_space"
+			}
+		default:
+			result.State = "unavailable"
+		}
+	}
+	for _, declaration := range module.TemporaryDirectories {
+		if !present[declaration.Service+"\x00"+declaration.Name] {
+			result.State = "unavailable"
+			result.Issues = append(result.Issues, application.ModuleTemporaryStorageIssue{Code: "temp_lease_missing", Name: declaration.Name})
+		}
+	}
+	return result
 }
 
 func parseComposePSRecords(body []byte) ([]composePSRecord, error) {

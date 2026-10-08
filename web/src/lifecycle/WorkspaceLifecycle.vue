@@ -1,5 +1,6 @@
 <script setup lang="ts">
 // REQUIREMENTS: CONSOLE-R-034 CONSOLE-R-054 CONSOLE-R-124
+import TemporaryStorageStatus from "./TemporaryStorageStatus.vue"
 import { computed, onMounted, ref, watch } from "vue"
 
 import {
@@ -25,11 +26,14 @@ const emit = defineEmits<{ jobCreated: [jobID: string] }>()
 const selectedWorkspace = ref(props.workspaceIds[0] ?? "")
 const action = ref<LifecycleAction>("restart")
 const availableModules = ref<string[]>([])
+const runtimeModules = ref<components["schemas"]["ModuleRuntimeStatus"][]>([])
+const loadingStatus = ref(false)
 const selectedModules = ref<string[]>([])
 const preview = ref<LifecyclePreview | null>(null)
 const queuedJobID = ref("")
 const busy = ref(false)
 const errorCode = ref<string | null>(null)
+let statusRequest = 0
 
 const text = computed(() => messages[props.locale])
 const errorText = computed(() => errorCode.value === null ? "" : problemMessage(props.locale, errorCode.value))
@@ -46,16 +50,30 @@ function showError(error: unknown): void {
   errorCode.value = error instanceof APIProblemError ? error.code : "request_failed"
 }
 
-async function loadModules(): Promise<void> {
-  availableModules.value = []
-  selectedModules.value = []
-  invalidatePreview()
-  if (selectedWorkspace.value === "") return
+async function loadModules(resetTargets = true): Promise<void> {
+  const request = ++statusRequest
+  const workspace = selectedWorkspace.value
+  if (resetTargets) {
+    availableModules.value = []
+    runtimeModules.value = []
+    selectedModules.value = []
+    invalidatePreview()
+  }
+  if (workspace === "") {
+    loadingStatus.value = false
+    return
+  }
+  loadingStatus.value = true
   try {
-    const status = await getWorkspaceRuntime(selectedWorkspace.value)
+    const status = await getWorkspaceRuntime(workspace)
+    if (request !== statusRequest || workspace !== selectedWorkspace.value) return
     availableModules.value = status.module_runtime.map((item) => item.module)
+    runtimeModules.value = status.module_runtime
+    errorCode.value = null
   } catch (error) {
-    showError(error)
+    if (request === statusRequest && workspace === selectedWorkspace.value) showError(error)
+  } finally {
+    if (request === statusRequest) loadingStatus.value = false
   }
 }
 
@@ -133,6 +151,11 @@ onMounted(() => void loadModules())
         </select>
       </label>
     </div>
+
+    <button type="button" class="secondary-button" :disabled="busy || loadingStatus" @click="loadModules(false)">
+      {{ text.tempStorageRefresh }}
+    </button>
+    <TemporaryStorageStatus :modules="runtimeModules" :locale="locale" />
 
     <label>
       <span>{{ text.lifecycleAction }}</span>

@@ -177,7 +177,11 @@ func TestModuleActionLinuxSupervisorFixture(t *testing.T) {
 		{"stderr_overflow", actionabi.Unknown},
 	} {
 		t.Run(test.mode, func(t *testing.T) {
-			lease, err := consolejobs.AcquireExecutionLease(context.Background(), t.TempDir())
+			leaseRoot := t.TempDir()
+			if err := os.Chmod(leaseRoot, 0700); err != nil {
+				t.Fatal(err)
+			}
+			lease, err := consolejobs.AcquireExecutionLease(context.Background(), leaseRoot)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,0 +1,183 @@
+package object
+
+import (
+	"testing"
+
+	"github.com/casbin/casbin/v2"
+	xormadapter "github.com/casdoor/xorm-adapter/v3"
+	"github.com/xorm-io/xorm"
+)
+
+// These are observations of real upstream functions, not ANAS portal E2E.
+func TestANASCatalogProbe(t *testing.T) {
+	setup := func(t *testing.T) *xorm.Engine {
+		engine, err := xorm.NewEngine("sqlite", ":memory:")
+		if err != nil {
+			t.Fatal(err)
+		}
+		engine.SetMaxOpenConns(1)
+		if err = engine.Sync2(&User{}, &Application{}, &Permission{}, &Role{}, &Group{}, &Model{}, &Adapter{}, &Provider{}, &ThirdPartyLink{}); err != nil {
+			t.Fatal(err)
+		}
+		old, oldGroups := ormer, userEnforcer
+		ormer = &Ormer{Engine: engine}
+		t.Cleanup(func() { ormer = old; userEnforcer = oldGroups; _ = engine.Close() })
+		m, err := GetBuiltInModel("")
+		if err != nil {
+			t.Fatal(err)
+		}
+		adapter, err := xormadapter.NewAdapterByEngineWithTableName(engine, "probe_group_rule", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		enforcer, err := casbin.NewSyncedEnforcer(m, adapter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		userEnforcer = NewUserGroupEnforcer(enforcer)
+		for _, u := range []*User{
+			{Owner: "anas", Name: "alice", Id: "a", Groups: []string{"anas/Staff"}},
+			{Owner: "anas", Name: "bob", Id: "b", Groups: []string{"anas/Other"}},
+			{Owner: "anas", Name: "operator", Id: "o", IsAdmin: true},
+		} {
+			if _, err = engine.Insert(u); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = userEnforcer.AddGroupsForUser(u.GetId(), u.Groups); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return engine
+	}
+	permission := func(name, effect string) *Permission {
+		return &Permission{Owner: "anas", Name: name, ResourceType: "Application", Resources: []string{"link"}, Actions: []string{"Read"}, Effect: effect, IsEnabled: true, State: "Approved"}
+	}
+	check := func(t *testing.T, app *Application, user string, expected bool) {
+		t.Helper()
+		got, err := CheckLoginPermission(user, app)
+		if err != nil || got != expected {
+			t.Fatalf("%s allowed=%v expected=%v err=%v", user, got, expected, err)
+		}
+		visible, err := GetAllowedApplications([]*Application{app}, user, "en")
+		if err != nil || (len(visible) == 1) != expected {
+			t.Fatalf("%s visible=%d expected=%v err=%v", user, len(visible), expected, err)
+		}
+	}
+	add := func(t *testing.T, p *Permission) {
+		t.Helper()
+		if _, err := AddPermission(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	app := &Application{Owner: "admin", Name: "link", Organization: "anas", HomepageUrl: "https://external.example/path?x=1#part", DisableSignin: true}
+	t.Run("NoPermissionDefaultsToAllowAndLinkNeedsNoClient", func(t *testing.T) {
+		engine := setup(t)
+		if _, err := engine.Insert(app); err != nil {
+			t.Fatal(err)
+		}
+		apps, err := GetOrganizationApplications("admin", "anas")
+		if err != nil || len(apps) != 1 || apps[0].ClientId != "" {
+			t.Fatalf("apps=%v err=%v", apps, err)
+		}
+		check(t, app, "anas/alice", true)
+		check(t, app, "anas/bob", true)
+	})
+	for _, subject := range []string{"user", "group", "role", "role_group", "any_group"} {
+		t.Run("Allow_"+subject, func(t *testing.T) {
+			engine := setup(t)
+			p := permission("allow", "Allow")
+			switch subject {
+			case "user":
+				p.Users = []string{"anas/alice"}
+			case "group":
+				p.Groups = []string{"anas/Staff"}
+			case "any_group":
+				p.Groups = []string{"anas/Absent", "anas/Staff"}
+			case "role", "role_group":
+				role := &Role{Owner: "anas", Name: "Readers", IsEnabled: true}
+				if subject == "role" {
+					role.Users = []string{"anas/alice"}
+				} else {
+					role.Groups = []string{"anas/Staff"}
+				}
+				if _, err := engine.Insert(role); err != nil {
+					t.Fatal(err)
+				}
+				p.Roles = []string{"anas/Readers"}
+			}
+			add(t, p)
+			check(t, app, "anas/alice", true)
+			check(t, app, "anas/bob", false)
+			check(t, app, "anas/operator", true)
+		})
+	}
+	t.Run("DenyOverridesAllowButNotOrganizationAdmin", func(t *testing.T) {
+		setup(t)
+		allow := permission("allow", "Allow")
+		allow.Users = []string{"anas/alice", "anas/operator"}
+		add(t, allow)
+		deny := permission("deny", "Deny")
+		deny.Users = []string{"anas/alice", "anas/operator"}
+		add(t, deny)
+		check(t, app, "anas/alice", false)
+		check(t, app, "anas/operator", true)
+	})
+	t.Run("DisabledOrUnapprovedPolicyFallsBackToAllow", func(t *testing.T) {
+		engine := setup(t)
+		p := permission("allow", "Allow")
+		p.Users = []string{"anas/alice"}
+		add(t, p)
+		check(t, app, "anas/bob", false)
+		if _, err := engine.ID([]interface{}{"anas", "allow"}).Cols("is_enabled").Update(&Permission{IsEnabled: false}); err != nil {
+			t.Fatal(err)
+		}
+		check(t, app, "anas/bob", true)
+		if _, err := engine.ID([]interface{}{"anas", "allow"}).Cols("is_enabled", "state").Update(&Permission{IsEnabled: true, State: "Pending"}); err != nil {
+			t.Fatal(err)
+		}
+		check(t, app, "anas/bob", true)
+	})
+	t.Run("MembershipRemovalChangesNextPermissionCheck", func(t *testing.T) {
+		engine := setup(t)
+		p := permission("allow", "Allow")
+		p.Groups = []string{"anas/Staff"}
+		add(t, p)
+		check(t, app, "anas/alice", true)
+		if _, err := engine.Where("owner=? AND name=?", "anas", "alice").Cols("groups").Update(&User{Groups: []string{}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := userEnforcer.DeleteGroupsForUser("anas/alice"); err != nil {
+			t.Fatal(err)
+		}
+		check(t, app, "anas/alice", false)
+	})
+	t.Run("TagsAndDisableSigninAreNotCatalogFilters", func(t *testing.T) {
+		setup(t)
+		tagged := *app
+		tagged.Tags = []string{"unmatched"}
+		check(t, &tagged, "anas/alice", true)
+	})
+	t.Run("AnonymousCatalogRejected", func(t *testing.T) {
+		setup(t)
+		if _, err := GetAllowedApplications([]*Application{app}, "", "en"); err == nil {
+			t.Fatal("anonymous accepted")
+		}
+	})
+	t.Run("NativeEnforcerSupportsStrictGroupWithoutAdminBypass", func(t *testing.T) {
+		setup(t)
+		p := permission("strict", "Allow")
+		p.Groups = []string{"anas/Staff"}
+		add(t, p)
+		enforcer, err := getPermissionEnforcer(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for user, want := range map[string]bool{"anas/alice": true, "anas/bob": false, "anas/operator": false} {
+			got, err := enforcer.Enforce(user, app.Name, "Read")
+			if err != nil || got != want {
+				t.Fatalf("native enforcer %s=%v want=%v err=%v", user, got, want, err)
+			}
+		}
+	})
+	t.Log("fixed_source_catalog_probe=true counts_as_e2e=false")
+}

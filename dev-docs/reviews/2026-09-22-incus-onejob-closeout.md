@@ -7,7 +7,7 @@ updated: 2026-09-22
 
 # 系统容器 Runner 的 cgroup 修复与作业闭环
 
-接续[真实工作流验收记录](2026-09-22-incus-onejob-acceptance.md)。本轮范围是将已定位的
+接续[真实工作流验收记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-onejob-acceptance.md)。本轮范围是将已定位的
 cgroup 修复构建为新的不可变镜像，执行正常、显式失败、controller SIGTERM 取消和
 SIGKILL 后保留 state 的恢复，并回收实验资源、核验物理 Docker 基线。不把这一范围
 等同于 Incus 全部 75 项要求、其他架构/隔离档或正式发布。

@@ -1,5 +1,7 @@
 <script setup lang="ts">
 // REQUIREMENTS: CONSOLE-R-054 CONSOLE-R-115 CONSOLE-R-117 CONSOLE-R-118 CONSOLE-R-122 CONSOLE-R-131
+import TempSwitchNotice from "./TempSwitchNotice.vue"
+import WorkspaceRollbackPreview from "./WorkspaceRollbackPreview.vue"
 import { computed, onBeforeUnmount, ref, watch } from "vue"
 
 import {
@@ -337,6 +339,8 @@ onBeforeUnmount(() => {
         <code>{{ plan.digest.slice(0, 12) }}…</code>
       </div>
 
+      <TempSwitchNotice :plan="plan.temp_switch" :locale="locale" />
+
       <div class="plan-grid">
         <article>
           <h4>{{ text.plannedModules }}</h4>
@@ -416,6 +420,8 @@ onBeforeUnmount(() => {
       />
       <p>{{ text.riskyReplanHelp }}</p>
     </aside>
+
+    <WorkspaceRollbackPreview v-if="fullState" :workspace="selectedWorkspace" :csrf="csrf" :locale="locale" />
 
     <section v-if="job" class="job-status" role="status">
       <h3>{{ text.applyJob }}</h3>

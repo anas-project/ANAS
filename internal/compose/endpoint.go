@@ -35,7 +35,7 @@ func (c CLI) Environment(base []string, deployment map[string]string) []string {
 	values := map[string]string{}
 	for _, item := range base {
 		key, value, ok := strings.Cut(item, "=")
-		if ok {
+		if ok && !strings.HasPrefix(key, "ANAS_TEMP_") {
 			values[key] = value
 		}
 	}

@@ -130,11 +130,25 @@ type RuntimeSummary struct {
 	Modules []ModuleRuntimeStatus `json:"modules"`
 }
 
+type ModuleTemporaryStorageIssue struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// ModuleTemporaryStorageStatus contains only public storage facts, never host paths.
+type ModuleTemporaryStorageStatus struct {
+	State      string                        `json:"state"`
+	Issues     []ModuleTemporaryStorageIssue `json:"issues"`
+	FreeBytes  *uint64                       `json:"free_bytes,omitempty"`
+	FreeInodes *uint64                       `json:"free_inodes,omitempty"`
+}
+
 type ModuleRuntimeStatus struct {
-	Module     string `json:"module"`
-	Runtime    string `json:"runtime"`
-	Health     string `json:"health"`
-	Containers int    `json:"containers"`
+	TempStorage *ModuleTemporaryStorageStatus `json:"temp_storage,omitempty"`
+	Module      string                        `json:"module"`
+	Runtime     string                        `json:"runtime"`
+	Health      string                        `json:"health"`
+	Containers  int                           `json:"containers"`
 }
 
 type ListDeploymentsRequest struct {

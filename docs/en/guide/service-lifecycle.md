@@ -75,3 +75,25 @@ anas snapshot restore <snapshot-id> -w /srv/anas
 ```
 
 Replacement operations require an explicit `-w` to reduce the risk of targeting the wrong workspace. Read [backup and restore](backup-and-restore.md) first.
+
+## Temporary storage and root changes
+
+Modules explicitly declare disposable directories using `temporary_directories`. The default root is `<workspace>/tmp`; `global.temp_path` accepts an absolute path. Before startup, the Runner records leases, applies declared permissions, and verifies Docker bind mounts. Unknown capacity or filesystem identity blocks allocation and preserves existing contents.
+
+When the resolved root changes, `plan.temp_switch` lists every stop and start and the session interruption. `apply` preflights the destination, stops all old Modules in reverse dependency order, then recreates and starts the target Modules in dependency order. It never copies temporary contents. Normal-stop, existing startup-chain, or mount failures preserve old trees and attempt recovery. Successful activation reclaims this workspace’s released directories; cleanup failure keeps the new deployment running with retry records.
+
+Failed old-directory cleanup after a committed switch records `cleanup_deferred` and reports `temp_cleanup_pending`. Subsequent lifecycle operations, configuration applies, and root switches remain available. Old leases remain registered for explicit GC after the fault is resolved. An uncommitted switch, unconfirmed stop Hook, or failed target mount verification still blocks automatic recovery. Targeted startup checks temporary storage only for the selected Modules and their dependency scope; targeted restart checks that same scope before stopping services.
+
+```bash
+anas temp status -w /srv/anas
+anas temp gc --dry-run -w /srv/anas --json
+anas temp gc -w /srv/anas
+```
+
+GC requires explicit `-w`. Both running and stopped containers retain their bind directories, and failed Docker observations preserve them. Reconcile an interrupted switch with `apply` or `start`; GC never implicitly starts services. Runtime `temp_storage` reports unavailable storage or low capacity and overrides a successful health probe. Recovery refreshes status without restarting containers. Btrfs has no fixed inode pool, so inode capacity is not applicable.
+
+The console’s “Refresh runtime status” queries the selected workspace again and clears the previous request error after recovery. Earlier responses cannot replace the current view after switching workspaces.
+
+A historical rollback to a different temporary root creates a new deployment from the frozen historical configuration, lock, and Module artifacts and follows the same switch process. It never restores temporary contents or rewrites historical artifacts.
+
+Artifacts imported by restoring into another workspace or cloning provide diagnostic and configuration history, without authority over the source project. Run `anas apply` without `--deployment` first to generate local artifacts and new leases. Lifecycle commands, historical rollback, and their previews reject source artifacts until then. A deployment with managed temporary directories must retain a valid frozen `DATA_PATH` binding; a missing or invalid binding cannot establish authority. Same-workspace snapshot restores and valid local leases retain their existing authority.

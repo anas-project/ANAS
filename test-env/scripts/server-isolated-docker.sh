@@ -58,6 +58,18 @@ status() {
 
 start() {
   require_root
+  set -- "--net=/var/run/netns/$NS"
+  if [ -n "${ANAS_TEST_MOUNT_NAMESPACE:-}" ]; then
+    case "$ANAS_TEST_MOUNT_NAMESPACE" in
+      /proc/[0-9]*/ns/mnt) ;;
+      *) echo "test mount namespace must be an explicit process namespace" >&2; exit 1 ;;
+    esac
+    if [ ! -e "$ANAS_TEST_MOUNT_NAMESPACE" ] || [ "$(stat -Lc %i "$ANAS_TEST_MOUNT_NAMESPACE")" = "$(stat -Lc %i /proc/1/ns/mnt)" ]; then
+      echo "a private test mount namespace is required" >&2
+      exit 1
+    fi
+    set -- "$@" "--mount=$ANAS_TEST_MOUNT_NAMESPACE"
+  fi
   uplink=$(uplink_interface)
   if [ -z "$uplink" ]; then
     echo "could not detect uplink interface" >&2
@@ -111,7 +123,7 @@ start() {
   systemctl reset-failed "$CONTAINERD_UNIT" 2>/dev/null || true
   mkdir -p "$CONTAINERD_ROOT" "$CONTAINERD_STATE"
   systemd-run --unit="${CONTAINERD_UNIT%.service}" --collect --property=Restart=on-failure \
-    /usr/bin/nsenter --net="/var/run/netns/$NS" /usr/bin/containerd \
+    /usr/bin/nsenter "$@" /usr/bin/containerd \
     --address="$CONTAINERD_SOCKET" \
     --root="$CONTAINERD_ROOT" \
     --state="$CONTAINERD_STATE"
@@ -126,7 +138,7 @@ start() {
     sleep 2
   done
   systemd-run --unit="${UNIT%.service}" --collect --property=Restart=on-failure \
-    /usr/bin/nsenter --net="/var/run/netns/$NS" /usr/bin/dockerd \
+    /usr/bin/nsenter "$@" /usr/bin/dockerd \
     --config-file="$CONFIG" \
     --data-root="$DATA_ROOT" \
     --exec-root="$EXEC_ROOT" \

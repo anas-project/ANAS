@@ -346,11 +346,14 @@ candidate promotion automatically according to the store's
 | code | Exit code | When |
 | --- | --- | --- |
 | `no_active_deployment` | 4 | Nothing has been applied yet |
+| `deployment_workspace_mismatch` | 4 | Imported artifacts lack this workspace's runtime authority; apply the configuration without `--deployment` first |
 | `compose_missing` | 4 | There is no docker compose |
 | `deployment_unreadable` | 4 | The active deployment's artifact is broken or absent |
 | `credential_store_mismatch` | 4 | The active deployment's credential generation/authority disagrees with the store; restore a matching snapshot first |
 | `lock_failed` | 1 | The runtime lock could not be acquired, or automatic credential transaction recovery failed |
 | `start_failed` / `stop_failed` | 1 | Failed after work had started |
+
+Lifecycle and historical rollback previews also check the frozen workspace binding. Imported artifacts from a restore or clone cannot operate the source project through `apply --deployment`, historical rollback, or shared runtime entry points. Applying the target configuration creates a local deployment. A missing source lease registry does not bypass the imported-active check.
 
 ## rollback
 
@@ -405,6 +408,12 @@ anas status [-w WORKSPACE] [--json]
   "active_deployment": "20260731T101500Z-a1b2c3d4",
   "activated_at": "2026-07-31T10:15:07Z",
   "verified_at": "2026-07-31T10:15:07Z",
+  "runtime_status": "running", "runtime_healthy": false,
+  "runtime_probe_error": null,
+  "module_runtime": [{
+    "module": "collabora", "runtime": "running", "health": "unhealthy", "containers": 1,
+    "temp_storage": {"state": "low_space", "issues": [{"code": "temp_low_space", "name": "runtime"}]}
+  }],
   "previous_deployments": ["20260730T090000Z-9f8e7d6c"]
 }
 ```
@@ -412,6 +421,23 @@ anas status [-w WORKSPACE] [--json]
 **No active deployment is a successful answer and exits 0**, with
 `active_deployment` set to `null`. Reporting it as a failure would leave callers
 unable to tell a brand-new workspace from a workspace whose state cannot be read.
+
+CLI and HTTP share the live inspector. `runtime_status`, `runtime_healthy`, `runtime_probe_error`,
+and `module_runtime` describe current observations rather than saved runtime state. A failed container
+query reports stack status `unknown`, health `null`, and error code `runtime_probe_failed`; already
+observed Module and temporary storage facts are retained. Unobserved Modules have runtime `unknown`.
+No active deployment reports `stopped` with an empty Module array. Module `temp_storage` issues include
+only declaration names and error codes; use `anas temp status` to inspect actual host paths.
+
+Compose detection and container queries for live status retain the calling process's `DOCKER_HOST`,
+`DOCKER_CONTEXT`, `DOCKER_CONFIG`, `DOCKER_TLS_VERIFY`, and `DOCKER_CERT_PATH`; unset selectors stay unset.
+Workspace and Module environment values cannot supply these selectors. Other ambient process values
+remain restricted to PATH/HOME/LANG, and cancellation and deadlines still use the caller's context.
+Queries therefore inspect the selected private or remote endpoint rather than falling back to the
+default daemon when the restricted environment drops its selectors.
+Linux temporary storage checks also query daemon identity and the complete container inventory through
+that endpoint, resolving the current Docker context when needed. Stopped containers remain included;
+Compose's running-container results alone cannot establish that temporary directories have been released.
 
 ## deployments
 
@@ -1101,3 +1127,19 @@ Compose detection saves the process-owned Docker selection environment. Ownershi
 reuse it; deployment values cannot override `DOCKER_HOST`, `DOCKER_CONTEXT`, or other endpoint selectors.
 Default Docker context semantics remain intact. Context-file snapshots, all auxiliary Docker queries,
 and non-Unix socket-mount precondition errors are not yet implemented.
+
+## temp
+
+```text
+anas temp status [-w WORKSPACE] [--json]
+anas temp gc --dry-run -w WORKSPACE [--json]
+anas temp gc -w WORKSPACE [--json]
+```
+
+GC requires explicit `-w`, never inferring a workspace from cwd or `ANAS_WORKSPACE`. Status and GC share the workspace execution lock. The standard success envelope adds `workspace_id`, `applied_root`, `desired_root`, `transition`, `directories`, and `issues`. Directory records include lease/workspace/deployment/Module/service/declaration identity, actual `path` and `root`, filesystem identity, registered container IDs, lifecycle state, `bytes_used`, `free_bytes`, `free_inodes`, `reclaimable`, and `blockers`. Btrfs reports `free_inodes: null`. A transition records previous/target deployment and root, phase, and start time; absent transitions are `null`.
+
+Only valid registrations owned by this workspace are reclamation candidates. Containers (including stopped containers), host mounts, unknown filesystem or directory ownership, failed Docker observations, and unreconciled switches prevent deletion. Mutating GC refuses an interrupted switch with `temp_recovery_required` (4); reconcile using `apply` or `start`. Other storage failures use `temp_storage_failed` (1), still producing exactly one error document.
+
+Mount verification reads a bounded ownership marker through the same Docker endpoint, then rereads the host marker through a directory handle. A replaced symlink, hardlink, or unsafe permission causes verification to fail without reading temporary file contents. If deletion finished before its registry update was interrupted, reconciliation marks a released directory as deleted only after confirming the registered root, filesystem, complete parent directory chain, Docker references, and actual absence again. This reconciliation deletes no other paths.
+
+Deployment plans and HTTP rollback previews expose `temp_switch`: `required`, ordered `stop_modules`, ordered `start_modules`, and `session_interruption`. An unchanged root does not require a full restart. Confirmation digests bind this object, which contains no host paths. Runtime Module `temp_storage` exposes `state` (`ok`, `low_space`, `unavailable`, `unknown`, or `not_applicable`), `issues` containing only `code`/`name`, and optional `free_bytes`/`free_inodes`. Storage faults override successful health probes; refreshing a recovered condition does not restart containers.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -174,6 +175,9 @@ type Global struct {
 	// the one that is -- but only through that module's own parameter, which
 	// carries a change policy saying what moving it costs. The difference is
 	// that the exception is named and policed rather than global and silent.
+	// TempPath is an optional absolute root for Module-declared disposable storage.
+	// Empty resolves to <workspace>/tmp at the workspace boundary.
+	TempPath        string `yaml:"temp_path"`
 	Timezone        string `yaml:"timezone"`
 	ContainerPrefix string `yaml:"container_prefix"`
 	NetworkPrefix   string `yaml:"network_prefix"`
@@ -237,6 +241,7 @@ var globalBindings = []globalBinding{
 	{"base_domain", "BASE_DOMAIN", func(g Global) string { return g.BaseDomain }},
 	{"email", "EMAIL", func(g Global) string { return g.Email }},
 	{"timezone", "TZ", func(g Global) string { return g.Timezone }},
+	{"temp_path", "TEMP_PATH", func(g Global) string { return g.TempPath }},
 	{"container_prefix", "CONTAINER_PREFIX", func(g Global) string { return g.ContainerPrefix }},
 	{"network_prefix", "NETWORK_PREFIX", func(g Global) string { return g.NetworkPrefix }},
 	{"host_ip", "HOST_IP", func(g Global) string { return g.HostIP }},
@@ -423,6 +428,12 @@ func Parse(b []byte) (*File, error) {
 	}
 	if cfg.DynamicDNS.Provider != "" && cfg.DynamicDNS.DNSProvider == "" {
 		return nil, fmt.Errorf("dynamic_dns.provider is set but dynamic_dns.dns_provider is not; name the DNS vendor the records live at")
+	}
+	if cfg.Global.TempPath != "" {
+		if !filepath.IsAbs(cfg.Global.TempPath) || strings.ContainsAny(cfg.Global.TempPath, "\x00\r\n") {
+			return nil, fmt.Errorf("global.temp_path must be an absolute path")
+		}
+		cfg.Global.TempPath = filepath.Clean(cfg.Global.TempPath)
 	}
 	if cfg.Global.Timezone, err = localization.ValidateTimezone(cfg.Global.Timezone); err != nil {
 		return nil, fmt.Errorf("global.timezone: %w", err)

@@ -8,7 +8,7 @@ updated: 2026-09-09
 # 项目审查整改实施计划
 
 验收见[需求矩阵](../../requirements/project-quality-hardening.md)，范围来自用户确认的
-[审查建议](../../reviews/2026-09-05-agent-configuration-and-project-quality-review.md)。
+[审查建议](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-05-agent-configuration-and-project-quality-review.md)。
 当前里程碑：M0—M2 已完成；本计划 6 项要求已落地。Compose 的剩余子阶段和 ALM 迁移分别沿用原计划。
 
 | 里程碑 | 需求 ID | 状态 |
@@ -45,4 +45,4 @@ npm run docs:build
 
 共享构建与故障注入测试、Go 包测试、go vet、前端类型/API 检查及 72 项测试、两套界面构建通过。
 全量 Go 首次因沙箱禁止本地监听导致两个包失败；同一代码在允许本地监听后两包重跑通过。
-文档门禁和构建记录见[整改报告](../../reviews/2026-09-09-project-quality-hardening-implementation.md)。
+文档门禁和构建记录见[整改报告](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-09-project-quality-hardening-implementation.md)。

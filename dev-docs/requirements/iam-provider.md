@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-15
-updated: 2026-08-27
+updated: 2026-10-03
 ---
 
 # 新 IAM Provider 准入与实施要求
@@ -92,6 +92,10 @@ ACL 决定。`APP_all` 和 `APP_<应用名>` 始终只授予访问权，绝不�
 身份属性变更。事件订阅是强制接入能力，不得只依赖定时 LDAP Source Sync、登录时查询或人工
 reconcile。Provider 必须用独立持久游标消费事件，并在有界时间内触发增量刷新、缓存失效或 Source
 Sync；周期 LDAP 全量同步仍必须保留为一致性兜底，Samba AD 仍是唯一事实来源。
+
+应用目录的字段、非 IAM 入口、共享图标和权限过滤以[应用目录要求](app-catalog.md)为准。
+Casdoor 是新目录首要目标，Authentik 逐步弃用；目录条目与登录客户端分别声明，
+不能要求每个本地登录或外部入口都先成为 OIDC/SAML client。该新版目录尚未实现。
 
 Runner 拥有 Provider 无关的应用目录与 IAM 注册事实，包括应用 ID、协议、URL、分类、
 标签、图标、claim、允许组和可见性。新增 IAM 需要实现一个 adapter，将这些事实翻译为

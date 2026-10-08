@@ -60,6 +60,10 @@ php /var/www/html/occ config:system:set files.trash.delete --type=boolean --valu
 php /var/www/html/occ config:system:set trashbin_retention_obligation --type=string --value="60,365"
 ```
 
+## Office 启动
+
+启用 Collabora 后，Nextcloud 先完成自身初始化，Office 连接再等待 Collabora 就绪并自动激活。首次部署、重建和临时目录切换可能需要等待，后台最多重试900秒；超时在容器日志明确报告。Nextcloud 的健康状态通过后，仍需等待 Office 激活完成才能编辑。不会关闭证书验证或放宽 WOPI 访问范围。
+
 ## 身份、用户与 Group
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过 `anasIdentityAnchor` 关联既有 LDAP 账号。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。

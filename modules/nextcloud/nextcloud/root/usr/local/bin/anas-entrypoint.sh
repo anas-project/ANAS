@@ -1,4 +1,5 @@
 #!/bin/bash
+# TEST_CASES: TEMP-T-021
 set -eu
 
 install_internal_ca() {
@@ -48,7 +49,7 @@ if [ -n "${SAMBA_DC_HOST:-}" ]; then
   set_host "$SAMBA_DC_HOST" "${SAMBA_DC_HOST_IP:-${HOST_IP:-}}"
 fi
 
-rm -f /run/nextcloud-tasks.ready
+rm -f /run/nextcloud-tasks.ready /run/nextcloud-office.ready
 /usr/local/bin/running.sh &
 
 exec /entrypoint.sh "$@"

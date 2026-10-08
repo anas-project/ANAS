@@ -5,7 +5,7 @@
 > [!NOTE]
 > 当前生命周期为 `release`。r10 的正式双架构构建、OIDC 目录事件撤权、真实 Nextcloud
 > anchor UID/改名/文件归属、备份恢复、凭据轮换和生命周期验收已通过，见
-> [2026-10-06 发布验收](../../dev-docs/reviews/2026-10-06-casdoor-release-acceptance.md)。
+> [2026-10-06 发布验收](dev-docs/plans/archived/casdoor-iam.md)。
 > OIDC 为主要支持协议；SAML 应用会话注销列为待实现，不作为当前 OIDC 发布阻塞项。
 > Netbird 因将 `sub` 投影到普通用户 API URL 而被拒绝注册。
 

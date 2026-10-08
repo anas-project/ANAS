@@ -91,6 +91,7 @@ An upstream-version or runtime-asset change must also complete the
 
 ## 9. IAM and administrator recovery (conditional)
 
+- [ ] `[M]` If the pinned upstream version of a new application Module supports OIDC, integrate only OIDC, without a SAML implementation, configuration option, or fallback; see [protocol selection](/en/developer/module-development#iam-protocol-selection-for-new-modules).
 - [ ] `[A/M]` An IAM consumer reads only its `ANAS_IAM_BINDING__<APP>__*` and publishes only its `ANAS_IAM_CLIENT__<APP>__*`, with no provider-name branch.
 - [ ] `[M/E]` Client type, redirect URI, scopes, claims, group gate, JIT/sync direction, and local-auth state match the pinned upstream version.
 - [ ] `[M]` Module-to-IAM, IAM-to-Module, and browserless administrator revocation are documented separately; `post_logout_redirect_uri` is not called a notification endpoint.

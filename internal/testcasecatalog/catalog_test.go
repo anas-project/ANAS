@@ -96,6 +96,41 @@ func TestRunRejectsStaleImplementationDigest(t *testing.T) {
 	}
 }
 
+func TestImplementationMarkersIncludeFixtureTemplatesAndImageLists(t *testing.T) {
+	root := t.TempDir()
+	names := []string{"editing.yml.in", "editing-images.txt"}
+	for _, name := range names {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("# TEST_CASES: DEMO-T-001\nsynthetic input\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	caseValue := &TestCase{ID: "DEMO-T-001", Status: "active"}
+	caseValue.Implementation.Files = names
+	catalog := &Catalog{manifestPath: filepath.Join(root, "cases.yml")}
+	cases := map[string]*TestCase{caseValue.ID: caseValue}
+	catalogs := map[string]*Catalog{caseValue.ID: catalog}
+	if errs := validateImplementationMarkers(root, cases, catalogs); len(errs) != 0 {
+		t.Fatalf("fixture source markers were not recognized: %v", errs)
+	}
+	before, err := digestImplementation(root, caseValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, names[1]), []byte("# TEST_CASES: DEMO-T-001\nchanged fixed image\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after, err := digestImplementation(root, caseValue)
+	if err != nil || before == after {
+		t.Fatalf("changed image input did not affect implementation digest: %s %s %v", before, after, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, names[0]), []byte("unmarked fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if errs := validateImplementationMarkers(root, cases, catalogs); len(errs) != 1 || !strings.Contains(errs[0], names[0]+" must declare TEST_CASES") {
+		t.Fatalf("unmarked template was accepted: %v", errs)
+	}
+}
+
 func TestRunRejectsWeakOracleAndMissingValidityEvidence(t *testing.T) {
 	root := writeFixture(t, "e2e", "DEMO-T-001, DEMO-T-002")
 	path := filepath.Join(root, "test-env", "cases", "demo", "cases.yml")

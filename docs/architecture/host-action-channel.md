@@ -521,7 +521,7 @@ owner，不从 Register、浏览器或 CLI 请求继承；原请求返回或取�
 原生门禁已扩展到 listener 和共享 Store 分派用例，并接入 CI 的 Go job。门禁要求指定包和
 用例实际通过，skip、无匹配测试、错误平台或缺内核能力都不能算验收。工作流接线不等于本轮已
 运行 GitHub CI；实际执行范围记录在
-[本轮核对](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-19-host-job-broker-listener.md)。
+[本轮核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-job-broker-listener.md)。
 
 ## 11. 独立退出状态、共享终态与可执行程序（2026-09-19，待实机验收）
 

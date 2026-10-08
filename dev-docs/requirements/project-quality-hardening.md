@@ -7,7 +7,7 @@ updated: 2026-09-08
 
 # 项目审查整改要求
 
-来源为[9 月 5 日审查](../reviews/2026-09-05-agent-configuration-and-project-quality-review.md)。
+来源为[9 月 5 日审查](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-05-agent-configuration-and-project-quality-review.md)。
 本主题承载跨项目维护规则与新增门禁；Compose 端点/错误协议沿用 COMPOSE-R，应用层迁移沿用 ALM-R，
 共享镜像构建沿用 INCUS-R-038，不复制其验收矩阵。实施见[计划](../plans/archived/project-quality-hardening.md)。
 

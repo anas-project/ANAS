@@ -9,7 +9,7 @@ updated: 2026-09-28
 
 状态：已采纳（2026-09-28），写入 [Incus 要求](../requirements/incus-module.md) §7sexies 与 `INCUS-R-112`—`R-129`，
 M10a 已重排；本文保留为设计过程记录，以需求矩阵为准。原状态：设计与需求草案，未进矩阵，也没有改动实现。确认后，它会取代
-[重新授权与增量续期草案](2026-09-28-incus-forwarding-regrant-renewal-draft.md)，以及运行 owner 对比中的逐实例
+[重新授权与增量续期草案](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-28-incus-forwarding-regrant-renewal-draft.md)，以及运行 owner 对比中的逐实例
 许可方向。基线：`dddae0c2` 加当前工作树。简化背景见[Incus 设计简化评审](2026-09-28-incus-design-simplification-review.md)。
 
 ## 1. 已定的前提（操作者，2026-09-28）

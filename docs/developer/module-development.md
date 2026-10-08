@@ -22,6 +22,10 @@ Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标
 [Module 专属命令](/reference/module-commands)。命令必须声明类型化参数和固定 executor；不得以命令
 为名暴露 shell、argv、Docker、systemd 或 SSH 透传。
 
+## 上游源码补丁
+
+如需新增或修改针对 Module 上游源码的补丁，必须先询问用户并取得明确确认，再实施。询问时说明补丁的必要性、修改范围，以及对后续上游升级和维护的影响。
+
 ## 版本与 revision 所有权
 
 `version` 跟随规范化的上游应用版本；`revision` 表示同一上游版本下已经发布的 ANAS 镜像
@@ -78,6 +82,39 @@ inventory golden；`--check` 完全只读。不要手改这些全局生成块、
 新增或修改 `capabilities.provides`、`dependencies.requires_capabilities`、Runner capability
 registry 或 capability binding 时，必须遵守 [Capability 开发标准](/developer/capability-development)。
 
+## Module 临时目录
+
+Module 需要可丢弃的容器工作目录时，在 `module.yml` 顶层显式声明：
+
+```yaml
+temporary_directories:
+  - name: runtime
+    service: anas_example
+    target: /var/lib/example/runtime
+    lifecycle: container
+    uid: 1001
+    gid: 1001
+    mode: "0750"
+    min_free_bytes: 1073741824
+    min_free_inodes: 1000
+    required_features: [hardlink, exec]
+```
+
+`name` 使用小写字母、数字和下划线，以字母开头。`service` 可使用 Compose 原名或省略
+`anas_` 的现有短名；Runner 冻结实际 service 名。`target` 必须是规范的容器绝对路径，
+不能与该 service 的其他 volume/tmpfs 或临时目标重叠。声明的 service 只支持单个副本。
+所有者、权限和两个容量下限必须显式填写；权限需允许所有者读、写、执行，组和其他用户均不能可写（例如允许 `0700`、`0750`、`0755`，拒绝 `0770`、`0775`、`0777`）。声明校验与启动前预检使用相同规则；历史冻结声明也不能绕过权限预检。
+可选 `filesystem: [ext4, btrfs]` 限定实际文件系统类型；`required_features` 当前支持
+`hardlink` 和 `exec`，仅声明应用确实需要的条件。没有固定 inode 总量的 Btrfs 以动态容量
+检查，状态不把 inode 数量显示为零余量。
+
+Runner 自动生成 `create_host_path: false` 的长格式 bind，source 使用
+`${ANAS_TEMP_<大写NAME>}`。模块不得自行再挂同一目标，不得在配置、Secret、Hook 输出或
+`config.exports` 中写入 `ANAS_TEMP_*`。实例路径只在该模块执行 Compose 时注入，不写进
+冻结 `.env` 或 deployment；容器重建重新分配，自动重启继续使用同一实例目录。
+目录内容不参与备份、快照或回滚；Module 必须能从空目录启动。需要初始化模板时，复用
+模块自身的冻结 Hook/启动入口，不要让 Core 识别应用目录或管理编辑会话。
+
 ## 配置与 Secret
 
 只声明 Module 实际消费和导出的配置。不要依赖全量环境注入；生成的 `.env` 应只包含当前 Module、依赖闭包和显式声明的键。敏感值不得写入日志或非必要容器。
@@ -104,6 +141,15 @@ secret 和签名/加密密钥，都必须记录 owner、consumer、authority 和
 `credential rotate --module/--all` 也不包含 Resource credential、本地管理员或
 外部 API token。在这些范围实现前，Module 文档和发布检查必须标为 manual/unsupported，
 不得宣称“全部 ANAS Secret 可轮换”。
+
+## 新 Module 的 IAM 协议选择
+
+新集成的应用 Module，如果固定上游版本支持 OIDC，ANAS 就只接入 OIDC：即使上游同时支持
+SAML，也不增加 SAML 实现、配置入口或 fallback。Manifest 的 IAM 消费接口只声明 `oidc`，
+Hook 注册、应用配置和登录/登出验收均围绕 OIDC 实现。仅当上游不支持 OIDC 时，才考虑 SAML。
+
+这条规则约束新应用的 IAM 登录接入，不要求移除既有 Module 的 SAML 支持，也不限制 IAM
+Provider 对外提供的协议。LDAP/LDAPS 目录同步和托管应急账号仍按各自规范处理。
 
 ## 使用 OIDC/SAML 的 Module：双向登出设计规范
 

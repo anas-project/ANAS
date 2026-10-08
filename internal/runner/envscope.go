@@ -334,6 +334,9 @@ func (a *app) scopedSecrets(name string) map[string]string {
 // rule: a module may write its own namespace, a key it already owns, or a key
 // it explicitly publishes through config.exports.
 func moduleHookMayWriteKey(mod Module, key string, alreadyOwned bool) bool {
+	if strings.HasPrefix(key, "ANAS_TEMP_") {
+		return false
+	}
 	for _, prefix := range uniqueStrings([]string{mod.EnvPrefix, defaultEnvPrefix(mod.Name)}) {
 		if prefix != "" && strings.HasPrefix(key, prefix+"_") {
 			return true

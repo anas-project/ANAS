@@ -1,7 +1,7 @@
 # Incus 租约围栏、归属与 7.x 限制键实机核验
 
 状态：实机核验记录。日期：2026-09-26。基线：`0b614488` 加累积工作树；Provider 由工作树构建。
-对应[审查](2026-09-25-compute-contract-incus-review.md) §1.1—§1.3 的修复与 7.x 限制键处理，
+对应[审查](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-compute-contract-incus-review.md) §1.1—§1.3 的修复与 7.x 限制键处理，
 需求 `INCUS-R-008`、`INCUS-R-011`、`INCUS-R-052`、`INCUS-R-106`，并补充 `INCUS-R-085` 的证据。
 
 ## 范围与隔离

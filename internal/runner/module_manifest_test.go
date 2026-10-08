@@ -832,7 +832,7 @@ config:
 		},
 		"export-only global glob": {
 			modules: map[string]string{"one": "  exports: [T*]\n"},
-			want:    "TZ",
+			want:    "TEMP_PATH",
 		},
 		"export-only topology literal": {
 			modules: map[string]string{"one": "  exports: [DOMAINS]\n"},

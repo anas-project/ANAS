@@ -17,7 +17,7 @@ userns，并不保证未加载内层策略的Debian guest程序可创建它。�
 依赖它完成；失败不能忽略。策略不放入通用自动加载目录，普通guest程序不因此获得许可。
 新配方必须产出新不可变revision，原生门禁核对自动加载、普通userns拒绝及实际OCI执行。
 原因、独立策略对照与新镜像验收分别记录于
-[`2026-09-24-forgejo-runner-userns-policy.md`](../../../dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md)。
+[`2026-09-24-forgejo-runner-userns-policy.md`](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md)。
 
 首次新策略镜像虽已构建、导出并重复复用，但普通userns拒绝门禁失败，不能交付为运行
 就绪。官方parser包同时启用了发行版完整profile加载器，带入允许userns的fallback。
@@ -49,7 +49,7 @@ Store 中的新代凭据追加给旧 Hook；清理只使用原私有投影。Hoo
 不当作有效注册；只读数据库事实与在线scope API分别核验，不删除历史来制造空库存。
 正常关机与物理宿主Docker/网络对照相同。该结果不是默认Docker DROP兼容或完整
 IAM/PostgreSQL业务栈验收，详见
-[停止联合验收](../../../dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
+[停止联合验收](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。
 
 ## Runner 的内部 CA 投影
 
@@ -58,7 +58,7 @@ IAM/PostgreSQL业务栈验收，详见
 仓库五种工作流场景均通过。生产 stdin CA 路径没有手工 guest 信任安装替身；一份独立
 运行中观察还确认系统根与镜像相同、临时 bundle 恰好加入本次公开 CA。最终资源回收、
 正常 VM 退出和物理宿主 Docker/网络对照通过。详见
-[验收记录](../../../dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
+[验收记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md)。
 
 Actions controller 与 preflight 只读挂载固定的公开 `anas-internal-ca.crt`，不挂载 CA 私钥
 或整个证书目录。启用 Actions 时校验打开的单链接文件、root 所有权、不可写权限和有界
@@ -134,7 +134,7 @@ actions-engine；Podman 继承 systemd 的监听 FD，不再自行创建 0600 so
 privileged job 或任意 volume。后续为实际 OCI 执行调整的 Provider namespace 策略见下文。
 
 这些是源码修复，候选镜像与真实 one-job 的实际通过范围见
-[本轮验证记录](../../../dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md)。
+[本轮验证记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-onejob-runtime-completion.md)。
 
 本文记录 `forgejo` 的容器适配、Hook、安全边界与验证入口。用户操作见[中文 README](../README.md)。
 

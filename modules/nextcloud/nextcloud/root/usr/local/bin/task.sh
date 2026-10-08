@@ -1,4 +1,5 @@
 #!/bin/bash
+# TEST_CASES: TEMP-T-021
 set -o pipefail
 
 . /usr/local/bin/nextcloud-download.sh
@@ -482,7 +483,10 @@ if [ -n "$COLLABORA_DOMAIN_FULL" ]; then
     --arg allowlist "$collabora_wopi_allowlist" \
     '{apps:{richdocuments:{doc_format:"ooxml",public_wopi_url:$url,wopi_url:$url,wopi_allowlist:$allowlist}}}')
   import_occ "$richdocuments_config"
-  occ richdocuments:activate-config
+  # Collabora depends on Nextcloud readiness, so activation cannot block this
+  # task. The bounded worker checks discovery with the existing CA trust and
+  # retries the official command after Collabora's proxy route is available.
+  /usr/local/bin/anas-office-activate.sh /run/nextcloud-office.ready 900 &
 else
   disable_app 'richdocuments'
 fi

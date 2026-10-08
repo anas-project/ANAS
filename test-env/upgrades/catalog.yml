@@ -39,9 +39,9 @@ modules:
     transitions:
       - {id: casdoor-r8-r10, from: 3.143.0-r8, to: 3.143.0-r10, suite: modules-casdoor}
   - name: collabora
-    current: 26.4.2-r5
+    current: 26.4.2-r6
     transitions:
-      - {id: collabora-r4-r5, from: 26.4.2-r4, to: 26.4.2-r5, suite: modules-app}
+      - {id: collabora-r4-r6, from: 26.4.2-r4, to: 26.4.2-r6, suite: modules-app}
   - name: ddns_go
     current: 6.17.4-r6
     transitions:
@@ -105,9 +105,10 @@ modules:
     transitions:
       - {id: postgres-r3-r4, from: 18.4.0-r3, to: 18.4.0-r4, suite: modules-app}
   - name: samba_dc
-    current: 4.23.6-r11
+    current: 4.23.6-r12
     transitions:
-      - {id: samba-dc-r7-r11, from: 4.23.6-r7, to: 4.23.6-r11, suite: modules-app}
+      - {id: samba-dc-r7-r12, from: 4.23.6-r7, to: 4.23.6-r12, suite: modules-app}
+      - {id: samba-dc-r11-r12, from: 4.23.6-r11, to: 4.23.6-r12, suite: modules-app}
   - name: samba_fs
     current: 4.23.6-r6
     transitions:

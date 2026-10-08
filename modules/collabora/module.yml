@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: collabora
 version: 26.4.2
-revision: 5
+revision: 6
 app_version: 26.04.2.4.1
 abi:
   supports:
@@ -14,6 +14,17 @@ status: release
 runtime:
   type: compose
   compose_file: docker-compose.yml
+temporary_directories:
+  - name: runtime
+    service: anas_collabora
+    target: /var/lib/anas-collabora
+    lifecycle: container
+    uid: 0
+    gid: 0
+    mode: "0755"
+    min_free_bytes: 8589934592
+    min_free_inodes: 20000
+    required_features: [hardlink, exec]
 dependencies:
   requires:
     - nextcloud

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `samba_dc` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `4.23.6-r11` / `anas.module/v1`.
+> 状态：当前实现；对应 `4.23.6-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,8 +17,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r11` | `` | 3 |
-| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r11` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r12` | `` | 3 |
+| `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r12` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
@@ -199,8 +199,11 @@ r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 
 - `LEGO_CERT_NAME`
 - `LEGO_KEY_NAME`
 - `ANAS_IDENTITY_APP_CLIENTS`
+- `ANAS_IDENTITY_CAPABILITY_GROUPS`
 
 依赖闭包不会自动授予全部环境变量。敏感值只有在所有权或 `config.consumes` 明确允许时才进入该 Module 的 Hook/容器作用域。
+
+`ANAS_IDENTITY_CAPABILITY_GROUPS` 是由启用的 Module Hook 发布的可选逗号分隔能力码名单；没有发布者时该键可以缺失。结构脚本将缺失或空名单视为空，不创建能力 OU/Group，继续后续目录和管理员初始化。非空名单仅在 `create_structure=true` 时创建对应 `CAP_*` 组；其他必需环境仍由 `set -u` 拒绝缺失。
 
 ## Hook、变更与回滚
 
@@ -211,6 +214,7 @@ r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 
 ## 测试与实现位置
 
 - [`main_test.go`](../hook/main_test.go)
+- [`structure_script_test.go`](../hook/structure_script_test.go)：实际 Bash 执行生产能力组段，覆盖缺失、空名单、非空名单、关闭结构创建及缺少必需环境；仅替换目录写入，不操作 Samba 数据或 `/run`。
 - [`zone_script_test.go`](../hook/zone_script_test.go)
 - [`domain_dns.go`](../hook/domain_dns.go)
 - [`module.yml`](../module.yml)

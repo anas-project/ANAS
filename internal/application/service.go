@@ -106,6 +106,9 @@ func (s *Service) Status(ctx context.Context) (StatusResult, error) {
 		}
 		result.RuntimeStatus = nullableString("unknown")
 		result.RuntimeProbeError = nullableString("runtime_probe_failed")
+		// A failed container observation can still return independently observed
+		// storage facts. Keep those Module results without claiming stack health.
+		result.ModuleRuntime = append([]ModuleRuntimeStatus{}, runtime.Modules...)
 		return result, nil
 	}
 	result.RuntimeStatus = nullableString(runtime.Status)

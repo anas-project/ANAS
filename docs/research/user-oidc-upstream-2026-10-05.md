@@ -4,7 +4,7 @@
 
 ## 结论
 
-**同日实机补充：**[统一 anchor UID 验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-10-05-nextcloud-anchor-uid-acceptance.md) 已通过。对于本项目无需迁移的新部署，将 LDAP 内部 UID 来源与 OIDC mapping 统一，并补充 LDAP 搜索属性和登录过滤器，可直接关联同一账号，不需要 LDAP 身份查询补丁。下面拟提交的 issue 仅适用于必须保留旧内部 UID 的场景，当前项目不再需要为此发布功能请求。
+**同日实机补充：**[统一 anchor UID 验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) 已通过。对于本项目无需迁移的新部署，将 LDAP 内部 UID 来源与 OIDC mapping 统一，并补充 LDAP 搜索属性和登录过滤器，可直接关联同一账号，不需要 LDAP 身份查询补丁。下面拟提交的 issue 仅适用于必须保留旧内部 UID 的场景，当前项目不再需要为此发布功能请求。
 
 - 当前固定版本为 8.10.1。原始控制器与上游 v8.10.1 的 SHA256 相同：`8c1d99d3e7ae766f1b67ff641b881b09cfa391b37eb82a5783d1a988c18606fc`。
 - 重复 back-channel logout 返回 400 已有 [issue #1430](https://github.com/nextcloud/user_oidc/issues/1430)，由 [PR #1431](https://github.com/nextcloud/user_oidc/pull/1431) 和 [PR #1432](https://github.com/nextcloud/user_oidc/pull/1432) 修复。[v8.11.0](https://github.com/nextcloud/user_oidc/releases/tag/v8.11.0) 已包含修复，源码也校验退出令牌 issuer。无需另开此问题。

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `collabora`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `26.4.2-r5` / `anas.module/v1`.
+> Status: current implementation; based on `26.4.2-r6` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_collabora` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1` | `` | 0 |
+| `anas_collabora` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-collabora:26.04.2.4.1` | `` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -77,6 +77,12 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 ## Hooks, changes, and rollback
 
+The frozen `.hook.bin --container-start` is also the container entry point. It copies `/opt/cool/systemplate` and `/opt/collaboraoffice` into `systemplate` and `office` beneath the single managed `/var/lib/anas-collabora` bind. Copying preserves modes, owners, symlinks, and hardlinks; unsupported special files reject startup. A marker for the fixed image version is written only after both templates are complete. The wrapper clears only this instance's disposable `child-roots` and `cache`, drops supplementary groups and GID/UID to `1001:1001`, then `exec`s `coolwsd` so normal Docker stop signals reach the application.
+
+The original `--use-env-vars`, file-server, logging, and stop-on-config-change options are preserved. Template, jail, and cache paths point to the managed tree; `--lo-template-path` selects the copied office template and `mount_jail_tree=false` avoids an additional mount privilege. Compose starts initialization as `0:0`, mounts the frozen hook read-only, and allows 180 seconds for normal shutdown. It does not require a shell, `cp`, `setpriv`, a standalone service, or a rebuilt upstream image. The Runner generates the runtime bind with `create_host_path: false` and verifies it against its persisted lease.
+
+The Compose healthcheck invokes `/usr/local/bin/anas-collabora-start --container-probe` in the same frozen Go hook. This entry point rejects extra arguments and only `exec`s `/usr/bin/coolwsd --probe`, preserving its native exit code. Compose still initializes as `0:0`; the health entry point clears supplementary groups, then drops to fixed GID/UID `1001:1001`. Any failed privilege drop rejects the probe without falling back to root. This entry point does not initialize templates, clear `child-roots` or `cache`, or start the `coolwsd` service. The native probe result continues to determine health; discovery and initialization markers do not replace it.
+
 - Hook command: `go run ./hook`
 - `credential_rotate`, `data_migrate`, and `immutable` are blocked from ordinary edits; the declared lifecycle operation must update persistent application state.
 - A local-administrator rotation commits the generated secret only after the module handler succeeds; failure keeps or restores the old application credential.
@@ -84,6 +90,7 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Tests and implementation locations
 
 - [`main_test.go`](../hook/main_test.go)
+- [`container_start_test.go`](../hook/container_start_test.go): complete templates, permissions, links, and special-file rejection
 - [`module.yml`](../module.yml)
 - [`docker-compose.yml`](../docker-compose.yml)
 

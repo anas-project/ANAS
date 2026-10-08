@@ -60,6 +60,10 @@ php /var/www/html/occ config:system:set files.trash.delete --type=boolean --valu
 php /var/www/html/occ config:system:set trashbin_retention_obligation --type=string --value="60,365"
 ```
 
+## Office startup
+
+When Collabora is enabled, Nextcloud finishes its own initialization first. Office then waits for Collabora and activates automatically. Initial deployment, rebuilds, and temporary directory switches can require a wait; the background task retries for at most 900 seconds and reports a timeout in the container log. Nextcloud health can precede Office readiness. Certificate verification and the WOPI access restriction remain enabled.
+
 ## Identity, users, and groups
 
 LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. `anasIdentityAnchor` links both paths to the existing LDAP account. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.

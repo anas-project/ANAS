@@ -1,4 +1,5 @@
 // REQUIREMENTS: CONSOLE-R-008 CONSOLE-R-010
+// TEST_CASES: TEMP-T-010
 import { fileURLToPath, URL } from "node:url"
 
 import vue from "@vitejs/plugin-vue"
@@ -9,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "vitest-environment-vue-host": fileURLToPath(new URL("./src/lifecycle/temporary-storage-test-environment.ts", import.meta.url)),
     },
   },
   build: {

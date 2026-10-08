@@ -10,15 +10,15 @@ updated: 2026-10-03
 2026-09-23 最新：Ubuntu 26.04 amd64 的实际已安装 CLI/HTTPS→共享 job→systemd hostd
 已通过完整 23 项门禁，含真实确认后安装/配置/登记/卸载、跨工作区拒绝、重放拒绝、真实
 五分钟过期及新计划执行，并有 Docker 控制桥传输与拒绝验证。最新 VM 正常关机，独立
-宿主对照一致，见[完整接续记录](../reviews/2026-09-23-incus-consumer-control-bridge.md)。
+宿主对照一致，见[完整接续记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-23-incus-consumer-control-bridge.md)。
 此前第十一轮 17 项通过与 VM 看门狗退出/只读证据恢复分别见
-[已安装审批记录](../reviews/2026-09-23-incus-installed-approval.md)。这是主要发行版的通道
+[已安装审批记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-23-incus-installed-approval.md)。这是主要发行版的通道
 验收，不是正式发行安装器的完整升级矩阵、非 systemd 支持或全部动作/浏览器交互验收。
 
 2026-09-21 接续新增观察范围配置的具名 plan/执行动作，操作限定 refresh/disable，沿用共享
 确认与审计，不增加 socket 或特权入口；客户端不能提交 scope 内容。中断后的 pending 状态
 阻止继续观察，明确撤销保留墓碑。CLI/HTTP 同步接线，真实 root/systemd 验收仍待执行。
-实现与五问审阅见[观察配置交付核对](../reviews/2026-09-21-incus-observer-configuration.md)。
+实现与五问审阅见[观察配置交付核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-21-incus-observer-configuration.md)。
 
 验收依据是[宿主特权动作通道要求](../requirements/host-action-channel.md)；设计见
 [同名架构文档](../../docs/architecture/host-action-channel.md)。
@@ -39,12 +39,12 @@ updated: 2026-10-03
 普通部署/维护 worker 的后续接续已共享同一个协调器，防止它在宿主队列之外更换旧中介依赖。
 普通写任务在领取前非阻塞等待，旧清理仍可进入宿主队列；本轮不新增 root 动作或批准方式。
 独立 CLI、生产启动器与跨进程持久恢复仍待接入，见
-[工作区任务核对](../reviews/2026-09-21-incus-workspace-mutation-gates.md)。
+[工作区任务核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-21-incus-workspace-mutation-gates.md)。
 
 2026-09-21 接续将已确认配置任务与中介排空屏障连接到共享队列及实际 broker 授权回调。
 等待清理不占用 root 执行位置；正常停机保留只读队列/租约至清理完成，失败须可信所有者显式
 重试，不增加 root 动作或 HTTP 接口。生产 launcher、异常跨进程恢复和实机证明仍缺，不能提升
-需求完成状态。实施与验证见[配置排空协调记录](../reviews/2026-09-21-incus-ingress-coordination.md)。
+需求完成状态。实施与验证见[配置排空协调记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-21-incus-ingress-coordination.md)。
 
 2026-09-21 增加编译只读动作 `incus.ingress.observe_http`，对应 INCUS-R-063/R-087/R-088 和
 HOSTACT-R-001/R-002/R-005/R-012/R-013。它复用本通道而非另起 root 服务；未自动安装 observer
@@ -58,7 +58,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | 如何撤销 | 停止/切换活动部署、删除 scope、撤销或改变连接 bundle 都使后续观察失败；观察没有网络变更需要反向执行。已有路由仍须走原独立撤销链 |
 | 半途失败与重跑 | 任一读、复核、关闭或审计失败不返回可用身份；新观察使用新 job/nonce，不 coalesce、不读历史结果。等待方取消不伪装为宿主任务取消，执行监督沿用原通道 |
 
-代码与本机回归见[受限宿主观察接线](../reviews/2026-09-21-incus-host-observation-wiring.md)。只读动作
+代码与本机回归见[受限宿主观察接线](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-21-incus-host-observation-wiring.md)。只读动作
 最长 30 秒；周期性 root 观察的开销、队列争用与日志容量必须实测后才可默认启用，不能把安装动作的
 罕见调用预算直接当作运行时控制循环的吞吐保证。M0/M1/M2 状态及真实宿主退出条件不因此提前完成。
 
@@ -84,7 +84,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 切换 workspace/选项或卸载组件会结束本地等待但不会自动取消服务端 job。CLI 凭据与确认请求
 通过单一 stdin 信封传递，不通过进程参数传原始 token。入站发布与未验收的环境能力继续拒绝。
 
-本轮实际门禁和保留缺口统一见[中断恢复与集成回归](../reviews/2026-09-19-incus-integration-recovery.md)。
+本轮实际门禁和保留缺口统一见[中断恢复与集成回归](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-incus-integration-recovery.md)。
 
 ## 2. 顺序理由
 
@@ -96,7 +96,7 @@ job），因此排在 M2 之后。
 
 2026-09-19 新增 `internal/hostaction` 和 `internal/incushost`，本机单元及 race 通过；
 Linux 专属 peer/文件系统测试须分开记录，交叉编译不等于原生运行。完整验证与外部包来源见
-[本轮核对记录](../reviews/2026-09-19-incus-host-preflight-implementation.md)。没有 root 服务安装或通道 E2E 通过记录。
+[本轮核对记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-incus-host-preflight-implementation.md)。没有 root 服务安装或通道 E2E 通过记录。
 
 以下为先前历史基线：前置[统一动作 ABI](action-abi.md)
 的内部实现已保存为 `3abe464` 并参与本次合并，但未接入 root 通道，也没有通过记录。
@@ -169,7 +169,7 @@ CLI 新增 `anas host actions`，明确只是当前客户端编译清单、没�
 root 二进制和 socket。写动作、二段确认、包安装/卸载、真实 Incus/KVM 仍未完成。
 
 本次验证及固定上游依据登记到
-[激活与 job 绑定核对](../reviews/2026-09-19-host-action-activation-job-binding.md)。
+[激活与 job 绑定核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-action-activation-job-binding.md)。
 M0/M1/M4 保持实施中，不能以本机测试或本机清单替代服务端能力和 Linux 原生验收。
 
 本次全仓 Go 测试/vet、hostaction/jobexecutor/consolejobs 的 race、Linux 双架构源码及测试
@@ -186,7 +186,7 @@ M0/M1/M4 保持实施中，不能以本机测试或本机清单替代服务端�
 
 新增协议/错误路径测试和 Linux 真实子进程 fixture；原生入口
 `bash test-env/scripts/test-host-job-broker-native.sh` 检查关键用例确实执行，不把 skip 计为通过。
-验证结果与未运行部分见[跨进程核对](../reviews/2026-09-19-host-job-broker-implementation.md)。
+验证结果与未运行部分见[跨进程核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-job-broker-implementation.md)。
 仍缺私有 listener、非 root 所有者服务装配/迁移、root 可执行程序及发布安装、实际退出码与后代
 清理证据、公共执行入口和二段确认；不得将本轮握手当作生产通道或 M0 验收完成。
 
@@ -199,7 +199,7 @@ M0/M1/M4 保持实施中，不能以本机测试或本机清单替代服务端�
 
 增加 Store 集成生命周期测试与 Linux listener 回归，并扩展原生脚本、接入 Go CI。最新机制见
 [架构 §10](../../docs/architecture/host-action-channel.md)；实际门禁和限制见
-[本轮核对](../reviews/2026-09-19-host-job-broker-listener.md)。上述 listener 缺口已编码，
+[本轮核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-job-broker-listener.md)。上述 listener 缺口已编码，
 但非 root 服务迁移/装配、正式 root 程序与发布安装、真实退出状态及生产 recorder、公共执行入口、
 二段确认和 Incus 安装/卸载仍未交付。M0 保持实施中，不以新增测试或工作流接线计作生产验收。
 
@@ -216,7 +216,7 @@ M0/M1/M4 保持实施中，不能以本机测试或本机清单替代服务端�
 
 新增依赖 `github.com/godbus/dbus/v5 v5.2.2` 用于真实 D-Bus 客户端；不自行实现协议、不启动
 shell 或外部 systemctl。相关代码测试、发行包核对与真实未执行范围见
-[本轮记录](../reviews/2026-09-19-host-action-exit-completion.md)。Linux/systemd 实机、非 root
+[本轮记录](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-action-exit-completion.md)。Linux/systemd 实机、非 root
 执行者服务迁移、公共请求入队、二段确认及安装/配置/对称卸载仍待交付；M0/M1 未标完成。
 
 ## 12. 2026-09-19：恢复中断、共享队列与可选 HTTP 入口
@@ -229,7 +229,7 @@ shell 或外部 systemctl。相关代码测试、发行包核对与真实未执�
 纯逻辑、真实 Store 队列、HTTP 权限/CSRF/投影与 daemon 生命周期测试覆盖这条代码接线；
 停机同时收到 runtime 结束和取消时误报失败、队列扫描后被取消导致 owner 停止两个竞态已修复。
 HTTP 只允许 full/TLS/owner 的空参数预检，具体契约见服务配置参考与 OpenAPI；CLI invoke 和页面
-按钮仍未提供。实际执行、验证与限制见[本轮核对](../reviews/2026-09-19-host-action-queue-http.md)。
+按钮仍未提供。实际执行、验证与限制见[本轮核对](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-19-host-action-queue-http.md)。
 
 非 root Linux 配置读取新增 root-owned 0640/指定 primary group 的独立路径，原 root 0600 政策
 不变。**这不解决 TLS 私钥读取**：现有证书加载器仍要求 root 所有且私钥无组/其他读权限。

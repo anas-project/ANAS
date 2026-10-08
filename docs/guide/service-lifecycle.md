@@ -70,3 +70,25 @@ anas snapshot restore <snapshot-id> -w /srv/anas
 ```
 
 这类替换操作只接受显式 `-w`，以降低命令指向错误 workspace 的风险。执行前先阅读[备份与恢复](backup-and-restore.md)。
+
+## 临时存储与路径切换
+
+Module 通过 `temporary_directories` 显式声明可丢弃目录。默认根为 `<workspace>/tmp`；可用 `global.temp_path` 指定绝对路径。Runner 在启动前登记租约、按声明设置权限，并核验 Docker 实际绑定。空间或文件系统身份无法核验时拒绝分配；已有临时内容保留。
+
+解析后的根路径改变时，`plan` 的 `temp_switch` 展示全部停止与启动范围以及会话中断影响。`apply` 先预检目标，再按旧依赖逆序停止全部 Module，并按目标依赖正序重建启动。旧内容不会复制；正常停止、现有启动链或挂载核验失败时保留旧树并尝试恢复。成功后清理本 workspace 已释放目录，清理失败会保留新服务运行并登记重试。
+
+已提交切换的旧目录清理失败会记录为 `cleanup_deferred` 并报告 `temp_cleanup_pending`，后续停启、应用配置和再次切换仍可执行。旧目录租约继续保留，可在故障解除后显式 GC；未提交切换、未确认的停止钩子或目标挂载核验失败仍阻止自动恢复。普通定向启动只预检选中模块及其依赖范围；定向重启在停止前完成相同范围的临时存储预检。
+
+```bash
+anas temp status -w /srv/anas
+anas temp gc --dry-run -w /srv/anas --json
+anas temp gc -w /srv/anas
+```
+
+GC 强制显式 `-w`；运行或已停止容器仍有绑定时不会删除，Docker 查询失败时也会保留。中断的切换需先通过 `apply` 或 `start` 对账；GC 不会隐式启动服务。运行状态中的 `temp_storage` 会显示不足或不可用，并覆盖成功的健康探针；条件恢复后刷新状态，不触发重启。Btrfs 没有固定 inode 池，inode 余量显示“不适用”。
+
+控制台的“刷新运行状态”重新查询当前 workspace；查询恢复后清除此前的请求错误。切换 workspace 时，较早查询的结果不会覆盖当前页面。
+
+历史回滚的临时根不同时，使用历史冻结配置、lock 和 Module 制品生成新的 deployment，再复用上述切换流程。历史制品和历史临时内容不会恢复或改写。
+
+备份恢复到另一 workspace 或克隆后的外来冻结制品只用于诊断与配置恢复，不授予源 project 的运行权限。先执行不带 `--deployment` 的 `anas apply`，生成目标制品及新租约；此前的生命周期、历史回滚与对应预览拒绝操作源制品。受管临时部署必须保留有效的冻结 `DATA_PATH` 绑定；无绑定或绑定无效时不能推断授权。同 workspace 快照恢复和有效本地租约保持原授权。

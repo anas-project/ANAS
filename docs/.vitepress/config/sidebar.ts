@@ -113,6 +113,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
         { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
         { text: 'Forgejo Module', link: '/architecture/forgejo-module-design' },
+        { text: 'Immich Module 接入', link: '/architecture/immich-module-design' },
+        { text: 'Module 资源运行方式（下一版本）', link: '/architecture/module-resource-profiles' },
         { text: 'Incus 宿主供给与镜像烘焙', link: '/architecture/incus-host-provisioning' },
         { text: '统一动作 ABI', link: '/architecture/action-abi' },
         { text: '远端备份与异地容灾', link: '/architecture/remote-backup-and-dr' },
@@ -148,7 +150,10 @@ export const zhSidebar: DefaultTheme.Sidebar = {
     {
       text: '功能与集成可行性',
       items: [
+        { text: 'Docker / Podman 兼容性', link: '/research/docker-podman-compatibility' },
+        { text: 'Casdoor 应用目录与权限过滤', link: '/research/casdoor-app-catalog' },
         { text: 'Casdoor 目录主体标识符', link: '/research/casdoor-directory-subject' },
+        { text: 'Immich 接入可行性', link: '/research/immich-module-integration' },
         { text: 'LLNG Passkey 与 Samba 边界', link: '/research/llng-passkey-webauthn-samba-sharing' },
         { text: 'IAM 登出与会话同步', link: '/research/iam-logout-application-session-sync' },
         { text: 'Super Productivity Nextcloud SSO', link: '/research/super-productivity-nextcloud-sso-sync-research' },
@@ -257,6 +262,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
       text: 'Architecture',
       items: [
         { text: 'Overview', link: '/en/architecture/' },
+        { text: 'Immich integration (Chinese)', link: '/architecture/immich-module-design' },
+        { text: 'Module resource modes: next release (Chinese)', link: '/architecture/module-resource-profiles' },
         { text: 'Core implementation standard', link: '/en/architecture/core-implementation-standard' },
         { text: 'Module, Contract, Resource', link: '/en/architecture/module-contract-resource-design' },
         { text: 'IAM capability design', link: '/en/architecture/iam-capability-design' },
@@ -269,7 +276,10 @@ export const enSidebar: DefaultTheme.Sidebar = {
       text: 'Research',
       items: [
         { text: 'Overview', link: '/en/research/' },
+        { text: 'Docker / Podman compatibility (Chinese)', link: '/research/docker-podman-compatibility' },
+        { text: 'Casdoor application catalog (Chinese)', link: '/research/casdoor-app-catalog' },
         { text: 'Casdoor directory subject feasibility (Chinese)', link: '/research/casdoor-directory-subject' },
+        { text: 'Immich integration feasibility (Chinese)', link: '/research/immich-module-integration' }
       ]
     }
   ],

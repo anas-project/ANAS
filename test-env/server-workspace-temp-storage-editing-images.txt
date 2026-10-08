@@ -1,0 +1,17 @@
+# TEST_CASES: TEMP-T-021
+# Fixed Compose images enabled by server-workspace-temp-storage-editing.yml.in.
+# Pull serially through the verified private Docker daemon. Inspect and record
+# repo digests after pulling; this list is an input, not download evidence.
+ghcr.io/anas-project/anas-lego:5.3.1-r5
+ghcr.io/anas-project/anas-traefik:3.7.10-r6
+ghcr.io/anas-project/anas-samba-dc:4.23.6-r12
+ghcr.io/anas-project/anas-mirror-ubuntu:resolute-678c6550cc43
+ghcr.io/anas-project/anas-samba-dc-anchor:4.23.6-r12
+ghcr.io/anas-project/anas-mirror-postgres:18.4-alpine
+ghcr.io/anas-project/anas-llng:2.23.2-r12
+ghcr.io/anas-project/anas-eturnal:1.12.2-r6
+ghcr.io/anas-project/anas-nextcloud:34.0.2-r11
+ghcr.io/anas-project/anas-mirror-nextcloud-notify-push:2026.07.30-7c156254927e
+ghcr.io/anas-project/anas-mirror-nextcloud-imaginary:2026.07.30-d5e7ffac6e1a
+ghcr.io/anas-project/anas-mirror-redis:8.10.0-alpine
+ghcr.io/anas-project/anas-mirror-collabora:26.04.2.4.1

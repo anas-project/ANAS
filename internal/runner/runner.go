@@ -111,6 +111,9 @@ type app struct {
 	artifactRoot string
 	// dnsReg is the DNS platform registry, loaded on first use.
 	dnsReg *dns.Registry
+	// A path transition retains old leases until the candidate mounts have
+	// been verified, so compensation can restart the previous containers.
+	retainTemporaryLeases bool
 }
 
 func (a *app) warning(code, format string, args ...any) {
@@ -156,6 +159,8 @@ func dispatch(command string, args []string, jsonMode bool) error {
 		return runInit(args, jsonMode)
 	case "plan":
 		return runPlan(args, jsonMode)
+	case "temp":
+		return runTemp(args, jsonMode)
 	case "render", "build":
 		return runPrepare(command, args, jsonMode)
 	case "apply":
@@ -204,7 +209,7 @@ func dispatch(command string, args []string, jsonMode bool) error {
 // what can be invoked rather than trying to render the same paragraphs.
 var commandNames = []string{
 	"init", "plan", "lock", "render", "build", "apply", "start", "restart",
-	"stop", "rollback", "status", "deployments", "issues", "snapshot", "backup", "config", "admin", "console", "module",
+	"stop", "rollback", "status", "temp", "deployments", "issues", "snapshot", "backup", "config", "admin", "console", "module",
 	"credential", "host", "version",
 }
 
@@ -258,6 +263,9 @@ Usage:
   anas stop    [MODULE...] [-w WORKSPACE]
   anas rollback [DEPLOYMENT_ID] -w WORKSPACE
   anas status [-w WORKSPACE]
+  anas temp status [-w WORKSPACE]
+  anas temp gc --dry-run -w WORKSPACE
+  anas temp gc -w WORKSPACE
   anas deployments list|inspect [ID] [-w WORKSPACE]
   anas issues  [-w WORKSPACE]
   anas snapshot list|show|create|pin|unpin|delete|prune|verify|path [-w WORKSPACE]
@@ -292,18 +300,19 @@ Usage:
 
 Workspace:
   A workspace holds the config, data, snapshots and runtime state of one
-  deployment, so backing up that single directory backs up everything.
+  deployment. Managed temporary files are excluded from backups.
 
     <workspace>/config.yml   CLI-managed normalized desired state (do not edit)
     <workspace>/data/        application state; replaced by a restore
     <workspace>/userdata/    files people store; never touched by a rollback
     <workspace>/snapshots/   point-in-time copies
     <workspace>/.anas/       runtime state
+    <workspace>/tmp/         default managed temporary root (global.temp_path can override)
 
   It is resolved from -w, then $ANAS_WORKSPACE, then the current directory
   when that directory already contains .anas/. Commands never create one
-  implicitly; run "anas init" for that. "rollback" and "snapshot restore"
-  accept only -w.
+  implicitly; run "anas init" for that. "rollback", "snapshot restore" and
+  "temp gc" accept only explicit -w.
 
 Snapshot versus backup:
   A snapshot is local, instant, and exists so an upgrade can be undone. A
@@ -609,6 +618,10 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 		dir := filepath.Join(release, name)
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "down"); err != nil {
 			stopErrors = append(stopErrors, fmt.Errorf("stop %s: %w", name, err))
+		} else if !a.retainTemporaryLeases {
+			if err := a.releaseModuleTemporaryStorage(name); err != nil {
+				stopErrors = append(stopErrors, fmt.Errorf("release %s temporary storage: %w", name, err))
+			}
 		}
 	}
 	if a.hostLANRequired() {
@@ -1206,6 +1219,9 @@ func (a *app) renderAll(work string) error {
 			for _, key := range resp.InternalEnv {
 				delete(fileEnv, key)
 			}
+		}
+		if err := renderTemporaryDirectoryMounts(mod, dir); err != nil {
+			return err
 		}
 		if err := writeEnv(filepath.Join(dir, ".env"), fileEnv); err != nil {
 			return err

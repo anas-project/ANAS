@@ -162,4 +162,4 @@ The `lab-r4 / amd64 / incus_container` candidate completed a real distrobuilder 
 repeat-build reuse, actual Provider multipart import and restricted-container boot. Runner 13.2.0 and
 its one-job CLI checks passed, but the rootless Podman API subtest exited 125, failing the overall image
 gate. No real workflow, signed production release or other architecture/tier acceptance is claimed.
-See the [recovery record](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md).
+See the [recovery record](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-22-incus-runner-build-recovery.md).

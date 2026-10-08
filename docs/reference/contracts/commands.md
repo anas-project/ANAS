@@ -290,11 +290,14 @@ probe/reconcile/verify 和 after-start/local-admin ready barrier；该屏障成�
 | code | 退出码 | 何时 |
 | --- | --- | --- |
 | `no_active_deployment` | 4 | 还没 apply 过 |
+| `deployment_workspace_mismatch` | 4 | 外来冻结制品没有本 workspace 运行授权；先不带 `--deployment` 执行配置 apply |
 | `compose_missing` | 4 | 没有 docker compose |
 | `deployment_unreadable` | 4 | 活跃部署的制品坏了或不在 |
 | `credential_store_mismatch` | 4 | 活跃 deployment 的凭据代次/authority 与 Store 不一致；先恢复匹配快照 |
 | `lock_failed` | 1 | 无法取得运行时锁，或 credential transaction 自动恢复失败 |
 | `start_failed` / `stop_failed` | 1 | 动手之后失败 |
+
+生命周期及历史回滚预览也核对冻结 workspace 绑定；恢复或克隆的外来制品不能通过 `apply --deployment`、历史回滚或共享运行时入口操作源 project。目标配置 apply 会生成本地 deployment；无源租约登记也不会跳过外来 active 检查。
 
 ## rollback
 
@@ -345,12 +348,32 @@ anas status [-w WORKSPACE] [--json]
   "active_deployment": "20260731T101500Z-a1b2c3d4",
   "activated_at": "2026-07-31T10:15:07Z",
   "verified_at": "2026-07-31T10:15:07Z",
+  "runtime_status": "running", "runtime_healthy": false,
+  "runtime_probe_error": null,
+  "module_runtime": [{
+    "module": "collabora", "runtime": "running", "health": "unhealthy", "containers": 1,
+    "temp_storage": {"state": "low_space", "issues": [{"code": "temp_low_space", "name": "runtime"}]}
+  }],
   "previous_deployments": ["20260730T090000Z-9f8e7d6c"]
 }
 ```
 
 **没有活跃部署是一个成功的回答，退出 0**，`active_deployment` 为 `null`。把它
 报成失败，调用方就分不开"崭新的 workspace"和"状态读不出来的 workspace"。
+
+CLI 和 HTTP 使用同一个实时检查。`runtime_status`、`runtime_healthy`、`runtime_probe_error` 和
+`module_runtime` 描述当前观察，不复用已保存的运行状态。容器查询失败时，整栈为 `unknown`，
+健康值为 `null`，错误码为 `runtime_probe_failed`；已取得的 Module 和临时存储结果仍会返回，
+无法观察的 Module 的 `runtime` 为 `unknown`。无活跃部署时为 `stopped`、空 Module 数组。
+Module `temp_storage` 的问题仅含声明名和错误码，宿主实际路径由 `anas temp status` 查询。
+
+实时状态探针的 Compose 检测和容器查询保留调用进程的 `DOCKER_HOST`、`DOCKER_CONTEXT`、
+`DOCKER_CONFIG`、`DOCKER_TLS_VERIFY`、`DOCKER_CERT_PATH`，未设置的选择项保持未设置；
+这些值不能来自 workspace 或 Module 环境。其余进程环境仍仅继承 PATH/HOME/LANG，
+查询继续受调用上下文取消和时限约束。使用私有或远程 Docker endpoint 时，运行状态因此查询该 endpoint，
+不因受限环境丢失选择项而落到默认 daemon。
+Linux 临时存储检查还会通过该 endpoint 读取 daemon 身份和完整容器清单，必要时先解析当前 Docker context；
+这些查询包括已停止容器，不能仅从 Compose 的运行容器结果推断临时目录已释放。
 
 ## deployments
 
@@ -930,3 +953,19 @@ quiet 凭据处理路径及 daemon 变更路径不保存子进程文本。机器
 Compose 检测时保存进程的 Docker 选择环境；ownership 检查和 Compose 执行复用该选择，部署变量不能
 覆盖 `DOCKER_HOST`、`DOCKER_CONTEXT` 等控制端点变量。此机制保留默认 Docker context 语义；
 尚未实现 context 配置文件快照、统一所有辅助 Docker 查询或非 Unix socket mount 的前置错误。
+
+## temp
+
+```text
+anas temp status [-w WORKSPACE] [--json]
+anas temp gc --dry-run -w WORKSPACE [--json]
+anas temp gc -w WORKSPACE [--json]
+```
+
+GC 必须显式指定 `-w`，不能使用 cwd 或 `ANAS_WORKSPACE` 推断；状态与回收均复用 workspace 执行锁。JSON 使用通用成功信封，顶层增加 `workspace_id`、`applied_root`、`desired_root`、`transition`、`directories` 与 `issues`。每个目录包含 `lease_id`、workspace/deployment/Module/service/声明名、实际 `path` 与 `root`、文件系统身份、已登记容器 ID、生命周期状态、`bytes_used`、`free_bytes`、`free_inodes`、`reclaimable` 和 `blockers`。Btrfs 的 `free_inodes` 为 `null`。`transition` 包含前后 deployment/root、阶段和开始时间；没有切换时为 `null`。
+
+回收只处理本 workspace 的有效登记。容器（包括已停止容器）、宿主挂载、无法核验的文件系统/目录所有权、Docker 查询失败和未对账的切换都会阻止删除。中断切换的实际 GC 返回 `temp_recovery_required`（4），应先运行 `apply` 或 `start`。其他存储操作失败返回 `temp_storage_failed`（1）；JSON 仍只输出一个错误文档。
+
+挂载核验通过同一 Docker endpoint 读取容器内的所有权标记，限制读取大小，并通过目录句柄重新读取宿主标记；标记被替换为符号链接、硬链接或不安全权限时拒绝核验，不读取临时文件内容。删除完成但登记写入被中断时，只在登记的根、文件系统、完整父目录和 Docker 引用再次核对通过后，将已释放且确实不存在的目录记为已删除；这一对账不删除其他路径。
+
+部署 plan 和 HTTP 回滚预览提供 `temp_switch`：`required`、按停止顺序排列的 `stop_modules`、按启动顺序排列的 `start_modules`、`session_interruption`。相同根不要求全量停启。该对象进入确认摘要，且不包含宿主路径。运行 API 的 Module `temp_storage` 包含 `state`（`ok`、`low_space`、`unavailable`、`unknown` 或 `not_applicable`）、`issues`（仅 `code`/`name`）、可选的 `free_bytes`/`free_inodes`；存储问题覆盖成功的健康探针，刷新恢复不触发重启。

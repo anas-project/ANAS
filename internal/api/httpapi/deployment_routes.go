@@ -131,6 +131,7 @@ func newDeploymentHTTPState(options DeploymentOptions) (*deploymentHTTPState, er
 }
 
 type deploymentPlanDTO struct {
+	TempSwitch                 *application.TempSwitchPlan                  `json:"temp_switch,omitempty"`
 	ConfigValidator            string                                       `json:"config_validator"`
 	Digest                     string                                       `json:"digest"`
 	Modules                    []string                                     `json:"modules"`
@@ -763,6 +764,7 @@ func newDeploymentPlanDTO(plan application.PlanResult) deploymentPlanDTO {
 			Provider: plan.DynamicDNS.Provider, SelfManaged: nonNilStrings(plan.DynamicDNS.SelfManaged), Automatic: plan.DynamicDNS.Automatic,
 		},
 		ModuleLifecycles: nonNilModuleLifecycles(plan.ModuleLifecycles),
+		TempSwitch:       normalizeTempSwitch(plan.TempSwitch),
 	}
 }
 

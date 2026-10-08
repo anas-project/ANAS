@@ -232,10 +232,20 @@ func (a *app) beforeStopModule(release, name string) (result error) {
 	if err := bounded.ensureComposeProjectOwnerBounded(ctx, project); err != nil {
 		return err
 	}
+	marked, err := a.beginTemporaryStopCleanup(name)
+	if err != nil {
+		return err
+	}
 	if _, err := bounded.runHook(mod, "before_stop", dir, env); err != nil {
 		return err
 	}
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if marked {
+		return a.finishTemporaryStopCleanup(name)
+	}
+	return nil
 }
 
 type stopHookOutput struct{ bytes.Buffer }
@@ -666,6 +676,9 @@ func applyHookEnv(env map[string]string, patch map[string]string) error {
 		return fmt.Errorf("hook returned invalid env keys: %s", strings.Join(invalid, ", "))
 	}
 	for key, value := range patch {
+		if strings.HasPrefix(key, "ANAS_TEMP_") {
+			return fmt.Errorf("hook cannot write runner-owned temporary storage key %s", key)
+		}
 		env[key] = value
 	}
 	return nil

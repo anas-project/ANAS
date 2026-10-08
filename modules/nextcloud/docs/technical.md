@@ -55,6 +55,8 @@
 
 启用 Collabora 时，`task.sh` 将 `wopi_url` 和 `public_wopi_url` 指向 Collabora，并把 Nextcloud 的 `wopi_allowlist` 限制为共享 Traefik 网络的 CIDR。使用网络范围是为了同时覆盖 Collabora 容器地址和 Docker hairpin 路由呈现的 bridge gateway 地址；若无法确定该网络，初始化会失败而不会退化为不受限的 WOPI 访问。
 
+从 r10 起，Office 配置由容器内的 `anas-office-activate.sh` 在后台初始化。Nextcloud 先完成自己的任务并发布健康状态，使依赖它的 Collabora 可以启动；后台任务最多等待900秒，使用现有 CA 信任检查 `/hosting/discovery`，只在返回 discovery 后执行官方 `richdocuments:activate-config`。命令失败会在截止时间内重试，超时明确记录失败。每次容器启动清除旧 `/run/nextcloud-office.ready`，只有官方激活成功才重新建立标记。编辑验收在真实 discovery、受管挂载与该标记全部就绪后开始，不能以单独的 Nextcloud 健康探针代替 Office 就绪。该修复的真实主机完整验收仍待本轮验证。
+
 ## 身份与授权数据流
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过 `anasIdentityAnchor` 关联既有 LDAP 账号。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。

@@ -87,19 +87,20 @@ type Module struct {
 	// DataBreaking is frozen from the module's upgrade declaration. A pointer
 	// preserves the distinction between an undeclared list and a declared empty
 	// list, which lead to opposite rollback decisions.
-	DataBreaking       *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
-	RuntimeType        string                  `yaml:"runtime" json:"runtime"`
-	ComposeFile        string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
-	Hook               HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
-	ValidationPlan     map[string]string       `yaml:"validation_plan,omitempty" json:"validation_plan,omitempty"`
-	EnvPrefix          string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
-	Consumes           []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
-	Dependencies       []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
-	UseHostLAN         string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
-	Changes            map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
-	Providers          []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
-	LocalAccounts      []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
-	ManagementSurfaces []ManagementSurface     `yaml:"management_surfaces,omitempty" json:"management_surfaces,omitempty"`
+	DataBreaking         *[]string               `yaml:"data_breaking,omitempty" json:"data_breaking,omitempty"`
+	RuntimeType          string                  `yaml:"runtime" json:"runtime"`
+	TemporaryDirectories []TemporaryDirectory    `yaml:"temporary_directories,omitempty" json:"temporary_directories,omitempty"`
+	ComposeFile          string                  `yaml:"compose_file,omitempty" json:"compose_file,omitempty"`
+	Hook                 HookConfig              `yaml:"hook,omitempty" json:"hook,omitempty"`
+	ValidationPlan       map[string]string       `yaml:"validation_plan,omitempty" json:"validation_plan,omitempty"`
+	EnvPrefix            string                  `yaml:"env_prefix,omitempty" json:"env_prefix,omitempty"`
+	Consumes             []string                `yaml:"consumes,omitempty" json:"consumes,omitempty"`
+	Dependencies         []string                `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
+	UseHostLAN           string                  `yaml:"host_lan,omitempty" json:"host_lan,omitempty"`
+	Changes              map[string]ChangePolicy `yaml:"changes,omitempty" json:"changes,omitempty"`
+	Providers            []ContractProvider      `yaml:"contract_providers,omitempty" json:"contract_providers,omitempty"`
+	LocalAccounts        []LocalAccount          `yaml:"local_accounts,omitempty" json:"local_accounts,omitempty"`
+	ManagementSurfaces   []ManagementSurface     `yaml:"management_surfaces,omitempty" json:"management_surfaces,omitempty"`
 	// CredentialProviders and CredentialConsumers freeze the Module-side
 	// contract used to interpret the deployment-level credential inventory.
 	// They contain identifiers and lifecycle metadata only, never values.

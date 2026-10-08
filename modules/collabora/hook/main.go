@@ -61,6 +61,12 @@ func (s *secretStore) Ensure(key string, gen func() (string, error)) (string, er
 }
 
 func main() {
+	if handled, err := runContainerEntry(os.Args[1:], startContainer, probeContainer); handled {
+		if err != nil {
+			fail(err)
+		}
+		return
+	}
 	b, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fail(err)
@@ -87,6 +93,23 @@ func main() {
 		fail(err)
 	}
 	fmt.Print(string(out))
+}
+
+func runContainerEntry(args []string, start func([]string) error, probe func() error) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	switch args[0] {
+	case "--container-start":
+		return true, start(args[1:])
+	case "--container-probe":
+		if len(args) != 1 {
+			return true, fmt.Errorf("Collabora container probe accepts no additional arguments")
+		}
+		return true, probe()
+	default:
+		return false, nil
+	}
 }
 func fail(err error) {
 	fmt.Fprintln(os.Stderr, err)

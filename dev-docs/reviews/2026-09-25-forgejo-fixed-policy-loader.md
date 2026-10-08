@@ -1,15 +1,15 @@
 # Forgejo Runner 固定 AppArmor 加载范围与联合验收
 
 后续第八轮网络超时的实际日志、第九轮Core停止以及新计数/证据回归，接续记录在
-[停止事务与出站前置条件](2026-09-25-forgejo-stop-forwarding-continuation.md)。下文保留
+[停止事务与出站前置条件](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md)。下文保留
 各轮当时的工件身份与终态，不将随后修复归因于此前冻结运行。
 
 状态：新不可变镜像与工作流已完整验收；后续联合停止链路单独记录。
 日期：2026-09-25。
 
 继续实际 `/Users/whl/Documents/anas`，保留全部已有暂存和未暂存修改，不提交或推送。
-接续[构建 chroot 环境修复](2026-09-25-incus-build-chroot-environment.md)和
-[Core 停止前清理](2026-09-24-forgejo-core-stop-barrier.md)。指定测试入口仍为
+接续[构建 chroot 环境修复](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-incus-build-chroot-environment.md)和
+[Core 停止前清理](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-core-stop-barrier.md)。指定测试入口仍为
 `ssh whl@ln.hlong.wang -p 2200`，不联网搜索、不操作物理宿主既有 Docker 容器。
 
 ## 已核对的失败边界

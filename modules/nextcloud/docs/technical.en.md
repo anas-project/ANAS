@@ -55,6 +55,8 @@ This page records the current implementation, security boundaries, and verificat
 
 When Collabora is enabled, `task.sh` points `wopi_url` and `public_wopi_url` at Collabora and restricts Nextcloud's `wopi_allowlist` to the shared Traefik network CIDR. The network range covers both the Collabora container address and the bridge gateway address exposed by Docker hairpin routing. Initialization fails instead of falling back to unrestricted WOPI access when that network cannot be determined.
 
+Starting with r10, the container initializes Office in the background through `anas-office-activate.sh`. Nextcloud finishes its own tasks and becomes healthy so its dependent Collabora can start. The worker waits at most 900 seconds, checks `/hosting/discovery` using the existing CA trust, and then invokes the official `richdocuments:activate-config` command. It retries failed activation within that deadline and reports an explicit timeout. Each container start removes stale `/run/nextcloud-office.ready`; only successful official activation publishes the marker again. Editing acceptance waits for real discovery, the managed mount, and this marker. Nextcloud health alone does not prove Office readiness. Full real-host acceptance of this fix is still pending in the current run.
+
 ## Identity and authorization data flow
 
 LDAPS provisioning manages users and groups; OIDC is the preferred login protocol and SAML remains supported. `anasIdentityAnchor` links both paths to the existing LDAP account. Samba `Admins` dynamically maps to Nextcloud administration. Ordinary directory password changes use the restricted password-bind identity, never a database administrator.

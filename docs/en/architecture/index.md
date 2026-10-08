@@ -1,5 +1,23 @@
 # Architecture
 
+## Application catalog proposal
+
+The [replanned application catalog](/architecture/app-catalog-design) (Chinese original) covers
+non-SSO apps, separate admin interfaces and external config entries. It defines seven PNG icon sizes,
+immutable read-only deployment bundles, names, summaries/details, documentation links, category lists,
+ordering and explicit server-side filtering. Casdoor is the primary target; Authentik is being phased out.
+The initial catalog languages are Simplified Chinese (`zh-CN`) and English (`en`). Display names,
+summaries, descriptions, documentation links and category text use language maps. Built-in copy must
+cover both languages; external entries may supply one with deterministic per-field fallback. Overrides
+merge by language, while identifiers, launch URLs, icons, ordering and permissions remain shared.
+The language source is the explicit user choice, then the browser's first preference, then the deployment
+default, advancing only when a source is absent. An unsupported selected language resolves directly to
+English, even when a lower-priority preference is Chinese. Missing field translations fall back to English,
+then existing Chinese text for external entries; this does not change the selected portal language.
+There is no APPS_LIST compatibility bridge. The API/UI extension inside Casdoor is a recommendation
+awaiting confirmation; the new protocol and portal are not implemented. Existing Adminer ForwardAuth
+wiring is present, while Casdoor browser and real-host acceptance remain pending.
+
 ## Directory events and Casdoor sessions
 
 The existing [directory event journal](/architecture/directory-event-journal) observes local Samba AD
@@ -7,6 +25,21 @@ writes and feeds the Casdoor watcher. Revision r10 implements per-application OI
 revocation, a durable pending-work file and bounded delivery retry in the existing watcher. Independent
 OIDC session identifiers preserve later grants when old notifications are retried. Source and helper
 tests pass; deployment acceptance is in progress. SAML SLO remains unavailable.
+
+## Immich and resource-aware operating modes
+
+The [Immich integration design](/architecture/immich-module-design) (Chinese original) records the
+2026-10-02 decisions: a complete photo/video backup application, dedicated Redis/Valkey, OIDC-only
+regular sign-in with `anasIdentityAnchor`, shared PostgreSQL with managed extensions, and reuse of
+ANAS backup. It is a design, not an implemented Module or tested deployment.
+
+[Module resource-based operating modes](/architecture/module-resource-profiles) (Chinese original)
+are a separate **next-release** proposal covering every Module, including Modules with only one default
+mode. It reuses configuration, dependency resolution and explicit plan/apply rather than automatically
+changing services as available memory fluctuates. The current Immich integration does not depend on it;
+4GB support remains a workload-specific validation target, not a claim that the whole stack has passed.
+
+## Existing architecture notes
 
 Lease egress is being redesigned as a static per-lease policy (decided 2026-09-28, not yet implemented). A
 consumer Module declares one of four tiers for its compute lease: `internet` (the default), `internet_lan`,
@@ -60,7 +93,7 @@ IPv4/TCP destinations. Disable retains deny rules and distinguishes packet closu
 connection cleanup. Unretired records block host dependency changes. Automatic renewal, full lifecycle
 ownership, restart recovery and real guest/Forgejo acceptance under Docker's default DROP remain open.
 See the Chinese [host provisioning design](../../architecture/incus-host-provisioning.md) and
-`dev-docs/reviews/2026-09-25-incus-forwarding-permission-continuation.md` for scoped evidence.
+[dev-docs/reviews/2026-09-25-incus-forwarding-permission-continuation.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-incus-forwarding-permission-continuation.md) for scoped evidence.
 
 The enable failure path now attempts one independently bounded withdrawal under the original host-state
 lock, including errors after an accepted refresh, final persistence and session closure. It does not retry
@@ -78,7 +111,7 @@ or successful control-plane mTLS does not establish guest egress. Failed reads r
 with no automatic Docker policy changes. A separate fresh-VM experiment uses real Docker/Incus bridges and
 fixed local namespace endpoints to isolate forwarding behavior from registry, DNS and guest-image failures;
 its staged native results and production-adapter limitations are recorded in
-`dev-docs/reviews/2026-09-25-incus-forwarding-observation.md`.
+[dev-docs/reviews/2026-09-25-incus-forwarding-observation.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-incus-forwarding-observation.md).
 
 That controlled Ubuntu 26.04 amd64 / Docker 29.1.3 run subsequently passed all nine required stages.
 Packets on an actual Incus bridge hit the earlier nft ACCEPT but still incremented Docker's later default
@@ -95,7 +128,7 @@ uncertain cleanup preserved its containers, state and credential. The public arc
 unchanged physical-host Docker/network baselines were independently checked. This SQLite/prepared-workspace
 fixture does not establish default-DROP Docker coexistence, full CLI business deployment or production
 ingress. Earlier network-timeout and inventory-check failures remain separate records in
-`dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md`.
+[dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-25-forgejo-stop-forwarding-continuation.md).
 
 The new immutable `policy-loader-r1` passed a fresh Ubuntu 26.04 amd64 build/export/reuse, ten native
 image and rootless-OCI gates, and five real Forgejo workflow scenarios. Its guest loader admits only
@@ -120,7 +153,7 @@ manual guest trust installation. Normal VM exit and unchanged physical-host Dock
 independently rechecked. Full business Compose, trust inside arbitrary workflow OCI images, other platforms
 and signed publication remain separate. See the
 [Chinese host/image architecture](/architecture/incus-host-provisioning) and the source review
-`dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md`.
+[dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md).
 
 On 2026-09-24, a fresh Ubuntu 26.04 amd64 VM completed the real Core/Compose automatic projection cycle:
 installed host approval, CLI init/import/render/apply, the production Hook/Provider, two non-root synthetic

@@ -21,7 +21,7 @@ kernels without this mediation retain their existing behavior. On a mediated ker
 loader failure prevents the engine from starting. Recipe changes require a new immutable
 revision and native acceptance, including automatic loading, the negative generic-userns
 probe and actual rootless OCI execution. Independent diagnosis and current results are in
-`dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md`.
+[dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-userns-policy.md).
 
 Installing the parser package also enabled a distribution autoloader and its
 permissive `unprivileged_userns` fallback. The first newly baked policy image
@@ -44,7 +44,7 @@ The new `trust-r2` revision passed an actual Debian 13 amd64 bake/export/reuse, 
 pass events and all five workflow cases (normal, deliberate failure, SIGTERM cancellation, retained-state
 SIGKILL recovery, and an unapproved repository kept waiting). The production stdin trust path was used
 without manual guest CA installation. Source fingerprints, normal VM exit and physical-host preservation
-are recorded in `dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md`. This is not a signed
+are recorded in [dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md](https://github.com/anas-project/ANAS/blob/9a6921a1/dev-docs/reviews/2026-09-24-forgejo-runner-trust-projection.md). This is not a signed
 catalog release, complete business deployment or trust provisioning inside arbitrary workflow containers.
 
 The fixed starter supports deployment public CA projection after the 40-byte stdin token. Only the

@@ -5,6 +5,7 @@
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
 | [项目审查整改要求](project-quality-hardening.md) | 共享 Agent 规则、补偿失败、索引语义与前端门禁 | 6/6 已完成 |
+| [应用目录要求](app-catalog.md) | 非 IAM/多入口、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer 与 Casdoor 优先 | 0/35 已完成 |
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
 | [Changelog 要求](changelog.md) | Core 与 Module 变更记录的位置、写入时机、发布改名与门禁 | 0/33 已完成 |
 | [Compose 执行边界要求](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 子进程失败归因与补偿输出边界 | 2/17 已完成 |
@@ -30,6 +31,7 @@
 | [运行问题记录要求](runtime-issues.md) | 运行中出现的错误的记录格式、去重与解决、写入方，以及 CLI 与控制台查看 | 0/9 已完成 |
 | [版本升级 E2E 测试要求](upgrade-testing.md) | Core、Web 与全部内置 Module 的真实旧版升级、数据往返和发布门禁 | 13/30 已完成 |
 | [Workspace 临时存储要求](workspace-temp-storage.md) | Module 临时目录、切换、清理与恢复；各项验收基线见[归档计划](../plans/archived/workspace-temp-storage.md) | 40/40 已完成 |
+| [Module 资源运行方式要求](module-resource-profiles.md) | 下一版本：全部 Module 的资源声明、内存预算、显式选择、统一生命周期及容量验收；不阻塞本版 Immich 接入 | 0/28 已完成 |
 
 > [!IMPORTANT]
 > **「状态」列是生成的，不要手改。** 它由需求矩阵与配套计划的里程碑状态算出：
