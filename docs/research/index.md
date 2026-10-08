@@ -28,8 +28,11 @@
 
 | 文档 | 范围 | 创建 | 证据截至 |
 | --- | --- | --- | --- |
+| [Docker 与 Podman 双环境兼容性](./docker-podman-compatibility.md) | Compose/API 复用、rootful 范围、引擎身份与网络阻碍及 PoC 边界 | 2026-10-03 | 2026-10-03 |
+| [Casdoor 应用目录与权限过滤](./casdoor-app-catalog.md) | 固定源码 12 场景实验、默认允许/管理员绕过、元数据与页面缺口 | 2026-10-03 | 2026-10-03 |
 | [Casdoor 目录主体标识符可行性](./casdoor-directory-subject.md) | 固定源码配置边界、统一锚点候选补丁与尚未完成的 Consumer/E2E 条件 | 2026-10-03 | 2026-10-03 |
 | [LLNG Passkey/WebAuthn 与 Samba 共享边界](./llng-passkey-webauthn-samba-sharing.md) | LLNG 分阶段启用、凭据存储与多 IAM 共享边界 | 2026-08-21 | 2026-08-21 |
+| [Immich 接入可行性](./immich-module-integration.md) | 前稿上游证据、本地复用基础；专属 Redis、OIDC-only 与下一版本通用资源方案的决策边界 | 2026-10-02 | 2026-10-01（沿用前稿；本次仅更新本地设计） |
 | [IAM 登出与应用会话同步](./iam-logout-application-session-sync.md) | OIDC/SAML 全局登出与应用会话撤销 | 2026-08-20 | 2026-08-20 |
 | [Super Productivity 与 Nextcloud 零配置同步](./super-productivity-nextcloud-sso-sync-research.md) | OIDC/SAML、Login Flow v2 与 BFF 方案 | 2026-08-20 | 2026-08-20 |
 | [Nextcloud 搜索方案](./nextcloud-search-solution-research.md) | 全文、SQL、语义搜索和 Elasticsearch 实施门槛 | 2026-08-20 | 2026-08-20 |

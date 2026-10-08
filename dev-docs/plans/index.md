@@ -10,6 +10,7 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [应用目录](app-catalog.md) | 无旧协议兼容的新目录、中英文、共享资产、Casdoor 权限/API/页面、全 Module 覆盖与外部条目 | 提案 |
 | [应用域与 Samba AD 域分离](domain-separation.md) | 参数契约、DNS 模式、迁移与验收 | 实施中 |
 | [Samba 目录事件订阅与实时同步](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的订阅接入、可靠消费、全量兜底、准入丧失会话撤销、双接入和 E2E | 实施中 |
 | [目录身份键](directory-identity-key.md) | anchor 作为唯一持久身份键、主体标识符切换为 anchor、逐 Module 盘点匹配键与改名复用身份 E2E；验收依据见[要求](../requirements/directory-identity-key.md) | 实施中 |
@@ -30,6 +31,7 @@
 | [备份与恢复统一执行](backup-execution.md) | 目的地并发安全、统一目的地登记、job 记录与合流、CLI 在线/离线执行、hostd 执行与恢复确认、宿主串行；验收依据见[要求](../requirements/backup-execution.md) | 实施中 |
 | [共享应用层迁移](application-layer-migration.md) | 依赖测绘、子进程边界注入化、三个服务实现迁移与断开 `anasd` 对 runner 的链接；验收依据见[要求](../requirements/application-layer-migration.md) | 提案 |
 | [运行问题记录](runtime-issues.md) | 记录格式与去重、写入方、CLI 与控制台查看；验收依据见[要求](../requirements/runtime-issues.md) | 实施中 |
+| [Module 资源运行方式](module-resource-profiles.md) | 下一版本：复用配置/依赖/plan/apply，分批覆盖全部 Module；本版 Immich 无需等待 | 提案 |
 
 ## 已归档
 
@@ -42,7 +44,7 @@
 | [workspace 与备份体系](archived/workspace-backup.md) | [备份与恢复指南](../../docs/guide/backup-and-restore.md)、[backup 契约](../../docs/reference/contracts/backup.md) | 已完成（已归档） |
 | [项目审查整改](archived/project-quality-hardening.md) | Agent 规则、文档一致性、补偿闭环与验证门禁 | 已完成（已归档） |
 | [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
-| [Workspace 临时存储](archived/workspace-temp-storage.md) | [需求及回归判据](../requirements/workspace-temp-storage.md)；Source44 与测试机 B DOCX 的独立验收基线 | 已完成（已归档） |
+| [Workspace 临时存储](archived/workspace-temp-storage.md) | [需求及回归判据](../requirements/workspace-temp-storage.md)、[临时目录契约](../../docs/reference/contracts/commands.md#temp)；Source44 与测试机 B DOCX 通过基线保留在归档计划 | 已完成（已归档） |
 | [Web API 与管理前端](archived/web-api-admin-console.md) | 管理面首版里程碑与验证记录；验收依据见[要求](../requirements/web-api-admin-console.md) | 已完成（已归档） |
 | [Samba 身份锚点 OID 与既有目录迁移](archived/samba-identity-anchor.md) | [需求矩阵](../requirements/samba-identity-anchor.md)、[OID 注册表](../../docs/governance/oid-registry.md)、[迁移 Runbook](../../docs/guide/migrate-identity-anchor-oid.md) | 已完成（已归档） |
 

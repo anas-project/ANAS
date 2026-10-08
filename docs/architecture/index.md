@@ -13,10 +13,12 @@
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
 | [Samba AD identity anchor](samba-identity-anchor.md) | 当前实现与迁移规范 | 永久身份锚点、PEN OID、schema/ACL 契约与 legacy 单 DC 迁移 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
-| [应用目录](app-catalog-design.md) | 设计 | 门户条目、可见性与执行点授权映射 |
+| [应用目录](app-catalog-design.md) | 未发版重规划；实现提案 | 非 IAM 与多入口、中英文、七档图标和只读共享制品、外部配置、严格过滤；Casdoor 优先、Authentik 逐步弃用 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
 | [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |
+| [Immich Module 接入](immich-module-design.md) | 已确认方向，尚未实施 | 完整照片/视频备份、专属 Redis、OIDC-only 与 anchor、共享 PostgreSQL 扩展、ANAS 灾备 |
+| [Module 资源运行方式](module-resource-profiles.md) | 下一版本提案，尚未实施 | 全 Module 资源声明、内存预算、只读推荐与显式 plan/apply；不作为本版 Immich 接入依赖 |
 | [Incus 宿主供给与镜像烘焙](incus-host-provisioning.md) | 提案，基础与发布编排本机回归通过，宿主待验收 | 宿主供给、入站与镜像烘焙；专用控制 bridge、租约 ACL 入站两档、Traefik HTTP 发布与 Docker 式端口绑定、结构化镜像声明与显式 build-once；生产接线和真实烘焙待完成 |
 | [远端备份、异地容灾与分布式部署](remote-backup-and-dr.md) | 研讨中 | 备份目的地远端化、拉模型与勒索抵抗、secrets 边界、容灾接管与分布式的范围划分 |
 | [日志与可观测性](observability-and-logs.md) | 研讨中 | 事件日志、审计日志、容器日志与 CLI 输出的关系、保留期、脱敏与关联标识 |

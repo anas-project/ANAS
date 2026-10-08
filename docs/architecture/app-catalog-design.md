@@ -1,608 +1,411 @@
-# 应用目录（Application Catalog）设计
+---
+doc_type: architecture
+status: proposed
+updated: 2026-10-04
+---
 
-> 状态：**提案**，当前不可执行。文中的 `ANAS_APP_CATALOG`、`ANAS_APP_ICONS_DIR`、
-> `ACCESS_ROLE`、`ACCESS_VIA` 等契约在仓库中尚无实现。
+# 应用目录协议
 
-## 1. 目标与硬约束
+**状态：提案，当前不可执行。** 2026-10-03 按未发版前提重写，替代原 `APPS_LIST` 扩展方案，
+不保留双写、旧配置迁移或旧字段别名。本文满足
+[应用目录要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/app-catalog.md)
+`APPCAT-R-001`—`APPCAT-R-035`；进度见
+[实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/app-catalog.md)。
+Casdoor 是首要交付目标；Authentik 进入逐步弃用路线，新协议不受其字段限制。
+2026-10-04 补充多语言：首期支持简体中文 `zh-CN` 和英文 `en`，应用与分类的展示字段使用语言映射。
 
-部署里的服务应当以**面向用户的应用列表**呈现：用户登录门户后看到自己有权访问
-的应用，按分类排列，每个条目有可配置的名称、描述、图标和顺序。LLNG 的
-`applicationList` 和 Authentik 的 *My applications* 都提供这种视图，但它们的数据
-模型完全不同，因此这不能是某个 IAM Module 的内部细节。
+## 1. 应用条目与登录客户端分别声明
 
-本设计把现有的 `APPS_LIST` 私有约定提升为 **Runner 拥有的应用目录契约**，与
-[iam-capability-design.md](iam-capability-design.md) 的做法一致：Runner 解析并
-发布事实，Provider 只负责把契约翻译成自己的对象模型。
+一个条目代表一个供人打开的入口。是否接入 OIDC/SAML 不决定是否进入目录；
+本地登录、LDAP 登录、ForwardAuth 后台、外部网站均可声明。
+一个 Module 可发布多个入口，例如 PostgreSQL Adminer、应用主界面和管理员后台。
+没有人员入口的数据库、TURN、ACME 等不自动生成卡片。
 
-本文是应用目录 schema、角色解析和 LLNG/Authentik Provider 映射的规范来源。Module 为什么
-归入基础支持、平台管理服务或用户应用，由
-[Module 分类与访问边界分析](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-08-19-module-classification.md)
-说明；分类研究不重复定义本文字段。
+目录只表示入口及当前用户可见性。服务健康、业务权限和数据库权限继续由相应系统负责。
+`kind: admin` 是入口用途，`categories` 是展示分类，管理员授权必须明确绑定
+`platform_admin`，不能从“系统管理”文字推导。
 
-硬约束：
+三份事实各有来源：
 
-1. **列表是显示过滤，不是访问控制。** 门户少显示一项不等于拒绝访问，多显示一项
-   也不等于放行。授权始终由 IdP 的策略、`forward_auth` 网关或应用自身执行。
-2. **权限只有一个事实来源。** 门户可见性是执行点授权规则的投影，不是与之并列的
-   第二份规则。用户配置只能**收紧**可见性，不能放宽。
-3. **静态展示元数据属于清单，动态值属于 Hook。** 名称、描述、图标、分类在清单里
-   就能确定；URL 依赖域名计算，只能由 Hook 产生。清单声明"URL 在哪个变量里"，
-   Runner 负责取值。
-4. **目录不是 IAM 专属。** 契约按消费方发布，任何 Module（IAM 门户、独立仪表盘）
-   都可以消费它。这是把它做成 Runner 契约而不是 LLNG 私有逻辑的全部理由。
-5. **Provider 可以声明不支持某个字段，但不得自行发明语义。** Authentik 没有条目
-   排序，就忽略 `ORDER`，而不是把 `ORDER` 塞进名称前缀。
-6. **Module 分类、目录分类和授权角色互不替代。** `classification.class` 表示 Module
-   是基础支持、平台管理服务还是用户应用；`launcher.category` 只决定卡片显示在哪个
-   分区；`access` 才描述执行点和允许角色。尤其是 `category: admin` 不等于
-   `SAMBA_DC_ADMIN_GROUP_DN`，也不能单独产生任何访问权限。
+- Module `applications`：默认展示资料、真实入口、执行点声明、资源文件；
+- workspace `application_catalog`：分类定义、展示覆盖和外部条目；
+- 现有 identity/IAM 注册：OIDC/SAML 协议、client secret、claim、允许组和回调。
 
-### 1.1 与 Module 三类模型的关系
+目录通过 `access.client` 引用 IAM 注册。一个 IAM client 可以被多个入口引用；
+仅有目录条目不产生 OAuth client、client secret 或 SAML SP。
 
-应用目录消费 [Module 分类与访问边界分析](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-08-19-module-classification.md)
-定义的主分类，但不把主分类直接翻译成授权：
+## 2. 条目字段
 
-| Module 主分类 | 默认目录行为 | 例外 |
-| --- | --- | --- |
-| `foundation` | Module 主体不发布 | Adminer、Dashboard 等独立管理面可发布到 `admin` |
-| `admin_service` | 只有人员管理面发布到 `admin` | IAM Portal 是目录宿主，不给自己生成循环入口 |
-| `user_app` | 可用的人员主入口发布到 `applications` | SMB 等无 HTTPS URL 的入口不生成假卡片 |
+名称统一用 `snake_case`；所有未知字段拒绝，避免错拼后静默使用默认值。
+下表描述规范化后的 `anas.app-catalog/v1`，并注明声明层允许的简写。
 
-Runner 内置两个语义稳定的目录分类：
+| 字段 | 定义与校验 |
+| --- | --- |
+| `name` | 稳定应用名/程序标识，全目录唯一，`^[a-z][a-z0-9_-]{0,62}$`；改名等价于删旧建新 |
+| `display_name` | 按语言映射的显示名，各值 1—100 字符；不参与身份或权限匹配 |
+| `url` | 点击入口，必须完整保留 query 和 fragment；默认仅 HTTPS，外部 HTTP 必须显式允许并在 plan 提示 |
+| `summary` | 按语言映射的卡片简介，各值为纯文本，1—160 字符 |
+| `description` | 按语言映射的详情描述，各值为纯文本，1—4000 字符；支持换行，不解析 HTML |
+| `documentation_url` | 按语言映射的 HTTPS 文档地址，可指官方或 ANAS 文档；允许两种语言使用相同地址 |
+| `weight` | 0—10000 的整数，默认 100；数值越小越靠前，同权重按 `name` 字典序 |
+| `categories` | 非空、去重的分类 ID 列表；第一个为主分类，目录中同一应用只显示一张卡片 |
+| `icons` | 16/32/48/64/128/256/512 像素的方形 PNG 文件记录，详见 §4 |
+| `kind` | `user` 或 `admin`；管理入口不能借改分类改变角色要求 |
+| `enabled` | 可选功能实际启用后才为 true；不是健康状态 |
+| `hidden` | 默认 false；true 时任何用户的日常目录均不返回该项，包括 IAM 管理员 |
+| `access` | 实际访问方式及其已有授权事实，见 §3 |
+| `visibility` | 明确的门户显示过滤，见 §3；省略与空允许列表都不是允许所有用户 |
+| `source` | Runner 填写 `module/config`、Module 名及配置来源；用户不能伪造 |
 
-- `applications`：普通用户应用；
-- `admin`：系统管理入口。
+Module 清单的 `url_from` 与 `url` 二选一。`url_from` 引用自身导出或已声明消费的变量，
+在全部 `calculate` 完成后取值；不能为空或引用未获准的变量。
+`enabled_by` 只引用本 Module 已声明的布尔配置，在归一化后变为 `enabled`。
+应用展示字段显式提供语言映射，不从单语 Module `title/description` 猜测翻译；
+简介、描述分别声明，不能继续把一段文案当成两种字段。
+Module 的 `category` 保持其 Module inventory 用途，不自动冒充条目的分类列表。
 
-分类只包含名称、图标、顺序等展示元数据。`admin` 的安全约束是 Runner **校验其中的每个
-条目都声明了管理员 audience 和真实执行点**，而不是把分类 ID 当作组。用户可以修改分类
-显示名和顺序，也可以把条目移动到自定义显示分类，但不能借此放宽该条目的 `access`。
-
-管理员入口统一声明 `access.role: platform_admin`，不直接写物理组名或 DN。输入、Runner
-解析结果和 Provider 消费值的完整边界见 §4.1。
-
-## 2. 当前实现的问题
-
-现状：`APPS_LIST` 的条目和元数据仍是一组 Hook 之间的过渡约定，尚未实现本文设计的
-完整 Runner catalog。Runner 只守住聚合键的所有权边界：声明 `APPS_LIST*` export 的
-Module 只能保留已有列表并追加自己的 Module 名，聚合后的 `APPS_LIST` 归 Runner
-所有；单个 Module 不能覆盖、重排或删除其他条目。这是阶段 A 前的兼容保护，不替代
-后文的清单 schema、校验和两段式发布。
-
-1. **只有三个 Module 参与。** 只有 `nextcloud`
-   （[main.go:207](https://github.com/anas-project/ANAS/blob/master/modules/nextcloud/hook/main.go#L207)）和 `netbird`
-   （[main.go:191](https://github.com/anas-project/ANAS/blob/master/modules/netbird/hook/main.go#L191)），以及 `meshcentral`
-   （[main.go:191](https://github.com/anas-project/ANAS/blob/master/modules/meshcentral/hook/main.go#L191)）发布条目。
-   `lam`、`collabora`、各 Adminer、Traefik dashboard、LLNG
-   Manager、Authentik 自身都不在门户里，用户必须记域名。
-2. **权限写了两份且互不校验。** LLNG 的 `display` 表达式读
-   `APPS_LIST__<APP>__ALLOW_GROUPS`
-   （[llng-config.sh:117](https://github.com/anas-project/ANAS/blob/master/modules/llng/llng/root/root/llng-config.sh#L117)），
-   Authentik 的策略绑定读 `ANAS_IAM_CLIENT__<APP>__ALLOW_GROUPS`
-   （[iam.go:287](https://github.com/anas-project/ANAS/blob/master/modules/authentik/hook/iam.go#L287)）。两者由不同代码路径
-   产生，可以静默不一致——门户显示一个点进去被拒的应用，或者藏起一个用户其实
-   有权访问的应用。
-3. **没有分类契约。** LLNG 把所有应用硬编码进单一分类 `1apps` "Applications"
-   （[llng-config.sh:103](https://github.com/anas-project/ANAS/blob/master/modules/llng/llng/root/root/llng-config.sh#L103)）；
-   Authentik 的 `application.group` 根本没有设置。
-4. **图标机制脆弱。** LLNG 靠 `after_start` 的 `docker cp` 把
-   `LOGO_PATH` 拷进容器 htdocs
-   （[main.go:165](https://github.com/anas-project/ANAS/blob/master/modules/llng/hook/main.go#L165)）。这是命令式的：容器重建
-   后要重跑，路径依赖渲染产物位置——[2026-07-19-design-review.md](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-07-19-design-review.md)
-   记录的就是 promote 后路径失效导致的启动破坏。Authentik 侧则完全没有图标。
-5. **展示元数据重复。** `module.yml` 已经有 `title`、`description`、`category`，
-   Hook 里又硬编码了一份 `NAME`/`DESC`，两者可以漂移。
-6. **无法加入外部条目。** 用户没法把路由器管理页、机柜 PDU、外部 SaaS 这类
-   非 ANAS 应用放进同一个门户。
-7. **无用户覆盖。** 改一个应用的显示名或图标要改 Module 源码。
-8. **管理员分类和管理员授权尚未建模。** 当前没有 `admin` 分区契约，也没有把
-   `SAMBA_DC_ADMIN_GROUP_NAME`/`SAMBA_DC_ADMIN_GROUP_DN` 的使用位置区分清楚。把管理
-   条目放进某个分类不会自动保护其 URL。
-9. **LLNG Test 的当前执行规则过宽。** `LLNG_ENABLE_TEST=true` 时，Test 域当前配置为
-   `accept`，应用菜单条目使用 `display: auto`；普通已登录用户可以直接访问。目标规则应与
-   Manager 一样要求 `SAMBA_DC_ADMIN_GROUP_NAME`，目录显示也使用同一组事实。
-10. **Adminer 只有数据库登录，没有 ANAS 人员用户系统。** PostgreSQL/MariaDB Adminer
-    当前直接暴露 Traefik 路由，登录表单使用数据库服务器的 username/password；它没有
-    可与 Samba `Admins` 自动对应的独立用户库。官方也建议通过 Web 服务器密码、IP allowlist
-    或插件增加外围保护。ANAS 的目标应是 `platform_admin` ForwardAuth 作为第一层、数据库
-    登录作为第二层，而不是二选一（[Adminer 安全建议](https://www.adminer.org/en/)）。
-
-因此不建议继续在 Hook 里扩展 `APPS_LIST`。
-
-## 3. 用户配置
-
-新增顶层 `launcher` 段，以及 `modules.<app>.launcher` 覆盖块：
+示意声明（尚不可执行）：
 
 ```yaml
-launcher:
-  # 仅覆盖显示名和排序。applications/admin 是 Runner 内置语义分类。
+applications:
+  - name: nextcloud
+    display_name:
+      zh-CN: Nextcloud
+      en: Nextcloud
+    url_from: NEXTCLOUD_DOMAIN_FULL
+    summary:
+      zh-CN: 文件、照片与团队协作
+      en: Files, photos and team collaboration
+    description:
+      zh-CN: 存储和共享文件，并使用已启用的日历、联系人与在线办公功能。
+      en: Store and share files, with enabled calendar, contacts and online office features.
+    documentation_url:
+      zh-CN: https://docs.nextcloud.com/server/latest/user_manual/en/
+      en: https://docs.nextcloud.com/server/latest/user_manual/en/
+    weight: 20
+    categories: [files, collaboration]
+    kind: user
+    icons:
+      source: assets/nextcloud-512.png
+      sizes:
+        32: assets/nextcloud-32.png
+    access:
+      mode: iam
+      client: nextcloud
+    visibility:
+      mode: access
+```
+
+### 2.1 中英文与回退
+
+首期目录语言键仅接受 `zh-CN`（简体中文）与 `en`（英文）；结构允许未来增加语言，
+当前输入其他键报错，避免把拼错的语言当成有效翻译。字段统一使用映射，不另加单语字符串简写。
+`display_name/summary/description/documentation_url` 与分类的 `display_name/description` 可本地化。
+分类描述可整体省略；一旦提供，每个语言值必须非空。每个文本值单独校验长度与纯文本约束，
+每个文档地址分别校验 URL；不能只校验部署默认语言。
+
+内置 Module 和内置分类必须提供中英文文案，CI 检查完整性。产品品牌名可在两种语言中相同，
+文档没有中文版时可在 `zh-CN` 下明确填写英文文档地址，不制造不存在的译文链接。
+外部条目与自定义分类每个必需展示字段至少提供一种语言即可，缺失翻译按以下规则回退。
+不在运行时调用自动翻译服务。
+
+语言来源优先级：**用户在门户明确选择的语言 → 浏览器首选语言 → `global.default_language` → `en`**。
+仅当前来源未提供语言时才取下一来源；选出的语言不受支持时，**直接使用 `en`**，
+不继续尝试浏览器次选语言或部署默认语言。浏览器首选指有效偏好中权重最高的具体语言，
+同权重保留原顺序；权重为零的项和通配符不作为具体语言。
+复用现有语言匹配设施：`en-US/en-GB` 等匹配 `en`，`zh/zh-Hans/zh-CN/zh-SG` 匹配 `zh-CN`；
+繁体中文本期未提供，不将 `zh-TW/zh-HK/zh-Hant` 当作已有繁体翻译。
+例如用户选择 `fr`，即使浏览器和部署默认均为中文，也显示英文；没有用户选择且浏览器首选
+`ja` 时同样显示英文。完全没有用户/浏览器语言时才采用部署默认，默认语言不支持则为英文。
+`global.default_locale` 的日期/数字格式设置不替代显示语言。Casdoor 内部 `zh` 由 adapter
+映射到目录 `zh-CN`，不改变协议的规范语言键。
+
+选定语言后，每个字段按“**选定语言 → en → zh-CN**”依次取首个存在的值，
+重复候选跳过；空字符串不是合法译文。这样中文单语的外部条目在英文门户也不会消失或空白。
+这里的字段缺译回退与“不支持的语言默认英文”分别处理：门户语言仍是英文，
+仅外部条目未提供英文的字段显示其已有中文；内置文案必须有英文。
+`name`、分类 `id`、入口 `url`、权重、图标与权限不随语言变化；本期各语言共用七档图标。
+入口不自动拼接语言参数，打开应用后由应用自己的语言机制处理。
+
+展示覆盖按“字段 + 语言键”合并：只覆盖 `display_name.zh-CN` 时保留 Module 的英文值。
+分类覆盖也采用相同规则；不支持用空字符串/null 删除必需译文。配置来源和回退结果应能在 plan 中解释。
+完整语言映射随 `catalog.json` 冻结并参与摘要，修改任一译文都走原有部署更新流程。
+不在构建时按部署默认语言丢弃另一种语言，也不复制两套条目或图标。
+
+认证 API 先做权限过滤，再按选定语言返回解析后的字符串字段和响应级 `language`；
+不因某语言缺译而改变条目可见性。门户切换语言重新取得已过滤结果，无需重新登录或部署。
+API 与页面使用同一回退算法；如缓存结果，必须同时隔离用户与语言。
+目录自身的“打开应用”“文档”“分类”“无可用应用”等界面文字也需中英文资源，
+不能只翻译应用文案而把操作按钮留成单语。
+
+## 3. 权限过滤与执行点
+
+### 3.1 第一版只接受已能解释和验证的过滤
+
+固定 Casdoor 源码实验已验证组/角色/用户允许规则、多个组 OR、撤组后的下一次查询，
+同时暴露默认允许和管理员绕过。证据与复现见
+[Casdoor 应用目录研究](/research/casdoor-app-catalog)。
+协议第一版采用**正向组允许列表**和 `platform_admin` 语义角色，不暴露 Casbin 自定义模型、
+脚本表达式、任意 claim、用户标签、正则、跨组织规则或 allow/deny 混合。
+角色在目录发布前解析成 IAM 已同步的组；具体 IAM 原生角色仍留在 adapter 内，不能由配置任意引用。
+不提供按用户名长期授权，避免目录改名破坏匹配；未来按永久 anchor 的个人例外需另行验证。
+
+`visibility` 必须是以下三种之一：
+
+- `mode: access`：继承已有执行点规则。`iam` 取对应 client 的准入组，
+  `forward_auth` 取网关角色；原生目录组授权由 Module 声明其同源组事实。
+- `mode: subjects`：`any_of` 中列出 `{group: APP_design}` 或 `{role: platform_admin}`，
+  任一命中即显示；至少一项，未知组/角色拒绝。用于本地登录或外部入口，标记为“仅过滤目录”。
+- `mode: authenticated`：明确表示所有有效登录用户；仅用于没有 ANAS 组门禁的用户入口，
+  不能覆盖已有 IAM/ForwardAuth 限制，不能用于 `kind: admin`。
+
+所有模式均先检查用户有效、组织正确、条目启用及未隐藏。
+组取 IAM 当前维护的用户组事实，不从浏览器传入值或自助可改资料获得。
+管理入口必须最终只允许 `platform_admin`；不能混入 `APP_all` 或普通应用组。
+`platform_admin` 由 identity Provider 发布的组名事实解析，不能在 Core 硬编码产品名、组名或 DN。
+
+### 3.2 `access` 的表达
+
+| `mode` | 必需关联 | 目录与目标之间的关系 |
+| --- | --- | --- |
+| `iam` | `client` | 登录资格取已有 client；同一 client 的普通主入口共用其准入规则 |
+| `forward_auth` | 已解析的 forward_auth binding 与 `role: platform_admin` | 网关实际保护路由，目录继承同一角色 |
+| `native` | Module 声明的目录组执行点和组事实引用 | 例如 LDAP 管理后台；必须有真实访问反例证明映射 |
+| `local` | 无 IAM client | 目标继续要求本地凭据；目录过滤不代表目标认证成功 |
+| `external` | workspace 外部条目 | ANAS 只维护链接和目录过滤，不声明控制外部网站授权 |
+
+若应用后台需要比其主界面更窄的角色，则单独声明管理条目及原生管理执行点，
+不能以普通 IAM client 的准入权限冒充应用内部管理员权限。
+恢复账号登录页、IAM 自己的门户首页、只供机器使用的 client 默认不发布。
+
+第一版展示覆盖只能改名称、文案、图标、文档地址、权重、分类或隐藏状态；
+不能改变 Module 的 `kind/access/visibility`。需要调整应用准入时修改该应用既有授权配置，
+目录随后重新派生，避免出现两份允许组。外部条目由配置完整声明自己的显示规则。
+
+### 3.3 Casdoor 的安全边界
+
+Casdoor `GetAllowedApplications` / `CheckLoginPermission` 不能直接作为完整目录契约：
+没有有效 Application Permission 时默认允许，组织管理员还会绕过原生检查。
+`DisableSignin` 也不隐藏卡片；应用 `Tags` 的登录检查没有被这个列表函数覆盖。
+
+推荐 adapter 使用 Casdoor 现有会话、用户/组和权限引擎，先做显式的
+`hidden/enabled/组织/有效用户/预期策略存在且已启用批准` 检查，再直接调用其原生 Permission enforcer 求值生成的组允许规则；该引擎不经过列表函数的管理员提前放行。
+不得把原生 `IsAdmin` 当作目录超级通行证；需要管理员可见时规则明确包含解析后的管理员组。
+关联 IAM client 的条目还要通过原生 client 准入检查，防止目录放宽登录资格。
+筛选在服务端完成，分页和计数在筛选后执行；未授权响应不携带被过滤条目的描述、URL 或文档地址。
+异常、缺失策略、无匹配组和不支持的条件全部不返回条目，并记录可定位的配置问题。
+
+Casdoor 需要管理和同步的组是 IAM client 准入组与目录条目引用组的并集。
+不能仅遍历 OIDC/SAML client，否则只用于 LAM、本地后台或外部条目的组不会进入同步/撤权链路。
+目录角色和组沿用已有目录同步事实；受管 Permission 使用可识别的目录名称空间，
+在现有 apply/启动配置协调入口创建、更新和移除，只处理本部署拥有的对象。
+写入失败或期望策略不一致时目录条目不开放；不通过新守护进程或定时全量复制维护元数据。
+
+上述是目标行为。源码实验验证了基础与反例，尚未证明新 adapter 已实现这些约束。
+策略故障及管理员不绕过等反例必须纳入后续 HTTP 和浏览器 E2E。
+
+## 4. 多尺寸图标和共享文件
+
+### 4.1 输入、尺寸与质量
+
+统一交付 `16,32,48,64,128,256,512` 七档 PNG；每档包含 `path/media_type/width/height/sha256`。
+Module 提供至少 512×512、最多 2048×2048 的方形 PNG 源图，可逐档提供专门设计的图片，
+尤其是小尺寸细节。Runner 对缺少的档位按固定算法缩小，不放大；UI 按显示尺寸与像素密度选择。
+未提供任何图标时，使用仓库自带完整七档占位图并在 plan 提示。
+
+Module 作者可从 SVG 制作 PNG，但第一版不把 SVG、HTML、远程 URL 或动画文件直接交给浏览器。
+这样无需引入 SVG 执行/字体/外部资源清洗链路。自定义图标随配置工作区保存，不在 apply 时联网下载。
+PNG 输入限单文件 2 MiB、解码像素 2048²；七档输出每应用合计最多 4 MiB，部署共享图标总量最多
+64 MiB；在解析图片前检查头部/尺寸，扩展名不能代替真实内容校验。
+缩放拟采用 `golang.org/x/image/draw`：新增的 Go 编译依赖仅用于确定性重采样，
+不新增运行服务或宿主命令；如实施时发现已有等价依赖，应复用并记录版本。
+
+### 4.2 一个目录制品，不创建文件共享服务
+
+本期只定义**应用目录的只读文件共享**，不扩张成运行时通用读写文件总线。
+图标不是业务数据、Secret、TLS 私钥或 Module 持久卷，不挂载整个 Module 目录。
+
+```text
+<deployment>/shared/application-catalog/
+  catalog.json                 # 完整规范化条目、分类与 provenance，不能公网静态发布
+  assets.json                  # 源/输出摘要、尺寸、媒体类型、来源与许可记录
+  assets/<sha256>.png           # 实际内容寻址文件；相同内容去重
+```
+
+路径边界：Module 来源相对 Module 根；配置来源相对 workspace 配置根。
+禁止绝对路径、`..`、符号链接、越界解析、特殊文件及从 Secret/data 目录复制。
+源文件只读，生成文件进入新的 deployment 制品；将源字节摘要、缩放器版本、结果和元数据纳入
+输入摘要。不能只在 YAML 改动时才触发更新。
+资产清单保留来源、版权/许可说明和生成信息；不得把应用商标当成 ANAS 自有版权。
+
+Module→Runner→Consumer 的共享过程：
+
+1. Runner 从已启用声明收集公开资产；所有 Hook `calculate` 完成后一次性解析 URL、角色和分类，
+   生成目录制品。消费目录不添加启动顺序依赖，避免 IAM 与数据库 Adminer 成环。
+2. 只有声明消费 `application_catalog` 的 Module 的 render Hook 得到
+   `ANAS_APP_CATALOG_FILE`（本次暂存文件，只用于渲染读取）与
+   `ANAS_APP_CATALOG_DIR`（最终 deployment 上的宿主目录，用于生成挂载）。
+   临时渲染路径不能写进持久配置。其他 Module 不获得跨模块文件访问权。
+3. compose/runtime 把制品只读挂到 `/run/anas/application-catalog`。
+   Casdoor 可把 **assets 子目录**只读挂到自身现有 `/files/anas-catalog/assets` 静态目录；
+   `catalog.json` 和 `assets.json` 不挂到公网目录，API 读取后按当前用户过滤。
+4. 浏览器只收到 provider 的 HTTPS 图标 URL，例如
+   `/files/anas-catalog/assets/<sha256>.png`。它不认识宿主路径；不存在的资源返回 404，
+   Content-Type 固定 `image/png`，禁止目录浏览，声明 `nosniff` 和按摘要缓存。
+
+图片是公开品牌资源，公开图片 URL 不授予应用访问权；不得包含账号、内网信息或敏感截图。
+有保密需求的条目使用通用占位图。未经筛选的目录和真实 URL 则必须留在认证 API 内。
+浏览器/API 响应不缓存跨用户的目录结果；目录资产可长缓存，二者生命周期分开。
+
+消费 runtime 所在宿主必须能读取本次制品。当前复用 deployment 的上传/投影流程；
+不能把操作端本机路径直接传给远程 Docker daemon。不支持共享制品投影的 runtime 在 plan 阶段拒绝，
+不静默降级到 `docker cp`、NFS 或新同步服务。
+
+图标或元数据变更按现有 apply 更新受影响的目录消费者；首次实现采用容器重建，
+不新增热更新守护进程。旧 deployment 持有自己的完整目录制品，回滚读取旧制品；
+清理沿用 deployment 引用与保留规则，不删除仍被历史部署使用的资源。
+
+## 5. 分类与外部配置
+
+workspace 顶层 `application_catalog` 是完整配置入口。内置分类提供
+`applications/admin/files/collaboration/media/network/development/security`，
+允许补充自定义分类；分类字段为 `id/display_name/description/weight`，显示名和描述按 §2.1 提供语言映射，
+按权重升序、ID 同序排序。
+类别本身不带授权规则，管理用途由条目 `kind` 表达。
+一个条目可同时属于多个分类；选中多个分类按任一匹配筛选，卡片去重且维持全局确定性排序。
+
+以下示例包含自定义分类、展示覆盖和不使用 IAM 登录的外部后台：
+
+```yaml
+application_catalog:
   categories:
-    - id: office
-      name: 办公协作
-      order: 10
-    - id: admin
-      name: 系统管理
-      order: 90
-
-  # 非 ANAS 管理的外部条目。
+    - id: files
+      display_name: {zh-CN: 文件, en: Files}
+      description: {zh-CN: 文件存储与共享, en: File storage and sharing}
+      weight: 10
+    - id: collaboration
+      display_name: {zh-CN: 协作, en: Collaboration}
+      weight: 20
+  overrides:
+    nextcloud:
+      display_name:
+        zh-CN: 家庭云盘  # 仅覆盖中文；英文继续使用 Module 声明
+      weight: 10
+      icons:
+        source: branding/cloud-512.png
   entries:
-    - id: router
-      name: 主路由
-      description: OpenWrt 管理界面
-      uri: https://192.168.1.1
-      category: admin
-      icon: ./branding/router.png
-      audience: administrators
+    - name: external_router
+      display_name: {zh-CN: 主路由管理, en: Main router}
+      url: https://router.example.net/
+      summary: {zh-CN: 家庭网络与 Wi-Fi 管理, en: Home network and Wi-Fi management}
+      description:
+        zh-CN: 使用路由器自己的管理员账号登录。
+        en: Sign in with the router's administrator account.
+      documentation_url:
+        zh-CN: https://openwrt.org/docs/guide-user/start
+        en: https://openwrt.org/docs/guide-user/start
+      weight: 80
+      categories: [admin]
+      kind: admin
+      icons:
+        source: branding/router-512.png
       access:
-        # 外部 URL 没有 ANAS 可校验的执行点；role 只收紧目录可见性。
-        via: external
-        role: platform_admin
-
-modules:
-  nextcloud:
-    launcher:
-      name: 我的云盘
-      description: 文件与协作
-      category: office
-      icon: ./branding/cloud.svg
-      order: 10
-      visibility: allowed
+        mode: external
+      visibility:
+        mode: subjects
+        any_of:
+          - role: platform_admin
 ```
 
-规则：
+外部条目与 Module 条目共用全部显示、图标、分类和过滤校验；名称冲突拒绝，不能覆盖 Module 身份。
+管理员直接编辑配置后走 `plan/apply`；删除 entry 就撤销目录条目及其受管权限，
+不删除外部应用或账号。外部 HTTP 通过条目 `allow_http: true` 显式放行，
+禁止 `javascript/data/file`、URL 内用户名密码；不探测或抓取目标页面。
+内置条目的 URL、执行点不允许通过展示 override 偷换；确需自定义目的地时新增外部条目。
 
-- `launcher` 是**显示层配置**，不参与 `modules.<app>.config` 的前缀转换。它不会
-  变成 `NEXTCLOUD_LAUNCHER_NAME` 这类变量，而是并入 Runner 的目录解析结果。
-  理由：这些值的消费方是门户 Module，不是应用自己，走应用前缀会让它们进错
-  `.env`。
-- `modules.<app>.launcher.allow_groups` 仅作为 `assigned_users` 用户应用的可选收窄项，且
-  **只能是执行点组集合的子集**（约束 2）。给出超集时 Runner 报错，而不是悄悄放宽。
-  管理员入口必须声明 `access.role: platform_admin`，不接受用户用物理组名覆盖角色。
-- 分类不接受 `allow_groups`。`category: admin` 只是把条目放进“系统管理”分区；
-  `audience: administrators` 和条目 `access` 才要求 Runner 解析、校验管理员角色。
-- 内置 Module 的 `audience` 是 Manifest 事实，用户配置只能隐藏条目或移动显示分类，不能把
-  `administrators` 改成 `authenticated_users`。
-- `visibility` 取 `allowed`（默认）、`always`、`hidden`。
-- 外部条目的 `id` 不得与任何 Module 名冲突。管理员外部条目使用
-  `audience: administrators` + `access.via: external` + `access.role: platform_admin`，由
-  Runner 解析目录可见组，不允许硬编码 `Admins` 或完整 DN。外部 URL 没有 ANAS 可校验的
-  执行点，因此 `plan` 必须标记为 `source: config` 和 `catalog_visibility_only`——它只影响
-  是否显示，不保证那个 URL 自身的授权。
+## 6. Casdoor、LLNG 与 Authentik
 
-## 4. 清单能力模型
+### Casdoor（首要目标，完整交付）
 
-新增可选的 `launcher` 段。现有 Module 不带该段仍然合法，因此这是纯增量变更，
-**ABI 保持 `anas.module-hook/v1`**，不需要 v3。
+现有模型可对应 `Name/DisplayName/Logo/Order/HomepageUrl/Description`，但一个 `Logo` 和一段
+`Description` 不能完整承载本协议。`Category` 是 Default/Agent 协议分类，`Tags` 带登录限制，
+两者禁止映射展示分类。原生卡片还会无条件给 HTTP URL 追加 `silentSignin=1`，
+新入口必须原样打开配置 URL，具体 SSO 起始 URL 由应用自己发布。
+目录 API 与页面必须保留中英文切换能力；写入原生单字符串字段的值只能作为部署默认语言的
+显示投影，完整翻译继续来自目录制品，不能用每次用户切换语言就更新数据库的方式实现。
 
-单条目形式（绝大多数应用 Module）：
+**需要确认的实现选择**：推荐在现有 Casdoor Module 中扩展认证目录 API 与页面，
+从只读制品加载完整元数据，使用 Casdoor 自己的登录会话、目录用户和权限引擎。
+元数据不再复制进额外数据库；只把 IAM 必需的显示字段和受管权限映射到现有对象。
+可避免增加独立服务，但会新增后端与前端补丁，并要求构建和验收自有前端资产；
+目前 Dockerfile 只替换后端、沿用官方前端，不能靠 Go 字段变更完成 UI 交付。
+独立门户是备选，会新增部署、会话/认证接入和接口维护成本。
+此处在获得确认前保持候选，不开始产品补丁实现。
 
-```yaml
-launcher:
-  publish: true
-  category: applications
-  # 缺省取清单的 title / description。
-  name: Nextcloud
-  description: Self hosted file sharing and communication
-  icon: assets/nextcloud.png
-  # 关键字段：URL 是动态的，但"URL 在哪个变量里"是静态的。
-  uri_from: NEXTCLOUD_DOMAIN_FULL
-  order: 50
-  visibility: allowed
-  audience: assigned_users
-  access:
-    via: iam
-```
+### LLNG（保留，能力须另验）
 
-多条目形式（一个 Module 暴露多个界面）：
+按新协议实现适配，不保留 `APPS_LIST` 兼容层。
+第一轮交付优先 Casdoor；LLNG 是否完整展示详情、多分类和多尺寸必须逐字段试验。
+未支持的显示项在 plan 标明；权限字段不支持就拒绝发布，不能静默忽略或开放。
+未通过新版协议验证的 Provider 不能标记为新版目录已支持。
 
-```yaml
-launcher:
-  entries:
-    - id: llng_manager
-      name: WebSSO Manager
-      description: Configure LemonLDAP::NG
-      icon: assets/configure.png
-      uri_from: LLNG_MANAGER_DOMAIN_FULL
-      category: admin
-      audience: administrators
-      access:
-        via: native_group
-        role: platform_admin
-    - id: llng_test
-      name: LLNG authentication test
-      uri_from: LLNG_TEST_DOMAIN_FULL
-      category: admin
-      audience: administrators
-      enabled_if: LLNG_ENABLE_TEST
-      access:
-        via: native_group
-        role: platform_admin
-```
+### Authentik（逐步弃用）
 
-Adminer 属于基础 Module 的可选管理面。它的数据库登录保留为第二层，外层 ForwardAuth
-负责把人员入口限制到平台管理员：
+冻结新应用目录功能投入，不为其单分类或排序能力降低协议。
+继续保持已有能力的安全修复，文档标为弃用中；新增部署与示例优先 Casdoor。
+改默认选择要同步自动选择规则、配置解释和测试，不能只改文档。
+后续明确移除版本与依赖清单后再删除 Module，不静默转换已有 IAM 绑定、账号或业务数据。
+“不兼容旧目录协议”不等于允许破坏用户现有身份数据。
 
-```yaml
-launcher:
-  entries:
-    - id: postgres_adminer
-      name: PostgreSQL Adminer
-      uri_from: POSTGRES_ADMINER_DOMAIN_FULL
-      category: admin
-      audience: administrators
-      enabled_if: POSTGRES_ADMINER_ENABLED
-      access:
-        via: forward_auth
-        role: platform_admin
-        second_factor: database
-```
+## 7. Adminer 与 Module 覆盖
 
-### Adminer 的两层认证边界
+PostgreSQL/MariaDB Adminer 的目标声明均为 `kind: admin`、`access.mode: forward_auth`、
+`role: platform_admin`、`visibility.mode: access`，且只在 `adminer_enabled` 时发布。
+网关负责平台管理员身份，Adminer 继续用数据库凭据登录；不注入数据库超级用户密码。
+两套 compose 目前都已有 `ANAS_FORWARD_AUTH_MIDDLEWARE` 路由，oauth2_proxy 固定派生管理员组；
+剩余工作是新版目录声明与 Casdoor 实际会话下的直连/撤权验收，不重复增加第二层代理。
 
-Adminer 只是数据库客户端登录界面，不提供可由 ANAS 同步的人员账号库
-（[Adminer 请求与登录流程](https://github.com/vrana/adminer/blob/main/docs/developing.md)）。
-`platform_admin` ForwardAuth 证明访问者是平台管理员，Adminer 随后的数据库 username/password
-决定其数据库权限；两层都必须保留。
+首轮覆盖由 Module inventory 派生，不能仅遍历 IAM client：
 
-可以预选 driver、内部 server、port、database，最多预填非敏感 username；不得自动注入
-PostgreSQL 超级用户、MariaDB root 或 Consumer resource password，也不得用共享密码静默
-登录。真正的一键登录需要未来的 credential broker 为人员签发短期、可撤销、最小权限的
-逐人数据库角色，不属于本目录契约。
-
-字段约束：
-
-- `publish` 缺省 `false`。不显式声明的 Module 不进目录，避免把 `postgres`、
-  `lego` 这类没有界面的基础设施塞进用户门户。
-- `uri_from` 必须是该 Module 自己前缀下的变量，或它 `config.consumes` 覆盖的变量。
-  跨界读取沿用现有作用域规则，不为目录开后门。
-- `audience` 取 `assigned_users`、`administrators`、`authenticated_users`。匿名入口不进
-  已登录后的应用目录；本地恢复入口固定 `visibility: hidden`。
-- `access.via` 取 `iam`、`forward_auth`、`native_group`、`local`、`external`、`none`，决定 §5 里
-  `allow_groups` 的继承来源。`native_group` 表示应用自身用目录组执行授权，例如 LLNG
-  location rule；`local` 表示目标仍有独立本地登录；`external` 表示 ANAS 只管理链接。
-  后两者的目录角色都只控制卡片可见性。它描述的是
-  **事实**（这个界面实际由谁把门），不是愿望；填错会被 §9 的一致性校验抓出来。
-- `access.role: platform_admin` 由 Runner 按消费位置解析为管理员组名或 DN；Manifest 不应
-  把 `category: admin`、`Admins` 字符串和完整 LDAP DN 混写。
-- `icon` 是相对 Module 目录的路径。
-- `enabled_if` 引用一个布尔或非空判定的变量，解决 Adminer 这类可选服务。
-
-### 4.1 `platform_admin` 的输入、解析和输出
-
-管理员入口只在设计输入层使用语义角色，物理组名和 DN 由 Runner 从身份拓扑解析：
-
-| 层 | 规范表示 | 示例 | 约束 |
-| --- | --- | --- | --- |
-| 内置 Module 输入 | `audience: administrators` + `access.role: platform_admin` + 实际 `access.via` | Adminer 使用 `forward_auth`，LLNG Test 使用 `native_group` | Module 作者声明；用户只能隐藏，不能放宽或改执行点 |
-| 外部链接输入 | 同一 audience/role，`access.via: external` | 路由器管理页 | 只控制目录可见性，`plan` 标记 `catalog_visibility_only` |
-| Runner 规范化结果 | 保留 `ACCESS_ROLE=platform_admin`，另生成具体 `ALLOW_GROUPS` | ForwardAuth 消费位置取 `SAMBA_DC_ADMIN_GROUP_NAME` 的解析值，默认 `Admins` | 物理值是输出，不回写 Manifest/config |
-| Provider/执行点 | 按接口使用组名或 DN | 见下表 | 目录显示和真实执行点必须使用同一角色事实 |
-
-| 消费位置 | Runner 应提供的事实 |
+| 入口 | 纳入方式 |
 | --- | --- |
-| LLNG `inGroup()`、Authentik policy、OIDC/SAML group claim、ForwardAuth | `SAMBA_DC_ADMIN_GROUP_NAME` |
-| LAM 等直接 LDAP `memberOf` 过滤 | `SAMBA_DC_ADMIN_GROUP_DN` |
-| `launcher.category` | 两者都不用；分类只负责展示 |
+| Nextcloud、Forgejo、Vikunja、MeshCentral、NetBird 人员 UI | 用户条目；按各自实际协议与准入声明；平台存在不代表所有 Casdoor 组合已验收 |
+| LAM、DDNS、Traefik Dashboard、Collabora 管理台、数据库 Adminer | 分别核实 native/local/ForwardAuth，作为管理入口；本地登录不冒充 SSO |
+| Casdoor 管理 UI、LLNG Manager/Test | 单独管理入口；日常门户不为自己生成循环卡片，恢复入口隐藏 |
+| Collabora 文档编辑、SMB、TURN、纯 API 服务 | 没有独立可打开的 HTTP 人员入口时显式标“不发布”，不伪造地址 |
+| Immich 等后续 Module | 按同一 schema 声明，其独立接入状态不被本目录设计提前标记完成 |
 
-因此管理员入口不得在 Manifest 或顶层外部链接中写 `allow_groups: Admins`，更不能写完整 DN。
-`ANAS_APP_ENTRY__*__ALLOW_GROUPS=Admins` 可以出现在 Runner 解析后的环境契约中，这是预期输出。
-ForwardAuth 网关已经按这条规则运作：`oauth2_proxy` 不再有 `allow_groups` 参数，Hook 直接把
-`platform_admin` 解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP_NAME`，没有目录 Module 时
-回落到契约名 `Admins`），解析不出组名即拒绝部署。这道门后面全是管理界面，放宽它从来不是部署选择：
-可配置意味着一次修改同时放宽所有受保护服务，而没有任何提示。
+管理后台中哪些是日常管理、哪些仅是 break-glass 恢复入口，应逐个核实，不能按产品名一律发布。
+所有没有发布的 Module 都要有原因；新增 Module 的文档/CI 检查应用声明或“不适用”说明。
 
-截至本文版本，launcher 字段仍是目标 schema，Manifest parser 尚未实现，不能把设计示例误读成已生效
-配置；Adminer 的 ForwardAuth 路由与上述角色派生已经落地。
+## 8. 与当前协议和前稿的差异
 
-`identity.application_group: true`（已存在）与 `launcher.publish` 是两件事：前者
-决定 Samba AD 里是否创建 `APP_<module>` 组，后者决定是否进门户。一个应用可以有组
-但不进门户（纯 API 客户端），也可以进门户但不限制组（`visibility: always`）。
-
-## 5. 权限模型
-
-每个条目的最终组集合 `ALLOW_GROUPS` 先按 `audience` 确定，再核对执行点：
-
-1. `audience: administrators` → `access.role` 必须是 `platform_admin` 或未来更窄的已定义
-   管理角色；`platform_admin` 的 claim 组名解析为 `SAMBA_DC_ADMIN_GROUP_NAME`。它**不包含**
-   `APP_all` 或任何 `APP_<module>`；
-2. `audience: assigned_users` + `access.via: iam` → 继承该应用的
-   `ANAS_IAM_CLIENT__<APP>__ALLOW_GROUPS`，通常是
-   `APP_<应用名>,APP_all,Admins`；
-3. `audience: authenticated_users` → 空集合，表示所有已登录用户；只能由 Manifest 明确
-   声明，不能由用户覆盖放宽；
-4. `access.via: forward_auth` 或 `native_group` → 上述解析集合必须与实际网关或应用原生
-   location/policy 规则一致；
-5. `access.via: local` → 目标仍以本地凭据授权，目录组只能收紧卡片可见性，Runner 必须在
-   `plan` 标记 `catalog_visibility_only`，不能声称目录组就是执行点权限；
-6. `access.via: external` → `access.role` 只用于目录可见性；管理员条目的
-   `platform_admin` 解析为 `SAMBA_DC_ADMIN_GROUP_NAME`，并标记 `catalog_visibility_only`。
-
-用户配置 `modules.<app>.launcher.allow_groups` 只能是上述解析集合的子集，不能放宽。
-正式契约中多个组固定按 **OR / any** 解释：用户应用命中
-`APP_<应用名>`、`APP_all`、`Admins` 任意一个即可；管理员条目只命中管理员角色。当前 LLNG
-Hook 的“给所有条目统一追加管理员组”应移到 Runner 的 `assigned_users` 解析中，绝不能把
-`APP_all` 反向追加到管理员条目。固定语义可避免两个 IAM adapter 对同一份目录声明得出
-不同授权结果。
-
-Adminer 的人员管理员门禁与数据库登录是串联关系，具体边界和禁止共享超级用户自动登录的
-规则见 §4“Adminer 的两层认证边界”。
-
-LLNG adapter 还必须把每个应用声明的 claim 源属性加入 `ldapExportedVars`，再写入对应
-RP 的 exported vars；否则配置中虽然出现 `preferred_username: sAMAccountName`，LLNG
-会话里却没有 `sAMAccountName`。生成的 OIDC RP 统一启用
-`oidcRPMetaDataOptionsIDTokenForceClaims`，因为 Nextcloud 等客户端直接从 ID token 读取
-用户名，不保证再调用 UserInfo。Runner/E2E 同时校验“目录属性已加载、RP claim 已导出、
-应用 mapping 指向该 claim”这三个层次。
-
-`visibility` 的语义：
-
-| 值 | 含义 | 典型场景 |
-| --- | --- | --- |
-| `allowed` | 只对满足 `ALLOW_GROUPS` 的用户显示 | 默认 |
-| `always` | 对所有已登录用户显示，忽略组 | 无授权限制的公共应用 |
-| `hidden` | 注册客户端但不进目录 | `oauth2_proxy` 自身、纯 API 客户端 |
-
-门户列表本身要求已登录，因此不存在匿名可见性档位。
-
-**为什么可见性必须是执行点的投影而不是独立规则**：两种偏离都有害且都不会报错。
-显示集大于执行集，用户看到点进去被拒的应用；显示集小于执行集，用户发现不了自己
-有权用的应用。把它定义成投影，"一致"就成了构造上的性质，而不是需要人去维护的
-巧合；用户配置只允许收紧，是唯一不会引入新执行语义的放松方式。
-
-## 6. 环境变量契约
-
-Runner 发布，owner 为合成的 `runner`（与 §6 身份拓扑同样处理），只有显式
-`config.consumes` 的 Module 才收到：
-
-```dotenv
-ANAS_APP_CATALOG=lam,netbird,nextcloud,router
-ANAS_APP_CATEGORIES=applications,admin
-ANAS_APP_CATEGORY__APPLICATIONS__NAME=应用
-ANAS_APP_CATEGORY__APPLICATIONS__ORDER=10
-ANAS_APP_CATEGORY__ADMIN__NAME=系统管理
-ANAS_APP_CATEGORY__ADMIN__ORDER=90
-
-ANAS_APP_ENTRY__NEXTCLOUD__NAME=我的云盘
-ANAS_APP_ENTRY__NEXTCLOUD__DESCRIPTION=文件与协作
-ANAS_APP_ENTRY__NEXTCLOUD__URI=https://cloud.nas.example.com
-ANAS_APP_ENTRY__NEXTCLOUD__CATEGORY=applications
-ANAS_APP_ENTRY__NEXTCLOUD__ORDER=10
-ANAS_APP_ENTRY__NEXTCLOUD__ICON_NAME=nextcloud.png
-ANAS_APP_ENTRY__NEXTCLOUD__ALLOW_GROUPS=APP_nextcloud,APP_all,Admins
-ANAS_APP_ENTRY__NEXTCLOUD__AUDIENCE=assigned_users
-ANAS_APP_ENTRY__NEXTCLOUD__ACCESS_VIA=iam
-ANAS_APP_ENTRY__NEXTCLOUD__VISIBILITY=allowed
-ANAS_APP_ENTRY__NEXTCLOUD__SOURCE=module:nextcloud
-
-# 以下是 Runner 把 platform_admin 解析后的组名输出，不是 Manifest 输入，也不是 LDAP DN。
-ANAS_APP_ENTRY__LLNG_TEST__CATEGORY=admin
-ANAS_APP_ENTRY__LLNG_TEST__ALLOW_GROUPS=Admins
-ANAS_APP_ENTRY__LLNG_TEST__AUDIENCE=administrators
-ANAS_APP_ENTRY__LLNG_TEST__ACCESS_VIA=native_group
-ANAS_APP_ENTRY__LLNG_TEST__ACCESS_ROLE=platform_admin
-
-ANAS_APP_ICONS_DIR=<release>/apps/icons
-```
-
-`SOURCE` 区分 `module:<name>` 与 `config`，让 Provider 和 `plan` 输出都能说明一个
-条目是从哪来的；这在排查"门户里为什么有这一项"时是最先要回答的问题。
-
-条目 id 到变量名的转换与现有契约一致：大写，`-` 转 `_`。
-
-### 6.1 两段式发布
-
-URL 依赖各 Module 的 `calculate`，分类和图标不依赖。因此契约分两次写出，正好落在
-现有生命周期的缝隙里，**不需要改动 Hook 阶段顺序**：
-
-1. 所有 `calculate` 之前：Runner 发布 `ANAS_APP_CATALOG`、全部分类变量，以及每个
-   条目的 `NAME`、`DESCRIPTION`、`CATEGORY`、`ORDER`、`ICON_NAME`、`VISIBILITY`、
-   `AUDIENCE`、`ACCESS_VIA`、`ACCESS_ROLE`、`SOURCE`。这些只依赖清单和用户配置。
-2. 所有 `calculate` 之后、任何 `render_env` 之前：Runner 按 `uri_from` 取值填入
-   `URI`，按 §5 解析填入 `ALLOW_GROUPS`（此时 `ANAS_IAM_CLIENT__*__ALLOW_GROUPS`
-   已由各应用的 `calculate` 发布）。
-
-Provider 在 `render_env` 里读到的永远是完整目录。这与 IAM 注册请求的时序完全
-同构：Runner 先发名单，应用在 `calculate` 里补自己的字段，Provider 在
-`render_env` 里读全量——单向依赖，不成环。
-
-第 2 步意味着 `nextcloud`/`netbird`/`meshcentral` Hook 里那几行 `APPS_LIST__*` 赋值可以整段
-删掉：它们做的事就是把 `NEXTCLOUD_DOMAIN_FULL` 抄到另一个变量名下。
-
-## 7. 图标契约
-
-`docker cp` 换成声明式挂载：
-
-- Runner 在渲染时把每个条目的图标收敛到产物内的 `apps/icons/<id>.<ext>`，并发布
-  `ANAS_APP_ICONS_DIR` 指向 promote 之后的稳定路径。这正是
-  [2026-07-19-design-review.md](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-07-19-design-review.md) 里那个
-  "calculate 阶段用临时渲染路径构造持久值" 缺陷的正解。
-- Provider 的 compose 以只读 bind mount 挂载该目录，容器重建幂等，
-  `after_start` 的 `copy_portal_logos` 整个删除。
-- 校验：扩展名限 `.png`/`.svg`/`.webp`，单文件 ≤ 256 KiB，文件必须存在。在
-  `plan` 阶段失败，不等到 `start`。
-- 缺省图标由 Runner 提供一个内置占位，不允许每个 Provider 各自 fallback——否则
-  同一部署换个门户，图标就变了。
-
-Provider 侧落点：
-
-- LLNG：挂到 `/usr/share/lemonldap-ng/portal/htdocs/static/common/apps/`，
-  `applicationList/.../options logo` 填 `ICON_NAME`。
-- Authentik：挂到 media 目录（例如 `/media/public/anas/`），blueprint 的
-  `meta_icon` 填相对 media 的路径。**这一点未经真实实例验证**，首次部署时需要
-  对照当时版本的 Authentik 文档复核，与 §12 的其他未验证项同样处理。
-
-## 8. Provider 映射
-
-Provider 在清单里声明：
-
-```yaml
-capabilities:
-  provides:
-    - name: app_launcher
-      interfaces:
-        - portal
-```
-
-与 `iam` 不同，`app_launcher` **不设"一个部署只能有一个"的约束，也没有
-`launcher.provider` 配置项**。目录是只读显示数据，两个门户同时渲染它不产生冲突，
-也不产生第二个会话域。谁在部署里，谁就渲染。这正是契约化之后才可能出现的收益：
-将来加一个独立仪表盘 Module，不需要改动任何应用 Module。
-
-### 8.1 LLNG：Portal 承载双分区目录
-
-LLNG 的 Portal 是登录入口和目录宿主，不给 Portal 自己创建卡片。Runner 发布的条目映射为
-两类 `applicationList` category：
-
-| Runner 分类 | LLNG category | 普通用户 | `platform_admin` |
-| --- | --- | --- | --- |
-| `applications` | `1anas_applications` / “应用” | 只显示其 `ALLOW_GROUPS` 允许的条目 | 显示其获授权应用 |
-| `admin` | `9anas_admin` / “系统管理” | 分类为空，因此不显示 | 显示 Manager、Test、LAM、DDNS、Adminer、Dashboard 等获授权管理条目 |
-
-每个条目的 `options display` 直接由 Runner 的最终 `ALLOW_GROUPS` 生成 `inGroup()` OR 表达式。
-LLNG 官方的 Application list 支持按规则显示条目，但菜单显示仍不是 URL 授权，因此 Manager、
-Test 和其他 Handler/ForwardAuth 路由必须使用同一组事实执行限制
-（[LLNG Portal menu](https://lemonldap-ng.org/documentation/2.0/portalmenu.html)）。
-
-LLNG 自身入口的目标声明为：
-
-| 入口 | 目录 | audience | 执行点 | 规则 |
-| --- | --- | --- | --- | --- |
-| Portal | 不生成卡片 | `authenticated_users` | LLNG Portal | 登录成功后承载目录 |
-| Manager | `admin` | `administrators` | LLNG location rule | `inGroup(SAMBA_DC_ADMIN_GROUP_NAME)` |
-| Test | `admin`，仅 `enable_test=true` | `administrators` | LLNG location rule | `inGroup(SAMBA_DC_ADMIN_GROUP_NAME)` |
-| 本 Module 的可选 Adminer | `admin`，仅组件真实存在且启用 | `administrators` | ForwardAuth + database | 管理员门禁后再数据库登录 |
-
-当前 Test 的 `locationRules/$LLNG_TEST_DOMAIN default=accept` 必须改成与 Manager 相同的
-管理员规则；`applicationList/.../test_auth/options display` 也必须使用同一个
-`inGroup(SAMBA_DC_ADMIN_GROUP_NAME)` 表达式，不能继续用 `auto` 或 `on`。普通用户无论从目录
-点击还是直接输入 Test URL 都必须被拒绝。`enable_test` 控制入口是否存在，不改变 audience。
-
-LLNG adapter 只独占并重建 `1anas_applications`、`9anas_admin` 两个 category；其他 category
-原样保留。所有 ANAS Module 和用户 `launcher.entries` 都进入这两个 Runner-owned category，
-管理员不得在 LLNG Manager 里手工修改它们；需要持久化的外部链接必须写回 ANAS 配置。这样
-既不会静默删除非 ANAS 分类，也不会让同一条目同时受 LLNG 手工配置和 Runner 配置控制。
-
-### 8.2 Authentik：Application Dashboard 承载同一目录
-
-Authentik 使用 `authentik_core.application` 渲染 Application Dashboard：
-
-- `group` 映射 Runner 分类显示名（“应用”“系统管理”）；
-- `meta_launch_url`、`meta_description`、`meta_icon` 映射目录字段；
-- `meta_hide: true` 精确实现 `visibility: hidden`。项目固定版本为 2026.5.6，2026.5 已新增
-  “Hide from Application Dashboard”，不再使用旧的 `blank://blank` 兼容技巧
-  （[Authentik 2026.5 release](https://docs.goauthentik.io/releases/2026.5/)）；
-- `policy_engine_mode: any` 与 ANAS 的 OR 组语义一致；
-- 每个 `visibility: allowed` 条目都生成显式 policy binding。Authentik 默认在无 binding 时
-  允许所有用户，因此 adapter 不能把“没有生成 policy”解释为“拒绝”
-  （[Authentik application bindings](https://docs.goauthentik.io/add-secure-apps/applications/manage_apps/)）。
-
-ANAS 管理的 Authentik 实例还应把 `core_default_app_access` 设为 `false` 作为 fail-closed
-兜底；即使某个新条目漏绑 policy，也不能默认向所有用户开放。显式
-`visibility: always` 的条目则生成一条“已认证用户”允许策略，而不是依赖全局默认。
-
-目录条目与 IAM client 必须解耦：Authentik Application 的 Provider 可为空，因此 LAM、
-Traefik Dashboard、Adminer 这类由本地登录或 ForwardAuth 保护的 URL 仍可创建“仅启动链接”
-Application；Nextcloud、MeshCentral 等 IAM Consumer 则同时关联对应 Provider。不能再像当前
-`writeApplicationEntry` 一样假设每张卡片都有 `provider-<slug>`。
-
-Authentik 自身入口的目标声明为：
-
-| 入口 | 目录 | audience | 执行点 | 规则 |
-| --- | --- | --- | --- | --- |
-| Application Dashboard | 不生成卡片 | `authenticated_users` | Authentik | 登录用户的目录宿主 |
-| Admin interface | `admin` | `administrators` | Authentik superuser/role | 仅 Samba `Admins` 映射 superuser |
-| `akadmin` recovery | `hidden` | 本地恢复 | Authentik inbuilt backend | 永不进入日常目录 |
-
-普通用户只能看到通过 `APP_<module>`/`APP_all` 等 policy 的普通应用；管理员可以同时看到
-“系统管理”组。Authentik 的 policy binding 同时控制卡片可见性和 Authentik application
-launch，但目标 URL 仍须保留自身的 ForwardAuth、原生管理员角色、本地认证或网络隔离。
-
-| 契约字段 | LLNG | Authentik |
-| --- | --- | --- |
-| `CATEGORY` | `applicationList/<order><id> catname` | `application.group`（单层字符串） |
-| `ORDER` | 分类与条目的 key 排序前缀 | **不支持**，忽略 |
-| `NAME` / `DESCRIPTION` | `options name` / `description` / `tooltip` | `attrs.name` / `meta_description` |
-| `URI` | `options uri` | `attrs.meta_launch_url` |
-| `ICON_NAME` | `options logo` | `attrs.meta_icon` |
-| `ALLOW_GROUPS` | `options display` 的 `inGroup()` 表达式 | 表达式策略 + `policybinding`（已实现） |
-| `AUDIENCE` / `ACCESS_ROLE` | 校验 location rule/Handler 与目录表达式一致 | 校验 application policy 与目标角色一致 |
-| `VISIBILITY: always` | `display: on` | 显式“已认证用户”允许策略 |
-| `VISIBILITY: hidden` | 不创建条目 | `meta_hide: true` |
-
-Authentik 缺少条目排序、缺少多级分类，这是能力差异，按约束 5 如实忽略并在
-`plan` 输出里提示一次，而不是伪造实现。
-
-## 9. 校验
-
-全部在 `plan` 阶段完成，与现有能力解析同批次：
-
-- 条目引用了未定义的分类；
-- `uri_from` 指向的变量在解析后为空，而条目 `visibility` 不是 `hidden`；
-- `icon` 文件不存在、扩展名或大小越界；
-- 条目 id 与 Module 名冲突，或两个条目 id 相同；
-- 分类声明 `allow_groups`，或代码试图从 `category: admin` 推导组——分类只能有展示元数据；
-- `category: admin` 条目没有 `audience: administrators`，或管理员条目包含 `APP_all`/
-  `APP_<module>`；
-- 管理员外部条目直接写 `allow_groups: Admins`、管理员组 DN 或其他物理组标识，而没有声明
-  `access.via: external` + `access.role: platform_admin`；
-- `access.role: platform_admin` 在 claim/policy 上没有解析为 `SAMBA_DC_ADMIN_GROUP_NAME`，
-  或在 LDAP filter 上错误地没有使用 `SAMBA_DC_ADMIN_GROUP_DN`；
-- 用户配置的 `allow_groups` 不是执行点集合的子集；
-- `access.via: iam` 但该 Module 没有 IAM 绑定，或 `access.via: forward_auth` 但
-  部署里没有 `forward_auth` 提供方——这条是把 §5 的继承链从"填什么都行"变成可
-  验证的原因；
-- Adminer 条目标记 `audience: administrators`，但路由既没有与 `platform_admin` 一致的
-  ForwardAuth，也没有声明为管理网络隔离；数据库登录不能替代这项人员入口检查；
-- LLNG Test 启用后，目录表达式或 `locationRules/$LLNG_TEST_DOMAIN` 不是
-  `platform_admin`；这应作为安全错误而不是 warning；
-- **组名字符集** `^[A-Za-z0-9 _-]+$`。这是安全校验，不是洁癖：组名会被拼进
-  LLNG 的 Perl `display` 表达式和 Authentik 的 Python 策略表达式，两处都是代码
-  上下文，`yamlString` 只挡得住 YAML 层。
-
-错误信息带上条目、来源和修复动作：
-
-```text
-launcher entry "nextcloud" references category "media", which is not defined;
-define it under launcher.categories or use one of: applications, admin, office
-```
-
-```text
-modules.nextcloud.launcher.allow_groups adds "Staff", which is not enforced
-anywhere; the portal would show nextcloud to users who cannot open it.
-allow_groups may only narrow the enforced set: APP_nextcloud, APP_all, Admins
-```
-
-## 10. 生命周期与状态
-
-- 所有 `launcher.*` 变更的 effect 是 `container_recreate`：LLNG 的配置脚本和
-  Authentik 的 blueprint 都在容器启动时执行，重建即生效，不涉及数据迁移，也不需
-  要 `reconcile` 的多步协调。
-- 图标内容变更同样是 `container_recreate`；Runner 应把图标内容摘要纳入渲染产物
-  的输入，否则只改图片不改配置时不会触发重建。
-- **目录不进锁文件。** 它不产生需要跨部署稳定的绑定（不像 `iam.provider`），重算
-  是幂等的，写进锁只会多一份可能过期的副本。
-
-## 11. 实施阶段
-
-| 阶段 | 内容 |
+| 当前代码 / 原提案 | 本次修改 |
 | --- | --- |
-| A | Runner 契约：清单 `launcher`、`audience`、`access.role`、两段式发布和 §9 校验；同时双写旧 `APPS_LIST*` 保持现有 Module 可用 |
-| B | LLNG 改读新契约，生成 `applications`/`admin` 双分区；Manager 与 Test 统一限制 `platform_admin`；图标改挂载，删除 `after_start: copy_portal_logos` 与旧图标变量 |
-| C | Authentik 用 `application.group`、`meta_hide` 和显式 fail-closed policy binding 渲染同一目录；支持无 Provider 的启动链接；补分类与图标 |
-| D | 给 `lam`、DDNS、各 Adminer、Traefik Dashboard、LLNG Manager/Test、Authentik Admin interface 补 `launcher` 声明；Adminer 增加 `platform_admin` ForwardAuth；删除三个用户应用 Hook 中的 `APPS_LIST*` 代码 |
-| E | 用户配置覆盖与外部条目 |
+| Hook 追加 `APPS_LIST`；同一 Module 基本一项 | Manifest `applications` 统一列表，可多个入口，Runner 聚合 |
+| `NAME` 混用标识与文案 | `name` 稳定标识 + `display_name` 展示 |
+| 单 `DESC` | `summary` 与 `description` 分开 |
+| 单 `LOGO_PATH/LOGO_NAME`；LLNG 启动后复制 | 七尺寸 PNG、摘要清单、deployment 制品、只读挂载、浏览器 HTTPS URL |
+| 没有文档字段 | 必需 `documentation_url`；卡片/详情有独立文档入口 |
+| 单语展示字符串 | 应用/分类展示字段采用 `zh-CN/en` 映射；文档按语言选择，逐字段回退、逐语言覆盖 |
+| 无统一权重；前稿单分类 | 确定性 `weight` + `categories` 列表及分类注册表 |
+| 门户与 IAM 允许组分别写 | 引用执行点规则；本地/外部规则明确仅管目录 |
+| 主要跟随 OIDC/SAML client 生成 | 发布目录与注册登录客户端独立 |
+| 前稿 `visibility: always` 含糊 | 显式 authenticated；缺失/空权限失败关闭；hidden 包括管理员 |
+| 前稿允许展示覆盖收窄组 | 首版不增加第二份内部应用权限覆盖，统一从执行点派生 |
+| 前稿 Runner→LLNG→Authentik 双写迁移 | 未发版直接替换旧目录协议，Casdoor 优先，Authentik 逐步弃用 |
+| 前稿列 Adminer ForwardAuth 为未来工作 | 代码已存在，补目录与实机验收 |
+| 前稿仅 `ANAS_APP_ICONS_DIR` | 完整目录制品，区分 render 暂存路径、宿主挂载路径、容器路径和公开 URL |
 
-A 到 D 之间旧契约保持可用，因此每一阶段都能单独渲染验证；`APPS_LIST` 的删除放在
-最后一步，避免中途出现两个门户数据源。
+## 9. 实施边界
 
-## 12. 已知限制与未验证点
+Core 只理解通用 schema、归一化、文件安全边界和制品；不包含 Casdoor/LLNG 产品字段。
+Provider adapter 负责原生对象、权限校验与门户页面。无新服务、数据库副本、后台文件同步器是推荐方向，
+Casdoor UI 扩展选择仍须确认。实现步骤、阻塞与验收记录仅维护在配套计划中。
 
-- Authentik 的 `meta_icon` 路径形状、`meta_hide` 的 blueprint 写法、Admin interface 的稳定
-  launch URL 和 `core_default_app_access` 自动配置方式仍须在固定版本 2026.5.6 的真实实例验证。
-- Authentik 只有单层分组且无排序，`ORDER` 与多级分类在该 Provider 上退化。
-- LLNG Manager 对 `1anas_applications`、`9anas_admin` 的手工修改会在下一次 reconcile 被
-  Runner 覆盖；管理 UI 和运维文档必须明确标识这两个分类为 ANAS-owned。
-- 目录**不表示服务可用**。列表里有条目不代表容器在跑；健康状态是另一个能力，不
-  在本设计范围，也不应该偷偷塞进 `VISIBILITY`。
-- 匿名（未登录）门户不在范围。
-- 同一 Module 的不同界面按条目解析 `audience` 和 `access`；Manager/Test、Portal/Admin、
-  primary/recovery 不共享一套组集合。
+Module 的消费声明固定为 `application_catalog: { consumes: true }`，由 Runner 识别；
+不把目录消费伪装成另一个 IAM client，也不建立对每个发布应用的 capability 依赖。
+制品 JSON 顶层为 `schema: anas.app-catalog/v1`、`languages: [zh-CN, en]`、
+`default_language`（从全局默认匹配，无法匹配时为 `en`）、`categories`、`applications`；
+资产清单为 `schema: anas.app-catalog-assets/v1`、`files`，两者都不带构建时间等不稳定字段。
+对象/列表规范排序后计算摘要，同输入产生相同字节；不支持的 schema 版本必须拒绝读取。
