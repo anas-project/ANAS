@@ -578,6 +578,7 @@ var requiredEndpointSuffixes = map[string][]string{
 var iamLogoutValues = map[string]map[string]bool{
 	"OIDC_LOGOUT_METHODS": {"backchannel": true, "frontchannel": true},
 	"SAML_SLS_BINDINGS":   {"redirect": true, "post": true},
+	"OIDC_CAEP_EVENTS":    {"session-revoked": true},
 }
 
 func iamBindingKey(consumer, suffix string) string {
@@ -616,6 +617,15 @@ func (a *app) iamConsumersByInterface(iface string) []string {
 func (a *app) publishIAMEnv(selected []string) {
 	if a.env == nil {
 		a.env = map[string]string{}
+	}
+	// Event support and opt-in come from this calculate pass. A Hook returns
+	// its inherited environment too; retaining user/previous-pass declarations
+	// would let another provider appear to implement an event it never emitted.
+	for key := range a.env {
+		if strings.HasSuffix(key, "__OIDC_CAEP_EVENTS") && (strings.HasPrefix(key, envIAMBindingPfx) || strings.HasPrefix(key, "ANAS_IAM_CLIENT__")) {
+			delete(a.env, key)
+			delete(a.envOwner, key)
+		}
 	}
 	set := func(key, value, owner string) {
 		a.env[key] = value
@@ -729,6 +739,17 @@ func (a *app) validateIAMEndpoints() error {
 	}
 	missing := []string{}
 	for _, consumer := range a.iamConsumers() {
+		caepKey := iamBindingKey(consumer, "OIDC_CAEP_EVENTS")
+		caep := splitIAMLogoutList(a.env[caepKey])
+		if len(caep) > 0 && a.iamBindings[consumer] != interfaceOIDC {
+			return fmt.Errorf("iam provider %s publishes %s for active %s interface", a.iamProvider, caepKey, a.iamBindings[consumer])
+		}
+		if err := validateIAMLogoutValues(consumer, caepKey, "OIDC_CAEP_EVENTS", caep); err != nil {
+			return err
+		}
+		if len(caep) > 0 && a.envOwner[caepKey] != a.iamProvider {
+			return fmt.Errorf("iam event capability %s was not published by selected provider %s", caepKey, a.iamProvider)
+		}
 		for _, suffix := range requiredEndpointSuffixes[a.iamBindings[consumer]] {
 			key := iamBindingKey(consumer, suffix)
 			if strings.TrimSpace(a.env[key]) == "" {
@@ -787,9 +808,37 @@ func (a *app) validateIAMClientRegistrations() error {
 					return fmt.Errorf("iam client %s publishes invalid %sOIDC_LOGOUT_SESSION_REQUIRED %q; want true or false", consumer, prefix, raw)
 				}
 			}
+			caepKey := prefix + "OIDC_CAEP_EVENTS"
+			caep := splitIAMLogoutList(a.env[caepKey])
+			if err := validateIAMLogoutValues(consumer, caepKey, "OIDC_CAEP_EVENTS", caep); err != nil {
+				return err
+			}
+			if len(caep) > 0 {
+				if a.envOwner[caepKey] != consumer {
+					return fmt.Errorf("iam event request %s was not published by consumer %s", caepKey, consumer)
+				}
+				if !contains(methods, "backchannel") || uri == "" {
+					return fmt.Errorf("iam client %s declares %s without OIDC backchannel logout", consumer, caepKey)
+				}
+				if strings.TrimSpace(a.env[prefix+"OIDC_LOGOUT_SESSION_REQUIRED"]) == "true" {
+					return fmt.Errorf("iam client %s declares subject-wide %s but requires a logout session", consumer, caepKey)
+				}
+				supported := splitIAMLogoutList(a.env[iamBindingKey(consumer, "OIDC_CAEP_EVENTS")])
+				if err := validateIAMLogoutValues(consumer, iamBindingKey(consumer, "OIDC_CAEP_EVENTS"), "OIDC_CAEP_EVENTS", supported); err != nil {
+					return err
+				}
+				if len(supported) > 0 && a.envOwner[iamBindingKey(consumer, "OIDC_CAEP_EVENTS")] != a.iamProvider {
+					return fmt.Errorf("iam event capability %s was not published by selected provider %s", iamBindingKey(consumer, "OIDC_CAEP_EVENTS"), a.iamProvider)
+				}
+				for _, event := range caep {
+					if !contains(supported, event) {
+						return fmt.Errorf("iam provider %s does not support requested %s event %q for %s", a.iamProvider, caepKey, event, consumer)
+					}
+				}
+			}
 		case interfaceSAML:
 			if err := rejectIAMClientFields(a.env, consumer, prefix, []string{
-				"POST_LOGOUT_REDIRECT_URIS", "OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED",
+				"POST_LOGOUT_REDIRECT_URIS", "OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED", "OIDC_CAEP_EVENTS",
 			}, interfaceSAML); err != nil {
 				return err
 			}

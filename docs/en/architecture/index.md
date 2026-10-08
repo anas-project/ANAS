@@ -25,13 +25,29 @@ writes and feeds the Casdoor watcher. Revision r10 implements per-application OI
 revocation, a durable pending-work file and bounded delivery retry in the existing watcher. Independent
 OIDC session identifiers preserve later grants when old notifications are retried. Source and helper
 tests pass; deployment acceptance is in progress. SAML SLO remains unavailable.
+The [relational_database extension lifecycle](/architecture/relational-database-extension-lifecycle)
+now has implementation for extension names, strict validation, the fixed PostgreSQL 18.4/Alpine + pgvector 0.8.2
+combination, SCRAM authentication, application-role readiness, and a Provider maintenance barrier. A changed
+Provider with extension consumers requires a full workspace stop and an ANAS recovery point; uncertain data
+cannot be reopened automatically by an older image. Matching image archives use the existing backup metadata
+channel. The latest-master finance run passed actual upgrade, post-maintenance failure, process interruption,
+exact-candidate retry and full workspace recovery. Evidence and architecture-specific limits remain in the paired plan.
+The [Immich implementation](/architecture/immich-module-design) is developing: shared PostgreSQL, dedicated
+Valkey, managed media in `data/immich/media`, optional ML, and native OIDC account creation with trusted admin
+role claims. A minimal fixed-version patch blocks local account creation, password writes, and OAuth rebinding.
+The recorded Casdoor baseline passed native IAM, desktop uploads/logout, automatic directory revocation,
+and full workspace recovery. The latest-master server suite also passed. Production PostgreSQL permissions,
+extensions and authentication passed; production first-admin login currently needs the directory account's
+missing email. Mobile backup and other untested client criteria remain release gates.
+These two architecture documents currently have Chinese source text; this is their English index summary.
 
 ## Immich and resource-aware operating modes
 
 The [Immich integration design](/architecture/immich-module-design) (Chinese original) records the
 2026-10-02 decisions: a complete photo/video backup application, dedicated Redis/Valkey, OIDC-only
 regular sign-in with `anasIdentityAnchor`, shared PostgreSQL with managed extensions, and reuse of
-ANAS backup. It is a design, not an implemented Module or tested deployment.
+ANAS backup. The Module is implemented with status developing; current acceptance limits are summarized
+above and recorded in its paired plan.
 
 [Module resource-based operating modes](/architecture/module-resource-profiles) (Chinese original)
 are a separate **next-release** proposal covering every Module, including Modules with only one default

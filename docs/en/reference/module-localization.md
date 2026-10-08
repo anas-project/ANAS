@@ -7,14 +7,15 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [ai_agent](#ai_agent) | 0.1.0-r2 | configured | supported | deployment_default | applied | not_consumed | 2 |
-| [authentik](#authentik) | 2026.5.6-r14 | container | supported | browser | not_consumed | not_consumed | 17 |
-| [casdoor](#casdoor) | 3.143.0-r10 | container | supported | application | applied | not_consumed | 2 |
+| [authentik](#authentik) | 2026.5.6-r15 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [casdoor](#casdoor) | 3.143.0-r11 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r6 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r6 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r4 | application | fixed | fixed | not_consumed | not_consumed | 1 |
 | [eturnal](#eturnal) | 1.12.2-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [forgejo](#forgejo) | 15.0.7-r2 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
+| [immich](#immich) | 3.2.4-r1 | container | supported | browser | not_consumed | not_consumed | 88 |
 | [incus](#incus) | 7.3.0-r2 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
@@ -44,7 +45,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## authentik
 
-- **Version / 版本：** `2026.5.6-r14`; reviewed 2026-08-21
+- **Version / 版本：** `2026.5.6-r15`; reviewed 2026-08-21
 - **Timezone / 时区：** `container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — authentik Web UI
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -55,7 +56,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## casdoor
 
-- **Version / 版本：** `3.143.0-r10`; reviewed 2026-08-27
+- **Version / 版本：** `3.143.0-r11`; reviewed 2026-08-27
 - **Timezone / 时区：** `container` — Casdoor receives TZ through the module environment; no separate application timezone is forced.
 - **Language / 语言：** `supported`, `application` — Casdoor Web UI default
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
@@ -126,6 +127,17 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 - **Fallback / 回退：** No user-facing language exists.
 - **Supported / 支持语言：** not applicable / 不适用
 - **Evidence / 证据：** [3.2.10 — protocol service without a localized UI](https://github.com/FreeRADIUS/freeradius-server/tree/release_3_2_10)
+
+## immich
+
+- **Version / 版本：** `3.2.4-r1`; reviewed 2026-10-03
+- **Timezone / 时区：** `container` — The server and ML container receive ANAS TZ; media timestamps remain owned by Immich metadata.
+- **Language / 语言：** `supported`, `browser` — Immich Web UI
+- **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
+- **Fallback / 回退：** Saved user preference or browser language selects the closest available locale; unmatched languages fall back to English. Script variants remain separate.
+- **Supported / 支持语言：** `af`, `ar`, `az`, `be`, `bg`, `bi`, `bn`, `br`, `bs`, `ca`, `cs`, `cv`, `da`, `de`, `de-CH`, `el`, `en`, `en-GB`, `eo`, `es`, `et`, `eu`, `fa`, `fi`, `fil`, `fr`, `ga`, `gl`, `gsw`, `gu`, `he`, `hi`, `hr`, `hu`, `hy`, `id`, `is`, `it`, `ja`, `ka`, `kab`, `kk`, `km`, `kmr`, `kn`, `ko`, `kxm`, `lb`, `lmo`, `lt`, `lv`, `mfa`, `mi`, `mk`, `ml`, `mn`, `mr`, `ms`, `nb-NO`, `ne`, `nl`, `nn`, `pa`, `pl`, `pt`, `pt-BR`, `ro`, `ru`, `si`, `sk`, `sl`, `sq`, `sr-Cyrl`, `sr-Latn`, `sv`, `sw`, `swg`, `ta`, `te`, `th`, `tr`, `uk`, `ur`, `uz`, `vi`, `yue-Hant`, `zh-Hans`, `zh-Hant`
+- **Notes / 说明：** No module language override is exposed; application preferences and browser negotiation remain native.
+- **Evidence / 证据：** [3.2.4 — translation JSON filenames](https://github.com/immich-app/immich/tree/v3.2.4/i18n); [3.2.4 — langCodes, convertBCP47, aliases, getPreferredLocale](https://github.com/immich-app/immich/blob/v3.2.4/web/src/lib/utils/i18n.ts)
 
 ## incus
 
@@ -224,7 +236,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## postgres
 
-- **Version / 版本：** `18.4.0-r4`; reviewed 2026-08-13
+- **Version / 版本：** `18.4.0-r4`; reviewed 2026-10-03
 - **Timezone / 时区：** `container` — PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.
 - **Language / 语言：** `supported`, `browser` — optional Adminer 5.5.0 Web UI; PostgreSQL itself has no UI language
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

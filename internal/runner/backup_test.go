@@ -379,7 +379,22 @@ func TestVerifyBackupCatchesTruncationAndMissingChannels(t *testing.T) {
 			t.Fatal(err)
 		}
 		if withTar {
-			if err := os.WriteFile(backupMetaTarPath(root), []byte("tar"), 0600); err != nil {
+			file, err := os.Create(backupMetaTarPath(root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			archive := tar.NewWriter(file)
+			body := []byte("api_version: " + deploymentAPIVersion + "\nid: 20260101T000000Z-deadbeef\n")
+			if err := archive.WriteHeader(&tar.Header{Name: "deployment/deployment.yml", Mode: 0600, Size: int64(len(body))}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := archive.Write(body); err != nil {
+				t.Fatal(err)
+			}
+			if err := archive.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
 				t.Fatal(err)
 			}
 		}

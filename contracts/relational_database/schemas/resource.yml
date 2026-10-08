@@ -17,3 +17,15 @@ properties:
         enum: [generated]
   deletion_policy:
     enum: [retain, delete]
+  postgres:
+    type: object
+    additional_properties: false
+    required: [extensions]
+    properties:
+      extensions:
+        type: array
+        min_items: 1
+        unique_items: true
+        items:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,62}$"

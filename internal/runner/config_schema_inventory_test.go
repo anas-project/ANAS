@@ -38,6 +38,8 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumJobMinutes := 1440
 	minimumSweepSeconds := 30
 	maximumSweepSeconds := 86400
+	maximumImmichJobs := 16
+	maximumImmichVideos := 8
 	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
 	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
@@ -66,6 +68,9 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.host_lan_ip":                  {Format: configschema.FormatIPv4},
 		"global.host_lan_bridge_ip":           {Format: configschema.FormatIPv4},
 		"eturnal.port":                        {Minimum: &minimumOne, Maximum: &maximumPort},
+		"immich.domain_prefix":                {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"immich.job_concurrency":              {Minimum: &minimumOne, Maximum: &maximumImmichJobs},
+		"immich.video_concurrency":            {Minimum: &minimumOne, Maximum: &maximumImmichVideos},
 		// Empty is inside the pattern because the parameter ships empty; the
 		// incus hook is what refuses to apply until it is actually set.
 		"incus.endpoint":     {Pattern: `^https://[A-Za-z0-9.:_-]+$`},

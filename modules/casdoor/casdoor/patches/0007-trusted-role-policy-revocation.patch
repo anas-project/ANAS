@@ -1,0 +1,165 @@
+--- a/object/token_jwt.go
++++ b/object/token_jwt.go
+@@ -359,6 +359,19 @@
+ 		return permissionNames, true
+ 	}
+ 
++	// This source is computed from managed directory membership, never profile properties.
++	if strings.HasPrefix(fieldName, "ANASRole.") {
++		group := strings.TrimPrefix(fieldName, "ANASRole.")
++		if user.Owner == "anas" && group != "" {
++			for _, id := range user.Groups {
++				if id == "anas/"+group {
++					return "admin", true
++				}
++			}
++		}
++		return "user", true
++	}
++
+ 	// Handle Properties fields (e.g., Properties.my_field)
+ 	if strings.HasPrefix(fieldName, "Properties.") {
+ 		parts := strings.Split(fieldName, ".")
+@@ -408,3 +421,5 @@
+-	// Always include nonce and scope as they are built-in OAuth/OIDC fields (even if empty)
+-	res["nonce"] = claims.Nonce
++	// Match the standard ID token: omit nonce when authorization did not request it.
++	if claims.Nonce != "" {
++		res["nonce"] = claims.Nonce
++	}
+ 	res["scope"] = claims.Scope
+--- a/object/token_logout.go
++++ b/object/token_logout.go
+@@ -32,16 +32,29 @@
+ // See https://openid.net/specs/openid-connect-backchannel-1_0.html
+ type LogoutTokenClaims struct {
+ 	Events map[string]interface{} `json:"events"`
++	SubID  map[string]string      `json:"sub_id,omitempty"`
+ 	Sid    string                 `json:"sid,omitempty"`
+ 	jwt.RegisteredClaims
+ }
+ 
+ func generateLogoutToken(application *Application, user *User, sessionId string, host string) (string, error) {
++	return generateAnasLogoutToken(application, user, sessionId, host, 0)
++}
++
++func generateAnasLogoutToken(application *Application, user *User, sessionId, host string, eventTimestamp float64) (string, error) {
+ 	nowTime := time.Now()
+ 	_, originBackend := getOriginFromHost(host)
+ 	claims, err := newLogoutTokenClaims(application, user, sessionId, originBackend, nowTime)
+ 	if err != nil {
+ 		return "", err
++	}
++
++	if eventTimestamp > 0 {
++		if sessionId != "" || eventTimestamp > float64(nowTime.Unix())+5 {
++			return "", fmt.Errorf("invalid policy logout time/session")
++		}
++		claims.Events["https://schemas.openid.net/secevent/caep/event-type/session-revoked"] = map[string]interface{}{"initiating_entity": "policy", "event_timestamp": eventTimestamp}
++		claims.SubID = map[string]string{"format": "iss_sub", "iss": claims.Issuer, "sub": claims.Subject}
+ 	}
+ 
+ 	cert, err := getCertByApplication(application)
+--- a/object/anas_revocation.go
++++ b/object/anas_revocation.go
+@@ -18,21 +18,24 @@
+ 
+ // This snapshot contains identifiers, never bearer tokens or caller supplied URLs.
+ type AnasRevocation struct {
+-	Owner        string             `json:"owner"`
+-	UserId       string             `json:"userId"`
+-	Name         string             `json:"name"`
+-	Subject      string             `json:"subject"`
+-	All          bool               `json:"all"`
+-	Applications []string           `json:"applications"`
+-	Tokens       []string           `json:"tokens"`
+-	Targets      []AnasLogoutTarget `json:"targets"`
+-	Sessions     []*Session         `json:"sessions"`
++	Owner              string             `json:"owner"`
++	UserId             string             `json:"userId"`
++	Name               string             `json:"name"`
++	PolicyApplications []string           `json:"policyApplications,omitempty"`
++	EventTimestamp     float64            `json:"eventTimestamp,omitempty"`
++	Subject            string             `json:"subject"`
++	All                bool               `json:"all"`
++	Applications       []string           `json:"applications"`
++	Tokens             []string           `json:"tokens"`
++	Targets            []AnasLogoutTarget `json:"targets"`
++	Sessions           []*Session         `json:"sessions"`
+ }
+ 
+ type AnasLogoutTarget struct {
+ 	Application string `json:"application"`
+ 	Sid         string `json:"sid"`
+ 	Subject     string `json:"subject,omitempty"`
++	Policy      bool   `json:"policy,omitempty"`
+ }
+ 
+ func checkAnasRevocation(r *AnasRevocation) (*User, error) {
+@@ -56,10 +59,23 @@
+ 		}
+ 	}
+ 	for _, target := range r.Targets {
+-		if !slices.Contains(r.Applications, target.Application) || target.Sid == "" {
++		if !slices.Contains(r.Applications, target.Application) || (target.Sid == "" && !target.Policy) {
+ 			return nil, fmt.Errorf("invalid directory logout target")
+ 		}
+ 	}
++	for _, name := range r.PolicyApplications {
++		if !slices.Contains(r.Applications, name) || r.EventTimestamp <= 0 || r.EventTimestamp > float64(time.Now().Unix())+5 {
++			return nil, fmt.Errorf("invalid directory policy event")
++		}
++		a, err := GetApplication(util.GetId("admin", name))
++		if err != nil {
++			return nil, err
++		}
++		if a == nil || !a.AnasPolicyRevocation {
++			return nil, fmt.Errorf("application did not negotiate policy revocation")
++		}
++	}
++
+ 	return u, nil
+ }
+ 
+@@ -110,6 +126,10 @@
+ 			r.Sessions = append(r.Sessions, session)
+ 		}
+ 	}
++	for _, name := range r.PolicyApplications {
++		r.Targets = append(r.Targets, AnasLogoutTarget{Application: name, Subject: r.Subject, Policy: true})
++	}
++
+ 	return r, nil
+ }
+ 
+@@ -202,7 +222,14 @@
+ 	if subject == "" {
+ 		subject = r.Subject
+ 	}
+-	token, err := generateLogoutToken(app, &User{Owner: "anas", ExternalId: subject}, target.Sid, host)
++	eventTimestamp := float64(0)
++	if target.Policy {
++		if target.Sid != "" || !slices.Contains(r.PolicyApplications, target.Application) || !app.AnasPolicyRevocation {
++			return fmt.Errorf("unnegotiated policy logout target")
++		}
++		eventTimestamp = r.EventTimestamp
++	}
++	token, err := generateAnasLogoutToken(app, &User{Owner: "anas", ExternalId: subject}, target.Sid, host, eventTimestamp)
+ 	if err != nil {
+ 		return err
+ 	}
+--- a/object/application.go
++++ b/object/application.go
+@@ -122,2 +122,3 @@
+ 	Tags                         []string        `xorm:"mediumtext" json:"tags"`
++	AnasPolicyRevocation         bool            `json:"anasPolicyRevocation"`
+ 	SamlAttributes               []*SamlItem     `xorm:"varchar(1000)" json:"samlAttributes"`
+--- a/object/user_util.go
++++ b/object/user_util.go
+@@ -529,2 +529,6 @@
+ func CheckPermissionForUpdateUser(oldUser, newUser *User, isAdmin bool, allowDisplayNameEmpty bool, lang string) (bool, string) {
++	// Directory groups supply trusted roles even when accountItems is omitted.
++	if oldUser.Owner == "anas" && !isAdmin && (!reflect.DeepEqual(oldUser.Groups, newUser.Groups) || oldUser.IsAdmin != newUser.IsAdmin || oldUser.ExternalId != newUser.ExternalId) {
++		return false, "managed directory identity and privileges cannot be changed by users"
++	}
+ 	organization, err := GetOrganizationByUser(oldUser)

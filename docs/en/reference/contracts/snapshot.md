@@ -35,8 +35,8 @@
 **A snapshot must be self-sufficient enough to restore the system on its own.**
 Once it has been sent to an external disk there is no `.anas` over there, so
 config, lock, secrets, runnable artifacts, and data are all real copies rather
-than references. The one thing that cannot be covered is the upstream base
-images (a registry is required); see "Restore semantics".
+than references. PG Resource image archives are described under "PostgreSQL extension recovery points";
+upstream images for other workspaces still require a registry.
 
 `config.yml` and `secrets.yml` contain plaintext secrets, and `local-admins.yml`,
 while it holds no passwords, is security inventory. `snapshots/` is therefore
@@ -150,9 +150,8 @@ self-consistent when data rolls back with it, but "restore only meta and keep th
 current data" would mismatch keys against data, and the CLI must refuse that
 combination.
 
-After a restore the upstream base images still have to be pulled from a registry.
-A fully offline restore needs a `docker save`-level image archive and belongs to
-the phase-two `--include-images` scope.
+PG Resource recovery points automatically include running-image archives. Other workspaces still need a
+registry or build environment. The general `--include-images` option remains unimplemented.
 
 ## Source of truth
 
@@ -828,13 +827,12 @@ differently:
 
 | Tree | Contents | Snapshot default | Restore default |
 |---|---|---|---|
-| `<workspace>/data` | Application state (databases, the AD store, certificates) | **Always included** | **Always restored** |
-| `<workspace>/userdata` | Files the user stores themselves | **Not included** | **Not restored** |
+| `<workspace>/data` | Application state and files that require joint recovery with a database | **Always included** | **Always restored** |
+| `<workspace>/userdata` | Independently usable content, with no database or only a rebuildable auxiliary index | **Not included** | **Not restored** |
 
-The reason for the split is correctness, not tidiness: restore replaces `data/`
-wholesale, and if user files lived inside it, **every deployment rollback would
-delete files saved after the snapshot** — files that have nothing to do with the
-deployment being rolled back.
+Restore replaces `data/` wholesale, returning databases and coupled files to the recovery point;
+content added after the snapshot may be lost. The [Module development standard](/en/developer/module-development#persistent-data-placement)
+owns the placement rule. This section describes snapshot coverage and restore behavior without changing flag defaults.
 
 `snapshot.yml` records whether each tree was captured in `coverage`, with a reason
 when it was not:
@@ -869,3 +867,25 @@ At the command level:
 - `anas backup create [--skip-userdata]` — **included by default**, the opposite
   of snapshots: a backup exists so that a dead disk can be recovered from, and
   user files are the one part a redeploy cannot reproduce
+
+## PostgreSQL extension recovery points
+
+A PostgreSQL Provider artifact change with bound PG Resources requires a full workspace stop and an ANAS
+Btrfs recovery point; `--no-snapshot` cannot bypass it. Nested subvolumes, external mounts and escaping data
+symlinks are refused because the parent snapshot cannot capture their contents. Exact container image IDs and
+an integrity-checked Docker archive travel in `meta/compose-images.yml` and `meta/compose-images.tar` through
+the existing backup channel. Restore loads the archive and pins only the restored artifact's service images;
+it does not retag images used by other deployments. The archive increases space and outage requirements.
+Ordinary PG requests and retained Providers receive the same protection because extensions can remain after their requests are removed.
+Manual PG snapshots also capture actual images, stop the whole workspace through the existing container transaction,
+and resume it after capture. An uncertain running-container inventory refuses capture. PG pre-restore snapshots
+capture the current running images before stopping services.
+
+Failure or interruption keeps consumers stopped. Retry uses the same frozen candidate and checks the original
+recovery point; starting an older artifact requires a matching ANAS data restore. This implementation is not
+proof of real-host or full workspace acceptance; the PostgreSQL and Immich plans record remaining evidence.
+Restore first persists an incomplete-data guard and commits state/active only after every data/userdata,
+artifact, and configuration/Secret operation succeeds. Failure blocks start/apply and stale backup restarts;
+only successful restoration clears the guard.
+
+Before a target build, Runner retains the current PostgreSQL workspace’s actual images under local references scoped to the workspace and service. Docker’s containerd image store may stop resolving an old image ID after a build replaces its tag. These fixed service references are updated before the next build; they are never pushed and do not alter other deployment tags. Recovery points still export an untagged archive by immutable ID and capture data only after writers stop.

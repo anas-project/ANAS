@@ -265,7 +265,7 @@ func runSnapshotCreate(args []string, jsonMode bool) error {
 		return failuref("lock_failed", "%s", err.Error())
 	}
 	defer unlock()
-	meta, err := createSnapshot(workspace, snapshotOptions{
+	meta, err := createManualSnapshot(workspace, snapshotOptions{
 		kind: snapshotKindManual, reason: *reason, label: *label, json: jsonMode,
 		includeUserData: *includeUserData,
 	})
@@ -273,6 +273,58 @@ func runSnapshotCreate(args []string, jsonMode bool) error {
 		return err
 	}
 	return reportSnapshot(workspace, meta, jsonMode)
+}
+
+// Manual PostgreSQL recovery points stop the whole workspace. Keep low-level
+// creation available to callers that own their respective quiescence barriers.
+func createManualSnapshot(workspace string, opts snapshotOptions) (meta *snapshotMeta, resultErr error) {
+	base := stateDir(workspace)
+	active, err := loadActiveState(base)
+	if err != nil {
+		return nil, err
+	}
+	if active.ActiveDeployment == "" {
+		return createSnapshot(workspace, opts)
+	}
+	artifact := deploymentArtifactDir(base, active.ActiveDeployment)
+	manifest, err := loadDeploymentManifest(artifact)
+	if err != nil {
+		return nil, err
+	}
+	if !deploymentNeedsImageRecovery(manifest) {
+		return createSnapshot(workspace, opts)
+	}
+	cli, err := detectComposeForExecution(opts.ctx, opts.restrictedProcessEnvironment)
+	if err != nil {
+		return nil, failuref("compose_missing", "%v", err)
+	}
+	a, modulesRoot, _, err := loadDeploymentApp(base, active.ActiveDeployment, cli)
+	if err != nil {
+		return nil, err
+	}
+	a.commandContext, a.restrictedProcessEnvironment = opts.ctx, opts.restrictedProcessEnvironment
+	if err := a.validatePostgresRecoveryData(workspace); err != nil {
+		return nil, preconditionErrorf("postgres_recovery_coverage_incomplete", "%v", err)
+	}
+	opts.imageInventory, err = prepareSnapshotImageInventory(artifact, cli, opts.ctx, opts.restrictedProcessEnvironment)
+	if err != nil {
+		return nil, failuref("image_capture_failed", "capture pre-stop snapshot images: %v", err)
+	}
+	emitProgress(opts.json, "stop-containers", 0, 0, "containers")
+	txn, stopErr := beginContainerTransaction(base, a, modulesRoot, active.ActiveDeployment)
+	defer func() {
+		if err := finishContainerTransaction(base, a, modulesRoot, txn); err != nil {
+			if resultErr == nil {
+				resultErr = failuref("start_failed", "restart containers after snapshot: %v", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: could not restart containers after snapshot; transaction retained: %v\n", err)
+			}
+		}
+	}()
+	if stopErr != nil {
+		return nil, failuref("stop_failed", "stop workspace before snapshot: %v", stopErr)
+	}
+	return createSnapshot(workspace, opts)
 }
 
 // resolveUserDataRestore decides whether a restore also replaces user content.

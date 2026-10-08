@@ -4,6 +4,10 @@ set -eu
 : "${ANAS_TLS_TRUST_BUNDLE_NAME:?ANAS_TLS_TRUST_BUNDLE_NAME is required}"
 
 install -m 0444 "/certs/${ANAS_TLS_TRUST_BUNDLE_NAME}" /tmp/anas-samba-ad-ca.crt
+# The native HTTP task sender uses requests, whose CA store is separate from
+# the CertificateKeyPair imported for LDAPS. Keep peer verification enabled
+# and use the same managed public/internal trust bundle for backchannel TLS.
+export REQUESTS_CA_BUNDLE=/tmp/anas-samba-ad-ca.crt
 ak import_certificate \
   --certificate /tmp/anas-samba-ad-ca.crt \
   --name anas-samba-ad-ca

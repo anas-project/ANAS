@@ -2,7 +2,7 @@
 
 This page records the contract manifest, schemas, Provider/Consumer boundaries, and documentation-generation constraints. See the [English README](../README.en.md) for semantics and operations.
 
-> Status: `implemented`; Reviewed: `2026-08-14`.
+> Status: Ordinary database support and the extension-field/Runner projection are implemented; see PostgreSQL Module records for real-host extension acceptance. Reviewed: `2026-10-03`.
 
 ## Manifest
 
@@ -41,7 +41,7 @@ operations:
 ## Provider / Consumer
 
 - Providers: `mariadb`, `postgres`
-- Consumers: `authentik`, `llng`, `meshcentral`, `nextcloud`
+- Consumers: see the [generated README inventory](../README.en.md).
 
 ## Operations
 
@@ -116,6 +116,8 @@ operations:
 | `credential.policy` | enum (`generated`) | yes |  |
 | `deletion_policy` | enum (`retain`, `delete`) | yes |  |
 | `name` | string | yes | pattern=^[a-z][a-z0-9_]{0,62}$ |
+| `postgres` | object | no | additional_properties=false; postgres interface only |
+| `postgres.extensions` | `array<string>` | required within postgres | min_items=1; unique_items=true; item pattern=^[a-z][a-z0-9_]{0,62}$ |
 | `principal` | string | yes | pattern=^[a-z][a-z0-9_]{0,62}$ |
 
 ### `rotate-request.yml`
@@ -136,6 +138,31 @@ operations:
 - Administrator credentials never enter long-running consumer containers.
 - If `delete` is optional, a missing implementation must not be reported as a successful deletion.
 - Contract version, interface, provider binding, and resource identity enter deployment/lock state.
+
+## Extension requests and maintenance boundaries
+
+The current unreleased Contract remains `1.0.0`. `internal/runner/relational_database.go` strictly validates Resource fields and
+the `credential` and `postgres` objects. `contracts.go` validates before generating Secrets, and `resources.go` checks again before
+Provider execution. A `postgres` block on MariaDB fails; the name list accepts no version, dependency, preload, or SQL fields.
+
+Runner projects the declared list, in order, as comma-separated `ANAS_RESOURCE_POSTGRES_EXTENSIONS`. Compose explicitly forwards
+it to the one-shot provision service. An absent declaration produces an empty value so inherited environment cannot add requests.
+The request uses the existing Resource spec and fingerprint, without request files, an extension catalog protocol, or version solving.
+
+The PostgreSQL Module fixes supported names, exact versions, and required dependencies. The Provider validates the entire supported
+request before writes. Ensure enables missing extensions at fixed versions and checks the real application identity; inspect only
+observes. Checks cover a non-superuser role, extension and dependency versions, and instance preload. A failed process cannot save
+ready, and an earlier ready state does not replace the current checks. Ordinary ensure fails on an installed version mismatch;
+only controlled PostgreSQL Module maintenance upgrades it.
+
+A shared-instance upgrade must list every affected Consumer, stop writes, and obtain an ANAS recovery set containing databases,
+coupled files, configuration, Secrets, and matching images. Privileged maintenance and verification precede Consumer startup.
+Changed data formats or uncertain results must not be opened directly with an older image. Removing an extension declaration
+retains the resource and does not issue DROP EXTENSION. Authentication, upgrades, and consistent recovery require real-host
+acceptance; targeted Runner tests prove input rejection, parameter projection, and failure-state behavior only.
+
+Targeted validation: `go test ./internal/runner -run 'TestRelationalDatabase'`. PostgreSQL Module source documentation and test
+scripts cover real Provider checks and controlled upgrades; a Contract schema cannot establish those results.
 
 ## Documentation generation pipeline
 

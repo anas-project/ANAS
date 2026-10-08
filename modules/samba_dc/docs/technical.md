@@ -12,6 +12,11 @@
 | --- | --- | --- |
 | `lego` | Module | — |
 
+
+启动时若 `/etc/localtime` 已指向所选 `TZ` 文件，保留该文件并写入 `/etc/timezone`，避免 Ubuntu UTC 默认软链接导致 `cp` 同文件错误中断目录初始化。
+
+未启用声明能力码的 Module 时，能力组列表可以缺省；结构初始化将其视为空列表，继续建立基础组和服务账号。
+
 ## Compose 拓扑
 
 <!-- generated:compose-topology:start -->

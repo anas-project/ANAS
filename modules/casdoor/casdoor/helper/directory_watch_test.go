@@ -5,9 +5,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -395,5 +398,42 @@ func TestRecursiveGroupFiltersEscapeLDAPValues(t *testing.T) {
 	}
 	if got := recursiveGroupUserFilter("(&(objectClass=user)(anchor=*))", "CN=APP_all,OU=Groups,DC=example,DC=test"); !strings.Contains(got, "memberOf:"+recursiveMembershipOID+":=") {
 		t.Fatalf("recursive user filter = %q", got)
+	}
+}
+
+func TestDirectoryServiceClientDoesNotSendCredentialsToProxy(t *testing.T) {
+	var proxyCalls, backendCalls atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyCalls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer proxy.Close()
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls.Add(1)
+		id, secret, ok := r.BasicAuth()
+		if !ok || id != "fixture-client" || secret != "fixture-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		io.WriteString(w, `{"status":"ok","data":null}`)
+	}))
+	defer backend.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := http.DefaultTransport
+	transport := previous.(*http.Transport).Clone()
+	transport.Proxy = http.ProxyURL(proxyURL)
+	http.DefaultTransport = transport
+	defer func() { http.DefaultTransport = previous; transport.CloseIdleConnections() }()
+	client := directoryServiceHTTPClient(time.Second)
+	defer client.CloseIdleConnections()
+	syncer := casdoorLDAPSyncer{settings: directoryWatchSettings{endpoint: backend.URL, clientID: "fixture-client", clientSecret: "fixture-secret"}, client: client}
+	if _, err := syncer.request(http.MethodGet, "get-user", "anas/nonexistent", nil); err != nil {
+		t.Fatal(err)
+	}
+	if proxyCalls.Load() != 0 || backendCalls.Load() != 1 {
+		t.Fatal("private service request used the proxy")
 	}
 }

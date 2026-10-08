@@ -139,7 +139,8 @@ URL。补齐时**不能对整类资源凭据一刀切**，也不能把非凭据�
 
 四个本地管理员仍可通过兼容命令逐账号轮换，但它们尚未声明新的 probe/reconcile/verify 合同，
 也尚未进入 candidate deployment 事务。PostgreSQL 的旧版在线 credential Hook 未保留；其当前
-`POSTGRES_HOST_AUTH_METHOD=trust` 基线不足以证明密码认证，不能冒充完成。Eturnal 已按新的启动时
+新镜像已在开放 TCP 前迁移 HBA 与管理员 SCRAM，Resource ensure 验证普通应用实际密码认证，
+新装及旧 trust 数据卷的本机隔离测试通过；独立长期管理通道和统一轮换仍未交付。Eturnal 已按新的启动时
 协调 ABI 重新接入；Nextcloud 与 NetBird 已成为其显式 consumer。
 
 ## 4. 目标数据模型
@@ -515,7 +516,7 @@ schema/ABI/ready-barrier 主干。Eturnal 已获得 deployment 驱动的启动�
 2. **已完成首批**：Eturnal 与 Nextcloud/NetBird consumer 迁移为启动时协调器；
 3. **已完成基线清理**：旧 active deployment `.env` 原地修改和逐目标 Store 提交实现未保留；
 4. **待完成**：PostgreSQL 与四个本地管理员 handler 迁移；PostgreSQL 必须先退出无法验证密码的
-   `trust` 基线并建立独立本地管理通道；
+   `trust` 基线已由扩展接入前置修复并通过本机容器验证，独立长期管理通道及统一轮换仍待交付；
 5. **待完成**：`admin local rotate` 改为统一 executor 的兼容适配器。
 
 ### 阶段 C：数据库全覆盖

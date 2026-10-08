@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: authentik
 version: 2026.5.6
-revision: 14
+revision: 15
 app_version: 2026.5.6
 abi:
   supports:
@@ -80,6 +80,7 @@ config:
     - SAMBA_DC_BASE_USERS_DN_PREFIX
     - SAMBA_DC_GROUP_CLASS_FILTER
     - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - SAMBA_DC_ADMIN_GROUP_NAME
     - TRAEFIK_BASE_PORT
     - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
     - TRAEFIK_HOSTNAME

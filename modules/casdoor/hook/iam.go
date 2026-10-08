@@ -38,7 +38,9 @@ func publishIAMEndpoints(e map[string]string) error {
 		case "oidc":
 			e[prefix+"OIDC_ISSUER_URL"] = base
 			e[prefix+"OIDC_DISCOVERY_URL"] = base + "/.well-known/openid-configuration"
+			e[prefix+"OIDC_CAEP_EVENTS"] = "session-revoked"
 		case "saml":
+			delete(e, prefix+"OIDC_CAEP_EVENTS")
 			metadata := base + "/api/saml/metadata?application=admin/" + appName(app)
 			e[prefix+"SAML_METADATA_URL"] = metadata
 			e[prefix+"SAML_ENTITY_ID"] = metadata
@@ -164,6 +166,9 @@ func organization(name, displayName string) map[string]any {
 
 func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	prefix := iamClientPrefix + envName(app) + "__"
+	if err := validateCasdoorCAEPRegistration(e, app); err != nil {
+		return nil, err
+	}
 	if e[prefix+"CLIENT_ID"] == "" || e[prefix+"CLIENT_SECRET"] == "" {
 		return nil, fmt.Errorf("oidc client %s did not publish credentials", app)
 	}
@@ -177,10 +182,11 @@ func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	result["tokenSigningMethod"] = "RS256"
 	result["tokenFields"] = []string{"Name", "DisplayName", "Email"}
 	result["tokenAttributes"] = oidcTokenAttributes(
-		e[prefix+"ATTRIBUTES"], e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
+		e[prefix+"ATTRIBUTES"], e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"], defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins"))
 	if uri := strings.TrimSpace(e[prefix+"OIDC_LOGOUT_URI"]); uri != "" && strings.Contains(e[prefix+"OIDC_LOGOUT_METHODS"], "backchannel") {
 		result["backchannelLogoutUri"] = uri
 	}
+	result["anasPolicyRevocation"] = e[prefix+"OIDC_CAEP_EVENTS"] == "session-revoked"
 	return result, nil
 }
 
@@ -271,7 +277,7 @@ func parseIAMAttributes(attributes string) []iamAttribute {
 	return result
 }
 
-func oidcTokenAttributes(attributes, identityAnchor string) []any {
+func oidcTokenAttributes(attributes, identityAnchor string, adminGroups ...string) []any {
 	result := []any{}
 	seenClaims := map[string]bool{}
 	for _, attribute := range parseIAMAttributes(attributes) {
@@ -286,6 +292,12 @@ func oidcTokenAttributes(attributes, identityAnchor string) []any {
 			field = "Email"
 		case "groups", "group":
 			field, typeName = "Roles", "Array"
+		case "anasrole":
+			group := "Admins"
+			if len(adminGroups) > 0 {
+				group = adminGroups[0]
+			}
+			field = "ANASRole." + group
 		case strings.ToLower(identityAnchor):
 			field = "ExternalId"
 		default:
@@ -313,7 +325,7 @@ func ldapCustomAttributes(e map[string]string) map[string]string {
 		prefix := iamClientPrefix + envName(app) + "__"
 		for _, attribute := range parseIAMAttributes(e[prefix+"ATTRIBUTES"]) {
 			switch strings.ToLower(attribute.source) {
-			case "samaccountname", "username", "uid", "preferred_username", "cn", "name", "displayname", "mail", "email", "groups", "group":
+			case "samaccountname", "username", "uid", "preferred_username", "cn", "name", "displayname", "mail", "email", "groups", "group", "anasrole":
 				continue
 			}
 			result[attribute.source] = attribute.source
@@ -327,7 +339,13 @@ func managedIAMGroups(e map[string]string) []string {
 	result := []string{}
 	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
 		prefix := iamClientPrefix + envName(app) + "__"
-		for _, group := range splitCSV(e[prefix+"ALLOW_GROUPS"]) {
+		groups := splitCSV(e[prefix+"ALLOW_GROUPS"])
+		for _, attribute := range parseIAMAttributes(e[prefix+"ATTRIBUTES"]) {
+			if strings.EqualFold(attribute.source, "anasRole") {
+				groups = append(groups, defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins"))
+			}
+		}
+		for _, group := range groups {
 			if !seen[group] {
 				seen[group] = true
 				result = append(result, group)
@@ -341,7 +359,14 @@ func directoryApplicationPolicies(e map[string]string) string {
 	policies := []map[string]any{}
 	for _, protocol := range []string{"oidc", "saml"} {
 		for _, app := range splitCSV(e["ANAS_IDENTITY_"+strings.ToUpper(protocol)+"_CLIENTS"]) {
-			policies = append(policies, map[string]any{"application": appName(app), "protocol": protocol, "groups": splitCSV(e[iamClientPrefix+envName(app)+"__ALLOW_GROUPS"])})
+			prefix := iamClientPrefix + envName(app) + "__"
+			adminGroup := ""
+			for _, attribute := range parseIAMAttributes(e[prefix+"ATTRIBUTES"]) {
+				if strings.EqualFold(attribute.source, "anasRole") {
+					adminGroup = defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
+				}
+			}
+			policies = append(policies, map[string]any{"application": appName(app), "protocol": protocol, "groups": splitCSV(e[prefix+"ALLOW_GROUPS"]), "caep": e[prefix+"OIDC_CAEP_EVENTS"] == "session-revoked", "adminGroup": adminGroup})
 		}
 	}
 	data, _ := json.Marshal(policies)
@@ -382,4 +407,33 @@ func managedIAMAccessObjects(e map[string]string) ([]any, []any, []any) {
 		})
 	}
 	return groups, roles, permissions
+}
+
+// CAEP is optional and uses the existing OIDC registration and receiver.
+func validateCasdoorCAEPRegistration(e map[string]string, app string) error {
+	p := iamClientPrefix + envName(app) + "__"
+	if e[p+"OIDC_CAEP_EVENTS"] == "" {
+		return nil
+	}
+	if e[p+"OIDC_CAEP_EVENTS"] != "session-revoked" {
+		return fmt.Errorf("oidc client %s requested unsupported CAEP event", app)
+	}
+	if e[p+"OIDC_LOGOUT_URI"] == "" || !containsCSV(e[p+"OIDC_LOGOUT_METHODS"], "backchannel") || e[p+"OIDC_LOGOUT_SESSION_REQUIRED"] != "false" {
+		return fmt.Errorf("oidc client %s CAEP requires subject-wide backchannel logout", app)
+	}
+	anchor := e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
+	for _, a := range parseIAMAttributes(e[p+"ATTRIBUTES"]) {
+		if a.claim == "sub" && a.source == anchor && anchor != "" {
+			return nil
+		}
+	}
+	return fmt.Errorf("oidc client %s CAEP requires directory anchor sub", app)
+}
+func containsCSV(value, item string) bool {
+	for _, v := range splitCSV(value) {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }

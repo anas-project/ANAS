@@ -12,6 +12,11 @@ This page records the current implementation, security boundaries, and verificat
 | --- | --- | --- |
 | `lego` | Module | — |
 
+
+When `/etc/localtime` already refers to the selected `TZ` file, startup preserves it and writes `/etc/timezone`. This prevents Ubuntu's default UTC symlink from causing a same-file `cp` error that aborts directory initialization.
+
+When no enabled Module declares capability codes, the capability-group list may be absent. Structure initialization treats it as empty and continues creating the basic groups and service accounts.
+
 ## Compose topology
 
 <!-- generated:compose-topology:start -->

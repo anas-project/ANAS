@@ -43,7 +43,7 @@ Casdoor 只经 Traefik HTTPS 提供公网入口，不发布额外宿主端口。
 `retain`。改变数据库类型或名称必须进入显式迁移，不得静默切换到空数据库。数据库、签名密钥、
 Consumer Secret、目录订阅游标、本地管理员库存和 deployment metadata 必须纳入一致的备份恢复点。
 
-ANAS revision 10 必须从 Casdoor `3.143.0` 对应提交
+已验收的 ANAS revision 10 必须从 Casdoor `3.143.0` 对应提交
 `1ee6deb8d8f1c64ffb54847fc0e4780b91c34c6e` 构建并校验源码归档 SHA-256
 `365d61c7e8cae30a6b1a135204c74145c9ce6c692068d3fc044404703c0f9460`。仓库补丁集只允许扩展
 SAML 模板对已同步 `displayName`/`externalId` 的读取、OIDC `sub` 使用目录 `externalId`，以及完成 OIDC `sid`、用户/管理员
@@ -157,3 +157,8 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 | `CASDOOR-R-038` | 运维文档必须记录密钥轮换、备份恢复、IAM 故障恢复、Provider 切换、弃用迁移和所有未支持能力 | 审阅 |
 | `CASDOOR-R-039` | 只有所有强制发布验收具有可复现证据后，Module 生命周期才能从 `developing` 改为 `release` | CI |
 | `CASDOOR-R-040` | Module README、技术文档、IAM 支持清单和需求计划必须使用一致的版本、生命周期与能力限制描述 | 审阅 |
+
+
+## 2026-10-07：r11 候选的 Immich 接入边界
+
+r10 的验收与稳定需求 ID 保留。r11 复用相同源码身份及 0001—0006，追加 0007：可选受信管理员组映射和经协商的策略撤权通知。复用现有原生撤权接口、签名 backchannel、持久 pending-logouts 和重试，不新增调度服务。新增组合由 Immich 私有需求矩阵与计划验收；r10 的实机证据不得替代 r11，候选状态保持 developing。

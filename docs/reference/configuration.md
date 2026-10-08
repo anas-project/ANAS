@@ -6,11 +6,11 @@
 ## 结论
 
 <!-- generated:configuration-summary:start -->
-- 内置 Module：`24`
-- 已声明参数：共 `193` 个（全局 `18` 个、Module 所有 `175` 个；结构化 Module 参数 `171` 个、裸 `env.*` 参数 `4` 个）
+- 内置 Module：`25`
+- 已声明参数：共 `200` 个（全局 `18` 个、Module 所有 `182` 个；结构化 Module 参数 `178` 个、裸 `env.*` 参数 `4` 个）
 - 解析阶段：`input_required` `2` 个、`must_resolve` `33` 个、未知类型 `0` 个
-- 类型分布：`bool` `27`、`enum` `27`、`int` `30`、`string` `109`
-- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `9`、`runtime` `5`、`static` `153`
+- 类型分布：`bool` `28`、`enum` `29`、`int` `32`、`string` `111`
+- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `9`、`runtime` `5`、`static` `160`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -158,7 +158,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`34` 项。
+当前显式可移植约束：`37` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
@@ -183,6 +183,9 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `global.host_lan_ip` | <code>format=&#34;ipv4&#34;</code> |
 | `global.temp_path` | <code>pattern=&#34;^/&#34;</code> |
 | `global.timezone` | <code>format=&#34;iana_timezone&#34;</code> |
+| `immich.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `immich.job_concurrency` | <code>minimum=1; maximum=16</code> |
+| `immich.video_concurrency` | <code>minimum=1; maximum=8</code> |
 | `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.lan_extra_subnets` | <code>pattern=&#34;^[0-9A-Fa-f:./, ]*$&#34;</code> |
 | `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
@@ -210,6 +213,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
 | `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `immich` | 7 | `immich.db_name`<br>`immich.db_type`<br>`immich.domain_prefix`<br>`immich.iam_protocol`<br>`immich.job_concurrency`<br>`immich.machine_learning`<br>`immich.video_concurrency` |
 | `incus` | 7 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.lan_extra_subnets`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
@@ -256,9 +260,9 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 <!-- generated:configuration-effects:start -->
 | Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 109 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 114 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 9 | 通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 17 | 激活前迁移持久数据、数据库或成员身份 |
+| `data_migrate` | 19 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
 | `immutable` | 3 | 使用替换或专用迁移流程 |
 | `reconcile` | 21 | 通过 Module 生命周期调和应用、API 或文件状态 |

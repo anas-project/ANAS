@@ -185,3 +185,22 @@ func assertApplicationErrorCode(t *testing.T, err error, code string) {
 		t.Fatalf("error = %v, want application code %q", err, code)
 	}
 }
+
+func TestBackupPlanIDIgnoresFreeSpaceButBindsOperationChoices(t *testing.T) {
+	free := int64(100)
+	plan := application.BackupPlan{Mode: backupModeCopy, DestFreeAfterBytes: &free}
+	first, err := backupPlanID("archive", plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	free = 200
+	second, err := backupPlanID("archive", plan)
+	if err != nil || first != second {
+		t.Fatalf("free-space observation changed plan: %v", err)
+	}
+	plan.Mode = backupModeSendFile
+	changed, err := backupPlanID("archive", plan)
+	if err != nil || first == changed {
+		t.Fatalf("operation choice was not bound: %v", err)
+	}
+}

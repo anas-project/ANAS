@@ -22,7 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
+
+	"github.com/anas-project/ANAS/internal/compose"
 )
 
 type backupRestoreOutcome struct {
@@ -114,6 +115,39 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 		return nil, preconditionErrorf(problems[0].Code,
 			"backup %s is not restorable: %s", manifest.BackupID, problems[0].Message)
 	}
+	active, err := loadActiveState(base)
+	if err != nil {
+		return nil, err
+	}
+	var preImages *snapshotImageInventory
+	if active.ActiveDeployment != "" {
+		preImages, err = prepareSnapshotImageInventory(deploymentArtifactDir(base, active.ActiveDeployment), compose.CLI{}, nil, false)
+		if err != nil {
+			return nil, failuref("image_capture_failed", "capture pre-restore backup images: %v", err)
+		}
+		if preImages != nil {
+			if err := (&app{}).validatePostgresRecoveryData(workspace); err != nil {
+				return nil, preconditionErrorf("postgres_recovery_coverage_incomplete", "%v", err)
+			}
+		}
+	}
+	if err := loadSnapshotImages(source.root); err != nil {
+		return nil, failuref("image_restore_failed", "restore matching backup images: %v", err)
+	}
+	if err := beginDataRestoreGuard(base, manifest.DeploymentID, "backup:"+manifest.BackupID); err != nil {
+		return nil, failuref("restore_failed", "persist data restore guard: %v", err)
+	}
+	emitProgress(jsonMode, "stop-containers", 0, 0, "containers")
+	if err := stopActiveDeployment(base); err != nil {
+		return nil, failuref("stop_failed", "stop the running deployment before restoring: %v", err)
+	}
+	if preImages != nil {
+		if _, err := createSnapshot(workspace, snapshotOptions{kind: snapshotKindAuto, reason: snapshotReasonPreRestore,
+			label: "before restoring backup " + manifest.BackupID, json: jsonMode,
+			includeUserData: exists(filepath.Join(source.root, workspaceUserDataDir)), imageInventory: preImages}); err != nil {
+			return nil, failuref("restore_failed", "capture PostgreSQL pre-restore recovery point: %v", err)
+		}
+	}
 
 	restored := []string{}
 	emitProgress(jsonMode, "restore-metadata", 0, 5, "files")
@@ -150,27 +184,10 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	if err := restoreBackupArtifact(source.root, base, manifest.DeploymentID); err != nil {
 		return nil, failuref("restore_failed", "restore deployment %s: %v", manifest.DeploymentID, err)
 	}
+	if err := pinRestoredSnapshotImages(source.root, deploymentArtifactDir(base, manifest.DeploymentID)); err != nil {
+		return nil, failuref("image_restore_failed", "pin restored backup service images: %v", err)
+	}
 	restored = append(restored, "active_deployment")
-
-	if err := copyFileMode(filepath.Join(metaDir, snapshotMetaStateName), deploymentStatePath(base, manifest.DeploymentID), 0600); err != nil {
-		return nil, failuref("restore_failed", "restore deployment state: %v", err)
-	}
-	// active.yml is rebuilt rather than carried. The backup's own deployment_id
-	// already says which deployment was live; a copied active.yml would also
-	// assert a previous_deployments history naming deployments this backup does
-	// not contain.
-	now := time.Now().UTC().Format(time.RFC3339)
-	if err := saveActiveState(base, &activeDeploymentState{
-		APIVersion: activeStateVersion, ActiveDeployment: manifest.DeploymentID,
-		RuntimeStatus: "stopped",
-		ActivatedAt:   now, VerifiedAt: now,
-	}); err != nil {
-		return nil, failuref("restore_failed", "rewrite active.yml: %v", err)
-	}
-	if err := rebuildDeploymentIndex(base); err != nil {
-		return nil, err
-	}
-	restored = append(restored, "state")
 
 	emitProgress(jsonMode, "restore-data", 0, 0, "bytes")
 	if err := installBackupData(filepath.Join(source.root, "data"), workspace, dataDir(workspace)); err != nil {
@@ -194,6 +211,10 @@ func restoreBackup(workspace, dest string, manifest *backupManifest, all []backu
 	if err := rebuildSnapshotIndex(workspace); err != nil {
 		return nil, err
 	}
+	if err := finishDataRestore(base, filepath.Join(metaDir, snapshotMetaStateName), manifest.DeploymentID, "backup:"+manifest.BackupID); err != nil {
+		return nil, failuref("restore_failed", "commit restored deployment state: %v", err)
+	}
+	restored = append(restored, "state")
 	verify := verifyRestoredWorkspace(workspace, manifest)
 	nextStep := "anas start -w " + workspace
 	foreign, err := deploymentWorkspaceIsForeign(base, manifest.DeploymentID)
@@ -347,6 +368,11 @@ func verifyMaterialized(root string) []snapshotProblem {
 		add("deployment_incomplete", "deployment/deployment.yml is missing")
 	case !exists(filepath.Join(root, "deployment", deploymentConfigSourceName)):
 		add("deployment_incomplete", "deployment/%s is missing", deploymentConfigSourceName)
+	}
+	if exists(filepath.Join(root, "deployment", "deployment.yml")) {
+		if err := verifySnapshotImages(root); err != nil {
+			add("images_incomplete", "%v", err)
+		}
 	}
 	return problems
 }

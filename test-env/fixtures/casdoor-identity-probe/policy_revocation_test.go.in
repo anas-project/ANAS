@@ -1,0 +1,32 @@
+package object
+import("testing";"time";"github.com/golang-jwt/jwt/v5";"crypto/rand";"crypto/rsa";"crypto/x509";"encoding/pem";"github.com/xorm-io/xorm")
+func TestANASTrustedRoleAndPolicyClaims(t *testing.T){
+ old:=&User{Owner:"anas",ExternalId:"anchor",Groups:[]string{"anas/APP_immich"}}; changed:=*old;changed.Groups=[]string{"anas/APP_immich","anas/Admins"};if ok,_:=CheckPermissionForUpdateUser(old,&changed,false,true,"en");ok{t.Fatal("ordinary user changed trusted directory groups")};changed=*old;changed.IsAdmin=true;if ok,_:=CheckPermissionForUpdateUser(old,&changed,false,true,"en");ok{t.Fatal("ordinary user elevated privileges")};changed=*old;changed.ExternalId="other-anchor";if ok,_:=CheckPermissionForUpdateUser(old,&changed,false,true,"en");ok{t.Fatal("ordinary user changed identity")}
+ u:=&User{Owner:"anas",ExternalId:"anchor",Properties:map[string]string{"anasRole":"admin"}}
+ for _,tc:=range []struct{groups []string;role string}{{nil,"user"},{[]string{"other/Admins"},"user"},{[]string{"anas/Admins"},"admin"}}{u.Groups=tc.groups;v,ok:=getUserFieldValue(u,"ANASRole.Admins");if !ok||v!=tc.role{t.Fatal(tc,v)}}
+ app:=&Application{Owner:"admin",ClientId:"immich"}
+ claims,err:=newLogoutTokenClaims(app,u,"","issuer",time.Now());if err!=nil{t.Fatal(err)}
+ if claims.Subject!="anchor"||claims.Sid!=""||claims.Events["https://schemas.openid.net/secevent/caep/event-type/session-revoked"]!=nil{t.Fatal(claims)}
+ mapped:=getClaimsCustom(Claims{User:u,RegisteredClaims:jwt.RegisteredClaims{Subject:"anchor"}},nil,[]*JwtItem{{Name:"anas_role",Category:"Existing Field",Value:"ANASRole.Admins",Type:"String"}})
+ if mapped["anas_role"]!="admin"||mapped["sub"]!="anchor"{t.Fatal(mapped)}
+ if _,ok:=mapped["nonce"];ok{t.Fatal("unrequested nonce must be omitted")};withNonce:=getClaimsCustom(Claims{User:u,Nonce:"requested-nonce",RegisteredClaims:jwt.RegisteredClaims{Subject:"anchor"}},nil,nil);if withNonce["nonce"]!="requested-nonce"{t.Fatal("requested nonce changed")}
+}
+
+func TestANASSignedPolicyLogout(t *testing.T){
+ e,err:=xorm.NewEngine("sqlite","file:anas-policy?mode=memory&cache=shared");if err!=nil{t.Fatal(err)};defer e.Close()
+ if err:=e.Sync2(&Application{},&Cert{},&User{},&Token{},&Session{},&Provider{},&Organization{},&Ldap{},&Group{},&Role{},&Permission{},&Model{});err!=nil{t.Fatal(err)}
+ previous:=ormer;ormer=&Ormer{Engine:e};defer func(){ormer=previous}()
+ key,err:=rsa.GenerateKey(rand.Reader,2048);if err!=nil{t.Fatal(err)}
+ c:=&Cert{Owner:"admin",Name:"policy",PrivateKey:string(pem.EncodeToMemory(&pem.Block{Type:"RSA PRIVATE KEY",Bytes:x509.MarshalPKCS1PrivateKey(key)}))};if _,err:=e.Insert(c);err!=nil{t.Fatal(err)}
+ a:=&Application{Owner:"admin",Name:"policy",Organization:"anas",ClientId:"immich",Cert:c.Name,AnasPolicyRevocation:true,TokenSigningMethod:"RS256"};if _,err:=e.Insert(a);err!=nil{t.Fatal(err)}
+ u:=&User{Owner:"anas",Id:"internal",Name:"alice",ExternalId:"anchor"};if _,err:=e.Insert(u);err!=nil{t.Fatal(err)}
+ cutoff:=float64(time.Now().Unix())-60.25
+ r,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:u.Id,Applications:[]string{a.Name},PolicyApplications:[]string{a.Name},EventTimestamp:cutoff})
+ if err!=nil||len(r.Tokens)!=0||len(r.Targets)!=1||!r.Targets[0].Policy||r.Targets[0].Sid!=""{t.Fatalf("snapshot=%#v err=%v",r,err)}
+ raw,err:=generateAnasLogoutToken(a,u,"","auth.example",cutoff);if err!=nil{t.Fatal(err)}
+ parsed,err:=jwt.Parse(raw,func(token *jwt.Token)(interface{},error){return &key.PublicKey,nil},jwt.WithValidMethods([]string{"RS256"}));if err!=nil{t.Fatal(err)}
+ claims:=parsed.Claims.(jwt.MapClaims);event:=claims["events"].(map[string]interface{})["https://schemas.openid.net/secevent/caep/event-type/session-revoked"].(map[string]interface{})
+ if claims["sub"]!="anchor"||claims["sid"]!=nil||event["event_timestamp"]!=cutoff||event["initiating_entity"]!="policy"||claims["sub_id"].(map[string]interface{})["sub"]!="anchor"{t.Fatal(claims)}
+ if _,err:=generateAnasLogoutToken(a,u,"sid","auth.example",cutoff);err==nil{t.Fatal("policy sid accepted")}
+ if _,err:=PrepareAnasRevocation(&AnasRevocation{Owner:"anas",UserId:u.Id,Applications:[]string{a.Name},PolicyApplications:[]string{a.Name},EventTimestamp:float64(time.Now().Unix())+10});err==nil{t.Fatal("future event accepted")}
+}

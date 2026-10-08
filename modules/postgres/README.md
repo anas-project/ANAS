@@ -9,7 +9,7 @@
 | --- | --- |
 | Module | `postgres` |
 | 版本 / revision | `18.4.0-r4` |
-| 状态 | `release` |
+| 状态 | `developing` |
 | 类别 | `database` |
 | 运行时 | `compose` |
 <!-- generated:module-facts:end -->
@@ -51,6 +51,11 @@ modules:
 
 本 Module 提供 `relational_database/postgres` Contract，版本 `1.0.0`。
 
+可选 `spec.postgres.extensions` 声明扩展名称。本版固定 PostgreSQL `18.4` / Alpine、pgvector（SQL 名 `vector`）
+`0.8.2`、`cube 1.5`、`earthdistance 1.2`；`earthdistance` 的 `cube` 依赖由 Provider 安装。
+不支持 VectorChord，不提供运行时版本选择或联网安装。Immich 使用 `[vector, earthdistance]` 和
+`DB_VECTOR_EXTENSION=pgvector`。服务与 provision 使用同一 ANAS 镜像。
+
 ## 所有可用配置参数
 
 以下清单来自当前 `module.yml` 和 `anas config list`。`环境变量` 是渲染后的 Module 私有键；不要把它当成首选配置接口。
@@ -88,6 +93,15 @@ anas config secret get POSTGRES_PASSWORD -w /srv/anas
 
 持久数据应随 workspace 的 snapshot/backup 一起保护。数据库 Consumer 还必须备份所绑定的数据库 Resource；生成 Secret 和本地管理员状态也必须与数据保持同一恢复点。
 
+新装和既有数据目录在开放 TCP 前统一写入 SCRAM HBA；管理员口令由既有 ANAS Secret 投影恢复为 SCRAM，
+普通应用角色由 Resource ensure 写入自己的 SCRAM 口令。错误/空口令、冒用管理员及跨库访问必须失败。
+ensure 和 inspect 都以应用角色真实连接并执行扩展检查；inspect 不创建对象或改口令。
+
+PostgreSQL 制品更新涉及共享实例：ANAS 停止 workspace 写入、取得一致恢复点，启动 Provider 并完成固定
+扩展维护后再启动消费者。普通 ensure/start/restart 不升级扩展，版本不符时阻断。当前固定升级路径为
+pgvector `0.8.1 → 0.8.2`；未知来源拒绝，部分完成后按实际版本重试。不能用旧镜像直接打开未知的新数据，
+应恢复 ANAS 的数据库、耦合媒体、配置/Secret 及匹配镜像集合。
+
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list postgres -w /srv/anas
@@ -98,6 +112,9 @@ anas status -w /srv/anas
 
 普通 `config set` 不能安全轮换数据库超级用户密码。
 
+本版认证与扩展已通过隔离 Docker 容器测试；这不替代真实服务器的 ANAS apply、全 workspace 一致恢复及
+Immich 业务验收。`postgres.password` 仍未接入通用凭据轮换库存，本次只交付认证前置子项。
+
 ## 技术文档
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
@@ -107,7 +124,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`18.4.0-r4`（reviewed 2026-08-13）
+- Module version / 版本：`18.4.0-r4`（reviewed 2026-10-03）
 - Timezone / 时区：`container` — PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; PostgreSQL itself has no UI language
 - Selection / 选择方式：`browser`

@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.143.0-r10` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.143.0-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,8 +11,8 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -172,3 +172,25 @@ token/会话记录。该接口只接受 `admin/app-built-in` 的 Basic Auth 服�
 [Casdoor IAM Provider 集成要求](../dev-docs/requirements/casdoor-iam.md)与
 [Casdoor IAM Provider 实施计划](../dev-docs/plans/archived/casdoor-iam.md)。本节只保留面向 Module 维护者的
 限制摘要，不作为完成状态的来源。
+
+## 受信 OIDC 应用角色来源
+
+`ATTRIBUTES=<claim>:anasRole:1` 映射到固定源码的 `ANASRole.<管理员组>` 计算字段。
+只读取受管 `anas/<group>` 成员资格，返回 `admin`/`user`；不从可编辑 Properties 或 LDAP 自定义属性读取。
+可选 `OIDC_CAEP_EVENTS=session-revoked` 必须配合 anchor sub 和 subject-wide backchannel 声明。
+Hook 把协商结果写入受管 Application 的 `anasPolicyRevocation` 布尔字段（不改变登录标签限制） 和既有目录策略投影；仅已协商应用收到策略事件。
+目录订阅器沿用 r10 持久 pending logouts、原生特权 API 与重试机制，增加准入和管理员角色丧失通知；
+即使已退出 IAM 或没有活跃 token，也按固定 anchor 投递。策略事件保存原截止时间，重试只刷新
+签名 token 的投递时效，不能将恢复准入后的新凭据划入旧事件。普通退出仍按原 sid 撤销，不能撤独立 key/share。
+r11 新组合的真实 Immich 验收在进行中，不能将 r10 的正式验收等同于新组合通过。
+
+目录订阅器的受管服务 API 位于私有 Compose 网络；helper 的该 HTTP 客户端直接连接，不使用构建或出站 HTTP 代理，避免 Basic 凭据被发送到无关代理。外部应用的签名退出通知仍由 Casdoor 原生服务交付。
+
+可信角色来自受管目录组。固定版本补丁在普通用户更新 `anas` 账号时禁止修改
+`groups`、`isAdmin` 和 `externalId`，即使组织未配置 `accountItems` 也不能绕过；恢复管理员及目录服务
+仍通过既有特权入口管理组。
+
+固定上游 `JWT-Custom` 会在授权请求未携带 `nonce` 时仍发送空 `nonce`，
+Immich 的严格 OIDC 校验会拒绝该 ID token。补丁与原生标准 token 的
+`omitempty` 行为保持一致：未请求时省略，已请求时保留原值。不关闭客户端
+校验，不新增 IAM 参数。

@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"encoding/json"
@@ -648,7 +649,19 @@ func TestBackupTempWriterHelper(t *testing.T) {
 	if err := os.WriteFile(backupStreamPath(claim.root), stream, 0600); err != nil {
 		fail("write: %v", err)
 	}
-	if err := os.WriteFile(backupMetaTarPath(claim.root), []byte("metadata"), 0600); err != nil {
+	var metadata bytes.Buffer
+	archive := tar.NewWriter(&metadata)
+	deployment := []byte("api_version: " + deploymentAPIVersion + "\nmodules: {}\n")
+	if err := archive.WriteHeader(&tar.Header{Name: "deployment/deployment.yml", Mode: 0600, Size: int64(len(deployment))}); err != nil {
+		fail("metadata header: %v", err)
+	}
+	if _, err := archive.Write(deployment); err != nil {
+		fail("metadata body: %v", err)
+	}
+	if err := archive.Close(); err != nil {
+		fail("metadata close: %v", err)
+	}
+	if err := os.WriteFile(backupMetaTarPath(claim.root), metadata.Bytes(), 0600); err != nil {
 		fail("write: %v", err)
 	}
 	manifest := &backupManifest{

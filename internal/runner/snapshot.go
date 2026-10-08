@@ -15,8 +15,8 @@ package runner
 // full copy of the deployment artifact, and a read-only copy of the data. Once
 // it has been sent to another disk there is no .anas over there to consult, so
 // every one of those has to be a real copy rather than a reference. The only
-// thing it cannot carry is the upstream base images, which still come from a
-// registry.
+// PostgreSQL extension deployments also carry the precise workspace service
+// images, because recovery must not open old data with a changed image tag.
 //
 //	<workspace>/snapshots/
 //	  .tmp-<id>/          being built; renamed into place when finished
@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/application"
+	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
 )
 
@@ -279,6 +280,9 @@ type snapshotOptions struct {
 	// deletes documents written since, which is not something a rollback
 	// should ever be able to do by accident.
 	includeUserData bool
+	// Prepared before compose down, while old containers still prove their
+	// actual image IDs. Manual snapshots can collect it while containers exist.
+	imageInventory *snapshotImageInventory
 }
 
 func snapshotProgress(opts snapshotOptions, phase string, current, total int64, unit string) {
@@ -313,6 +317,13 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 	if !exists(configSource) {
 		return nil, preconditionErrorf("config_source_missing",
 			"deployment %s predates config.source.yml, so a snapshot of it could not be restored on its own; run `anas apply` once to re-render it", deploymentID)
+	}
+	images := opts.imageInventory
+	if images == nil {
+		images, err = prepareSnapshotImageInventory(artifact, compose.CLI{}, opts.ctx, opts.restrictedProcessEnvironment)
+		if err != nil {
+			return nil, failuref("image_capture_failed", "capture recovery image IDs: %v", err)
+		}
 	}
 
 	id, err := newDeploymentID()
@@ -381,6 +392,10 @@ func createSnapshot(workspace string, opts snapshotOptions) (*snapshotMeta, erro
 	if err != nil {
 		cleanup()
 		return nil, failuref("deployment_copy_failed", "copy deployment %s into the snapshot: %v", deploymentID, err)
+	}
+	if err := saveSnapshotImages(tmp, artifact, images); err != nil {
+		cleanup()
+		return nil, failuref("image_capture_failed", "capture recovery images: %v", err)
 	}
 
 	snapshotProgress(opts, "snapshot-data", 0, 0, "bytes")
@@ -898,6 +913,11 @@ func verifySnapshot(workspace string, meta snapshotMeta) []snapshotProblem {
 		add("deployment_incomplete", "deployment/deployment.yml is missing from %s", meta.ID)
 	case !exists(deploymentConfigSourcePath(artifact)):
 		add("deployment_incomplete", "deployment/%s is missing from %s", deploymentConfigSourceName, meta.ID)
+	}
+	if exists(filepath.Join(artifact, "deployment.yml")) {
+		if err := verifySnapshotImages(root); err != nil {
+			add("images_incomplete", "%s: %v", meta.ID, err)
+		}
 	}
 	return problems
 }

@@ -1,0 +1,74 @@
+services:
+  anas_immich:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    build:
+      context: ./immich
+      network: ${DOCKER_BUILD_NETWORK:-default}
+      args:
+        GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r1
+    restart: unless-stopped
+    dns: ["${LOCAL_DNS_SERVER}"]
+    env_file: [.env]
+    environment:
+      IMMICH_ALLOW_SETUP: "false"
+      IMMICH_CONFIG_FILE: /etc/immich/anas-config.json
+      DB_VECTOR_EXTENSION: pgvector
+      REDIS_HOSTNAME: anas_immich_valkey
+      NODE_EXTRA_CA_CERTS: /etc/immich/anas-ca.crt
+    volumes:
+      - "./config.json:/etc/immich/anas-config.json:ro"
+      - "${ANAS_TLS_CERTS_DIR}/${ANAS_TLS_INTERNAL_CA_NAME}:/etc/immich/anas-ca.crt:ro"
+      - "${DATA_PATH}/immich/media:/data"
+    depends_on:
+      anas_immich_valkey:
+        condition: service_healthy
+    stop_grace_period: 120s
+    healthcheck:
+      test: [CMD, immich-healthcheck]
+      interval: 30s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.immich.entrypoints=https"
+      - "traefik.http.routers.immich.rule=Host(`${IMMICH_DOMAIN}`)"
+      - "traefik.http.routers.immich.tls=true"
+      - "traefik.http.services.immich.loadbalancer.server.port=2283"
+    networks: [db, traefik, immich]
+  anas_immich_valkey:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_valkey
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-valkey:9.1.1
+    command: [valkey-server, --appendonly, "yes", --appendfsync, everysec]
+    restart: unless-stopped
+    volumes:
+      - "${DATA_PATH}/immich/valkey:/data"
+    healthcheck:
+      # PING can exit 0 even when Valkey reports MISCONF. Probe a real write
+      # with error exit codes so AOF failures and OOM cannot report healthy.
+      test: [CMD, valkey-cli, -e, SET, "anas:healthcheck", "1", EX, "30"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [immich]
+  anas_immich_machine_learning:
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}_machine_learning
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-machine-learning:3.2.4
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - "${DATA_PATH}/immich/model-cache:/cache"
+    networks: [immich]
+networks:
+  db:
+    name: ${IMMICH_NETWORK_DB}
+    external: true
+  traefik:
+    name: ${NETWORK_PREFIX}traefik
+    external: true
+  immich:
+    name: ${NETWORK_PREFIX}immich

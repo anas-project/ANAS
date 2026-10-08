@@ -616,14 +616,8 @@ func (m *resourceMaterializer) materialize(consumer string) error {
 			return fmt.Errorf("resource %s.%s has no resolved %s provider", consumer, required.ID, required.Contract)
 		}
 		if required.Contract == "relational_database" {
-			name, _ := spec["name"].(string)
-			principal, _ := spec["principal"].(string)
-			if !resourceIdentifierPattern.MatchString(name) || !resourceIdentifierPattern.MatchString(principal) {
-				return fmt.Errorf("resource %s.%s database name or principal is invalid", consumer, required.ID)
-			}
-			policy, _ := spec["deletion_policy"].(string)
-			if policy != "retain" && policy != "delete" {
-				return fmt.Errorf("resource %s.%s deletion_policy must be retain or delete", consumer, required.ID)
+			if _, err := validateRelationalDatabaseSpec(consumer, required.ID, iface, spec); err != nil {
+				return err
 			}
 		}
 		if required.Contract == "relational_database" || required.Contract == "object_storage" || required.Contract == "compute" {

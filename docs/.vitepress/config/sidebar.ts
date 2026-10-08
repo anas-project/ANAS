@@ -104,6 +104,8 @@ export const zhSidebar: DefaultTheme.Sidebar = {
       items: [
         { text: '设计索引', link: '/architecture/' },
         { text: 'Module、Contract 与 Resource', link: '/architecture/module-contract-resource-design' },
+        { text: '关系数据库扩展生命周期', link: '/architecture/relational-database-extension-lifecycle' },
+        { text: 'Immich Module', link: '/architecture/immich-module-design' },
         { text: 'Module 专属命令能力设计', link: '/architecture/module-command-capability-design' },
         { text: '管理员账号系统', link: '/architecture/admin-account-system' },
         { text: 'Samba AD 用户与组规范', link: '/architecture/samba-ad-user-planning' },
@@ -266,6 +268,8 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Module resource modes: next release (Chinese)', link: '/architecture/module-resource-profiles' },
         { text: 'Core implementation standard', link: '/en/architecture/core-implementation-standard' },
         { text: 'Module, Contract, Resource', link: '/en/architecture/module-contract-resource-design' },
+        { text: 'Database extension lifecycle (Chinese)', link: '/architecture/relational-database-extension-lifecycle' },
+        { text: 'Immich Module (Chinese)', link: '/architecture/immich-module-design' },
         { text: 'IAM capability design', link: '/en/architecture/iam-capability-design' },
         { text: 'Object storage capability design', link: '/en/architecture/object-storage-capability-design' }
       ]

@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `authentik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `2026.5.6-r14` / `anas.module/v1`.
+> Status: current implementation; based on `2026.5.6-r15` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -20,22 +20,23 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 3 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `` | 3 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
 The first server start applies the complete database migration history. Its health check has a
 600-second start window so a progressing cold migration is not misclassified as failed on the
 supported 4-vCPU / 3-GiB baseline. The five normal health retries still apply after that window.
 
+Before resolving default flows/stages, OIDC scopes and LDAP mappings, the client and directory blueprints apply their built-in dependencies through the pinned version's native `metaapplyblueprint` model. Their names are checked against the fixed image; this adds no separate initializer or scheduler.
+
 The worker health check also requires every blueprint under `/blueprints/anas` to have a matching
 `successful` instance whose recorded `last_applied_hash` matches the mounted file's SHA-512 digest.
 Modules that depend on Authentik therefore cannot start before their OIDC provider is discoverable.
 
-The deployment remains root-only. `anas_authentik_init` copies only the generated blueprint
-templates, which contain references rather than Secret values, into
+The deployment remains root-only. `anas_authentik_init` copies only the required generated blueprints, which contain client credentials and signing material and must remain private, into
 `${DATA_PATH}/authentik/blueprints`, transfers that private copy to UID/GID 1000, and the server and
 worker mount it read-only. This avoids widening permissions on neighboring configuration or Secrets
 while allowing the non-root worker to traverse the blueprint tree.
@@ -113,14 +114,13 @@ AD) and a Provider (to the applications), so the two sides are described separat
   of that name is a foreign key to a property mapping, not a NameID format URN, and there is no field
   for the format itself; it honours the NameIDPolicy the SP sends in its AuthnRequest. What the NameID
   actually resolves to is therefore decided by the SP and **has not been re-checked**.
-- **The `DIRKEY-R-008` gap and its technical obstacle**: `sub_mode` is a fixed enumeration
-  (`user_uuid` and others) while the anchor lives in the custom attribute `attributes.ldap_uniq`.
-  Whether any enumeration value can reach a custom attribute, or whether a scope mapping can override
-  `sub`, **can only be answered by a probe against the real pinned version and must not be settled
-  from upstream documentation**. This is the first blocking item of M2 in the
-  [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md).
-  Until it is resolved this Provider declares, per `DIRKEY-R-012`, that the subject identifier
-  Consumers receive in this deployment is a stable internal id and not the anchor.
+- **The `DIRKEY-R-008` implementation boundary**: native `sub_mode` cannot select the custom
+  `attributes.ldap_uniq` attribute. The pinned `2026.5.6` canonical-sub patch described below makes
+  an explicit scope-mapped `sub` the canonical subject both in signed tokens and persisted IDToken
+  data used for native logout. The build probe verifies those fixed native call paths; real joint
+  directory/Provider/Consumer acceptance in the
+  [directory identity key plan](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
+  remains required. Consumers without an explicit anchor mapping retain native internal subjects.
 
 **`DIRKEY-R-013` projection verdict: not applicable (a Provider is not a Consumer).** This Module
 consumes nobody else's subject identifier, so there is no question of projecting a `sub` into a
@@ -228,3 +228,77 @@ The server entrypoint resolves Traefik's current IPv4 address and overrides Auth
 ## Current limitations
 
 Status is `developing`; directory sync, group revocation, password writeback, and recovery login still require real-container verification before release.
+
+## Trusted OIDC application role source
+
+The reserved generic OIDC ATTRIBUTES source `anasRole` computes admin/user from the trusted
+`SAMBA_DC_ADMIN_GROUP_NAME` membership engine, never a user-editable LDAP/profile attribute. A consumer
+can explicitly request sub:anchor. The fixed `2026.5.6` `patch-canonical-oidc-sub.py` validates an
+explicit subject as a non-empty string after native `IDToken.new` profile mapping, writes it back
+to `IDToken.sub`, and removes the duplicate claim. Consumers without an explicit subject override
+retain native behavior. Changing only serialized output would leave the persisted internal subject
+as the Authentik UUID while the issued ID Token uses the anchor, causing native session-deletion
+notifications to identify the wrong subject. The patch keeps both representations consistent.
+
+At build time, `verify-canonical-oidc-sub.py` executes the fixed upstream `IDToken.new`, provider
+encode, AccessToken serialization, session-delete signal, and logout-token methods with ORM/context
+doubles and verifies real PyJWT signatures for the subject and hashed session ID. Missing, duplicate,
+or already patched source anchors stop the build. This call-path check does not replace joint real
+LDAP, IAM HTTP, browser, and Immich E2E acceptance; directory revocation remains a separate check.
+
+## Selected directory revocation event extension
+
+An OIDC binding publishes `OIDC_CAEP_EVENTS=session-revoked`; a consumer requests this event through
+the existing registration. The runner clears inherited declarations, checks that support comes
+from the selected provider calculate hook and the request from that consumer, and requires a known
+event, OIDC/backchannel and supported intersection. Providers without support cannot enable it.
+This implements the selected [CAEP session-revoked event](https://openid.net/specs/openid-caep-1_0.html#section-3.1),
+not a complete SSF/CAEP deployment.
+
+Fixed `2026.5.6` has no `Application.attributes`. `directory_admission.py` therefore consumes the
+existing `ANAS_IDENTITY_OIDC_CLIENTS`, `ANAS_IAM_CLIENT_*` and `ANAS_IAM_BINDING_*` environment,
+checking the selected application, actual provider, Samba AD permanent-anchor subject mapping and
+existing application access policy. Consumers without an event request retain native behavior.
+With `SAMBA_DC_APP_FILTER=false`, an opted-in application gets an existing expression policy that
+only checks `is_active`; group admission filtering is not forced on.
+
+After native LDAP users/groups, memberships and deletion tasks complete, the existing source lock
+protects checks for deactivation and admission loss. Deletion captures the source connection's
+stable anchor before deleting the shadow user and queues a notification in the same transaction.
+The native PostgreSQL broker persists its Task in that transaction; an OAuth AccessToken is not
+needed. The existing watcher and periodic Source Sync both enter this path, with no added service
+or scheduler. Policy errors fail and retry rather than becoming revocation evidence. A missing sync
+cache page fails a negotiated source instead of letting native group.wait treat a logged error and
+empty return value as completion; sources without negotiation retain native behavior. Native OIDC
+authorization/token checks already use `use_cache=False`; the sender evaluates the original policy.
+
+Applications requesting the reserved `anasRole` source also receive trusted administrator-role
+loss. Detection uses the same recursive `ak_is_group_member(user, name=SAMBA_DC_ADMIN_GROUP_NAME)`
+predicate as the claim; native `is_superuser` can come from other marked groups and cannot replace
+it. Native membership replacement, group rename and group deletion capture the affected members'
+old role, perform the native update and persist this same CAEP notification only for true-to-false
+subjects in one transaction. Rename/deletion includes descendants. Ordinary users and users keeping
+the trusted role are not revoked on each sync. This avoids a process-local whole-sync snapshot;
+failure rolls back the update and queue together. A committed role loss revokes old privileges even
+if a later sync phase fails; restored admission requires a new OIDC callback for the current
+roleClaim. Real directory administrator-group loss and consumer demotion still require joint
+acceptance.
+
+Notifications reuse native signing, JWKS and the backchannel URI, with the standard logout event,
+an `iss_sub` subject in `sub_id`, and CAEP `initiating_entity=policy`. Detection records shared
+PostgreSQL `clock_timestamp()` as `event_timestamp` in the native Task's fifth argument. Retries
+retain it; CAEP `iat/exp` also use PostgreSQL time and detection later than `iat+5` is rejected.
+CAEP has no SID and requires a direct 200/204 acknowledgement; failures and redirects reach the
+existing durable retry path. The fixed upstream defaults to five retries; exhaustion retains a
+REJECTED task for the existing retry entry point, rather than unlimited automatic redelivery.
+Ordinary logout retains its native SID/subject scope without CAEP.
+
+The Dockerfile pins upstream OCI multi-architecture index digest
+`ed120caf710ccf82ef0026f0bc74e51615bc95ebff228a7a2d6fc60c441c3868`, containing linux/amd64 and
+linux/arm64. Build probes execute actual sync, deletion, signing and sending method bodies,
+checking failure propagation, unchanged detection time across retries, current-registration
+filtering and ordinary-logout separation. ORM/context doubles and real PyJWT signatures do not
+replace real directory disable/delete/recursive-group revocation, consumer session/API-key/share
+invalidation, whole-host clocks or recovery acceptance.
+
+After importing the managed public/internal CA bundle for LDAPS, the worker also supplies the same read-only copy to native Python requests HTTP tasks through `REQUESTS_CA_BUNDLE`. Backchannel/directory delivery retains TLS peer verification; importing an LDAP CertificateKeyPair alone does not configure HTTP trust, and certificate checks remain enabled.

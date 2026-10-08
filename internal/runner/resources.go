@@ -90,9 +90,9 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 		env := a.moduleEnv(providerDir)
 		switch request.Contract {
 		case "relational_database":
-			env["ANAS_RESOURCE_DATABASE"], _ = request.Spec["name"].(string)
-			env["ANAS_RESOURCE_USERNAME"], _ = request.Spec["principal"].(string)
-			env["ANAS_RESOURCE_PASSWORD"] = request.Credential
+			if err := projectRelationalDatabaseProviderEnv(env, request); err != nil {
+				return err
+			}
 		case "object_storage":
 			env["ANAS_RESOURCE_BUCKET"], _ = request.Spec["bucket"].(string)
 			env["ANAS_RESOURCE_ACCESS_KEY_ID"], _ = request.Spec["access_key_id"].(string)

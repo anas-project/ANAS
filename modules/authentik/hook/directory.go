@@ -9,6 +9,26 @@ version: 1
 metadata:
   name: anas-samba-ad
 entries:
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Password change flow
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Authentication flow
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Source authentication flow
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: Default - Source enrollment flow
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        name: System - LDAP Source - Mappings
   # Keep authentik's local preflight aligned with Samba's authoritative
   # minimum length. AD complexity is checked separately by authentik's LDAP
   # password validator, which reads pwdProperties and implements the actual

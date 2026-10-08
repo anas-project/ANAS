@@ -213,3 +213,9 @@ Container startup enables `real_ip_header X-Forwarded-For` and recursive parsing
 ## Current limitations
 
 Do not configure the removed `LLNG_PASSWORD`; it does not create an upstream administrator.
+
+## Trusted OIDC application role source
+
+The reserved generic OIDC ATTRIBUTES source `anasRole` uses an `inGroup` macro to derive admin/user
+from the trusted administrator group. The same-named LDAP exported variable is removed so user
+attributes cannot impersonate roles. Other ordinary directory claims retain their existing mapping.

@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-09-04
-updated: 2026-09-13
+updated: 2026-10-03
 ---
 
 # 凭据轮换覆盖面与语义要求
@@ -97,8 +97,11 @@ probe/reconcile/verify 与原子 Store 提交都已经工作。本文只处理�
 
 ## 6. PostgreSQL `trust` 基线
 
-`modules/postgres/hook/main.go` 将 `POSTGRES_HOST_AUTH_METHOD` 设为 `trust`，该基线下连接不校验
-口令。因此 `postgres.password` 的轮换今天**能跑通但不产生安全效果**。
+旧实现由 `modules/postgres/hook/main.go` 将 `POSTGRES_HOST_AUTH_METHOD` 设为 `trust`，连接不校验
+口令，使原基线下的口令变更不产生安全效果。2026-10-03 已实现新装和既有目录在 TCP 监听前迁移
+SCRAM HBA、管理员 SCRAM 投影及普通 Resource 口令实连；已通过隔离 Linux arm64 Docker 测试。
+真实服务器的 ANAS apply/恢复仍待验收，完整 `postgres.password` 通用库存和轮换也尚未交付；
+不得把认证前置子项视为整个凭据主题已经完成。状态与证据归[配套计划 M4](../plans/credential-rotation.md)。
 
 1. **已定案：走 (a)。** 判据是「值由谁产生」——`postgres.password` 的 `default_source` 是
    `generated`，不是用户指定的，因此它必须**既能单独轮换、也能随 `--all` 一起轮换**，与其他

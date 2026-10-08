@@ -3,6 +3,7 @@ doc_type: plan
 status: implementing
 created: 2026-08-27
 updated: 2026-10-04
+updated: 2026-10-03
 ---
 
 # Samba 目录事件订阅与实时同步实施计划
@@ -18,7 +19,7 @@ updated: 2026-10-04
 | M0：通用订阅契约与安全边界 | DIRSYNC-R-001—R-004、R-011、R-014 | 实施中；Authentik 与 Casdoor 已有实现，其余消费者待盘点 |
 | M1：可靠消费与全量兜底 | DIRSYNC-R-006—R-010 | 实施中；既有 watcher 覆盖部分场景，统一缺口恢复尚未验收 |
 | M2：全消费者实时同步 E2E | DIRSYNC-R-005、R-012 | 未开始 |
-| M3：准入丧失即时会话撤销 | DIRSYNC-R-013 | 实施中；Casdoor r10 完整 OIDC 故障矩阵、两 client 隔离与 Nextcloud r11 真实 Cookie 撤权通过；SAML 与其他消费者仍待实现 |
+| M3：准入丧失即时会话撤销 | DIRSYNC-R-013 | 实施中；Casdoor r10 完整 OIDC 故障矩阵、两 client 隔离与 Nextcloud r11 真实 Cookie 撤权通过；Authentik→Immich 的分轮主机证据见私有计划；Casdoor→Immich、SAML 与其他消费者仍待验收 |
 
 ## 2. M0 检查表
 
@@ -81,11 +82,11 @@ Nextcloud r11 已改用统一 anchor UID 与官方 8.11.0，不再修改插件�
 
 ## 6. 当前阻塞
 
-没有外部阻塞。下一步先以 Manifest 和最终 render 环境建立完整消费者清单，再按清单补实现与 E2E。
+Authentik→Immich 的真实链和全 workspace 灾备需明确授权的专用 Linux/Btrfs 主机、network namespace 与空隔离 daemon；当前尚未提供。其余消费者的盘点与实现可独立继续。
 
 ## 7. CI 门禁
 
-本计划还没有自己的实施提交：M0、M1 的「实施中」指的是早于本计划（`1d7bb42`，2026-08-27）的 Casdoor
+2026-10-03 未提交工作树补齐 Authentik→Immich 的 M3 子集，见下节；此前 M0、M1 的「实施中」指的是早于本计划（`1d7bb42`，2026-08-27）的 Casdoor
 与 Authentik 既有实现，检查表各项均未勾选。下表记录这些既有实现与本计划文档所在门禁的实际状态：
 
 | 门禁 | 最近全绿提交 |
@@ -117,3 +118,18 @@ Nextcloud r11 已改用统一 anchor UID 与官方 8.11.0，不再修改插件�
 | 同上 | `forgejo` 的盘点已于 2026-09-20 完成：固定 `15.0.7` 没有按不可变 ID 绑定 OIDC 与 LDAP 账号的接口，双接入无法安全成立，因此保持 OIDC-only 并按 `R-014` 写明缺失方向与兜底（管理员在 Forgejo 停用账号）。`vikunja` 一句仍待盘点 | 已完成（`forgejo` 部分，2026-09-20） |
 | 各 IAM Provider 与直接 LDAP/LDAPS Module 的 README 与技术文档（中英文） | M0：单支持的写明缺失方向与兜底路径（R-014）；M2：最大传播时间、全量兜底周期、测试入口与结果；M3：准入丧失的最大传播时间与撤销范围。目前只有 `casdoor` 的技术文档有目录事件一节，`authentik` 已消费事件但文档未提及 | 未开始 |
 | [英文架构索引](../../docs/en/architecture/index.md) | 按文档标准 §2 至少补 [Directory event journal](../../docs/architecture/directory-event-journal.md) 的英文摘要；目前没有条目 | 未开始 |
+
+## 10. 2026-10-03 Immich 所需 M3 子项
+
+复用现有 Samba watcher、Authentik LDAP 同步及 PostgreSQL Task，未增加事件 ABI、调度器或状态机。
+仅对注册并协商 `OIDC_CAEP_EVENTS=session-revoked` 的 Consumer 生效；其他 Provider/Consumer 不据此声明完成。
+
+- [x] Authentik 2026.5.6-r15 原生成功同步后重算准入；删除账号与受信 Admins 角色丧失在相同事务入队。
+- [x] 使用目录不可变 anchor 与 canonical sub，未持有 AccessToken 的旧 API key/分享也可收到 subject 级事件。
+- [x] 固定源码的 partial-sync、无缓存失败、事务持久入队、原事件时间重试及非 200/204 重试测试。
+- [x] Immich 接收端撤销旧 grant 派生的 session/API key/分享，阻止延迟旧 callback 与凭据竞态，断开对应实时连接。
+- [ ] `server-immich-workspace-e2e.sh` 的真实 Samba/Authentik/Immich 停用、删除、准入组与 Admins 降权链验收。
+
+本机 signed IdP + 普通 PG + HTTP/WebSocket 和固定 Authentik 原生方法通过，不代表真正 LDAP/任务重启/浏览器
+最大传播时间验收。发送端和接收端范围及本机证据见 Immich 私有计划与
+[实施核对记录](../../modules/immich/dev-docs/plans/immich-module.md#执行记录归并)。M3 总表与全消费者检查表保持未完成。

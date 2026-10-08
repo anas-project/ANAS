@@ -1,0 +1,15 @@
+# Test-only old image: actual extension binary and a trust-authenticated PG18
+# database, used to verify upgrade and authentication migration together.
+ARG ANAS_IMAGE_REGISTRY=ghcr.io/anas-project
+FROM ${ANAS_IMAGE_REGISTRY}/anas-mirror-postgres:18.4-alpine AS extensions
+ADD --checksum=sha256:a9094dfb85ccdde3cbb295f1086d4c71a20db1d26bf1d6c39f07a7d164033eb4 https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.1.tar.gz /tmp/vector.tar.gz
+RUN apk add --no-cache build-base \
+    && mkdir /tmp/vector \
+    && tar -xzf /tmp/vector.tar.gz --strip-components=1 -C /tmp/vector \
+    && make -C /tmp/vector OPTFLAGS="" with_llvm=no \
+    && make -C /tmp/vector install with_llvm=no
+FROM ${ANAS_IMAGE_REGISTRY}/anas-mirror-postgres:18.4-alpine
+COPY --from=extensions /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
+COPY --from=extensions /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
+COPY --from=extensions /tmp/vector/LICENSE /usr/share/doc/pgvector/LICENSE
+ENV POSTGRES_HOST_AUTH_METHOD=trust

@@ -18,9 +18,13 @@ func activationFailure(base, id, code string, cause error, candidate *app, candi
 			outcomes = append(outcomes, recoveryResult("candidate_stop", cleanupError))
 		}
 		if previous != nil {
-			outcomes = append(outcomes, recoveryResult("previous_restore", restoreAfterConfirmedCleanup(cleanupError, func() error {
-				return startDeployment(previous, previousRoot, previous.order, jsonMode)
-			})))
+			if candidate != nil && len(candidate.postgresMaintenance) > 0 {
+				outcomes = append(outcomes, recoveryResult("previous_restore", errors.New("not attempted: PostgreSQL shared data may have changed; services remain stopped, retry the frozen candidate or restore the ANAS recovery point")))
+			} else {
+				outcomes = append(outcomes, recoveryResult("previous_restore", restoreAfterConfirmedCleanup(cleanupError, func() error {
+					return startDeployment(previous, previousRoot, previous.order, jsonMode)
+				})))
+			}
 		}
 		return outcomes
 	})

@@ -20,7 +20,7 @@
 | [无序 Capability 依赖](weak-capability-dependency.md) | `ordering` 字段、calculate 环境隔离、解除 Adminer 成环阻塞；验收依据见[要求](../requirements/weak-capability-dependency.md) | 实施中 |
 | [Module 专属命令能力](module-command-capability.md) | manifest/deployment 冻结、共享执行服务、CLI/anasd 与 Forgejo/Incus 验收 | 实施中 |
 | [VersityGW S3 兼容 Module](versitygw-module.md) | S3 Module、Capability/Resource、独立 bucket/凭据、客户端与恢复验收 | 实施中 |
-| [凭据轮换覆盖面](credential-rotation.md) | 表述修正、资源凭据声明位与两侧契约、跨类清单、PostgreSQL 认证基线；验收依据见[要求](../requirements/credential-rotation.md) | 提案 |
+| [凭据轮换覆盖面](credential-rotation.md) | 表述修正、资源凭据声明位与两侧契约、跨类清单、PostgreSQL 认证基线；验收依据见[要求](../requirements/credential-rotation.md) | 实施中 |
 | [统一动作 ABI](action-abi.md) | job、事件重放、取消与大块数据边界；取代 Module Command 的 executor 协议 | 实施中 |
 | [宿主特权动作通道](host-action-channel.md) | 具名特权动作通道、授权审计与二段确认；依赖统一动作 ABI | 实施中 |
 | [Incus compute Provider](incus-module.md) | Contract 改形、`incus` Provider Module、Core 支持、共享客户端与 Forgejo 迁移；验收依据见[要求](../requirements/incus-module.md) | 实施中 |
@@ -41,6 +41,7 @@
 
 | 文档 | 结论去向 | 状态 |
 | --- | --- | --- |
+| [relational_database 扩展生命周期](archived/relational-database-extensions.md) | [扩展生命周期设计](../../docs/architecture/relational-database-extension-lifecycle.md)、Contract/Provider 文档及主机验收记录 | 已完成（已归档） |
 | [workspace 与备份体系](archived/workspace-backup.md) | [备份与恢复指南](../../docs/guide/backup-and-restore.md)、[backup 契约](../../docs/reference/contracts/backup.md) | 已完成（已归档） |
 | [项目审查整改](archived/project-quality-hardening.md) | Agent 规则、文档一致性、补偿闭环与验证门禁 | 已完成（已归档） |
 | [内置 Module 与配置 Inventory](archived/builtin-inventory.md) | [需求矩阵](../requirements/builtin-inventory.md)、[Module 目录](../../docs/reference/modules.md)、[配置参考](../../docs/reference/configuration.md) | 已完成（已归档） |
@@ -53,6 +54,7 @@
 单个 Module 私有的实施计划放在该 Module 目录下（[文档写作标准](../../docs/developer/documentation-standard.md) §1 的归属规则），
 不进本索引，但同样受 `npm run docs:check-requirements` 覆盖：
 
+- [Immich Module](../../modules/immich/dev-docs/plans/immich-module.md)（实施中）
 - [AI Agent 编排](../../modules/ai_agent/dev-docs/plans/ai-agent.md)（实施中）
 - [Forgejo Module](../../modules/forgejo/dev-docs/plans/forgejo-module.md)（实施中）
 - [Vikunja Module](../../modules/vikunja/dev-docs/plans/archived/vikunja-module.md)（已归档）

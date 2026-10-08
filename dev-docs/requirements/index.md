@@ -4,6 +4,7 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [relational_database 扩展生命周期要求](relational-database-extensions.md) | 最小 PostgreSQL 扩展声明、固定版本、权限和就绪、受控升级与 ANAS 恢复 | 19/19 已完成 |
 | [项目审查整改要求](project-quality-hardening.md) | 共享 Agent 规则、补偿失败、索引语义与前端门禁 | 6/6 已完成 |
 | [应用目录要求](app-catalog.md) | 非 IAM/多入口、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer 与 Casdoor 优先 | 0/35 已完成 |
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
@@ -47,6 +48,7 @@
 单个 Module 私有的需求放在该 Module 目录下（[文档写作标准](../../docs/developer/documentation-standard.md) §1 的归属规则），
 不进本索引，但同样受 `npm run docs:check-requirements` 覆盖：
 
+- [Immich Module 集成要求](../../modules/immich/dev-docs/requirements/immich-module.md)
 - [AI Agent 编排集成要求](../../modules/ai_agent/dev-docs/requirements/ai-agent.md)
 - [Forgejo Module 集成要求](../../modules/forgejo/dev-docs/requirements/forgejo-module.md)
 - [Vikunja Module 集成要求](../../modules/vikunja/dev-docs/requirements/vikunja-module.md)

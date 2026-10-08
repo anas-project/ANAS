@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `authentik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `2026.5.6-r14` / `anas.module/v1`.
+> 状态：当前实现；对应 `2026.5.6-r15` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -20,21 +20,23 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `traefik, authentik, db` | 3 |
-| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 2 |
-| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `` | 3 |
-| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r14` | `authentik, db` | 3 |
+| `anas_authentik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `traefik, authentik, db` | 3 |
+| `anas_authentik_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `authentik, db` | 2 |
+| `anas_authentik_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `` | 3 |
+| `anas_authentik_worker` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-authentik:2026.5.6-r15` | `authentik, db` | 3 |
 <!-- generated:compose-topology:end -->
 
 首次启动会在主服务内执行完整数据库迁移；主服务健康检查给予 600 秒启动窗口，避免在受支持的
 4 vCPU / 3 GiB 基线环境中把仍在推进的冷启动迁移误判为失败。该窗口不改变迁移失败后的
 5 次常规健康重试。
 
+客户端与目录 blueprint 在引用默认 flow/stage、OIDC scope 和 LDAP mapping 前，用固定版本原生 `metaapplyblueprint` 应用其内置依赖，避免首次发现任务无序执行。依赖名称经固定镜像核对，不增加独立初始化器或调度器。
+
 worker 健康检查还要求 `/blueprints/anas` 下的每个 blueprint 已存在对应实例、状态为
 `successful`，且 Authentik 记录的 `last_applied_hash` 与挂载文件 SHA-512 一致。依赖
 Authentik 的 Module 因而不会在 OIDC Provider 尚未可发现时启动。
 
-deployment 整体保持 root-only；`anas_authentik_init` 只把不含 Secret 值的生成 blueprint
+deployment 整体保持 root-only；`anas_authentik_init` 只把运行必需的生成 blueprint（包含客户端凭据和签名材料，必须保持私有）
 复制到 `${DATA_PATH}/authentik/blueprints`，将该私有副本交给 UID/GID 1000 后，server 与 worker
 再以只读方式挂载。这样无需放宽 deployment 中其他配置或 Secret 的权限，也不会让非 root worker
 因无法遍历 `0700` deployment 目录而永久停在启动状态。
@@ -102,13 +104,14 @@ Samba AD 是人员与组的事实来源。LDAP Source 通过 LDAPS 同步用户�
   **用户名是登录名，绝不能成为 OIDC subject**。
 - **anchor 作为 claim**：`oidcClaimExpression`/`samlAttributeExpression` 把等于
   `SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE` 的来源翻译成 `request.user.attributes.get("ldap_uniq")`，
-  OIDC 走 scope mapping、SAML 走 property mapping。
+  OIDC 走 scope mapping、SAML 走 property mapping；固定版本补丁进一步将显式 OIDC sub
+  写回原生 `IDToken.sub`，使签发、持久化和后续登出通知的表示一致。
 - **SAML NameID**：blueprint **刻意不设置** `name_id_mapping`——Authentik 的该字段是指向 property
   mapping 的外键，不是 NameID format URN，也没有承载 format 本身的字段；它遵循 SP 在 AuthnRequest
   里发来的 NameIDPolicy。因此 NameID 的实际取值由 SP 决定，**未经复核**。
-- **`DIRKEY-R-008` 缺口与技术阻碍**：`sub_mode` 是固定枚举（`user_uuid` 等），anchor 落在
-  `attributes.ldap_uniq` 这一自定义属性上。枚举里有没有一项能取到自定义属性、或能否用 scope
-  mapping 覆盖 `sub`，**只能由真实固定版本上的探针回答，不能凭上游文档定稿**。这是
+- **`DIRKEY-R-008` 验证边界**：`sub_mode` 保留原生 `user_uuid` 默认；显式请求 sub:anchor 的
+  Consumer 经 scope mapping 和固定源码补丁使用 `ldap_uniq`。实际镜像内已验证原生签发与
+  通知方法，但目录重建和联合 Consumer E2E 仍需真实固定组合验收。这是
   [目录身份键实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md)
   M2 第一项阻塞。在它解开之前，本 Provider 按 `DIRKEY-R-012` 声明：该部署下 Consumer 拿到的主体
   标识符是稳定的内部 id，不是 anchor。
@@ -216,3 +219,61 @@ Server entrypoint 解析 Traefik 的当前 IPv4 地址，并覆盖 Authentik 默
 ## 当前限制
 
 状态为 `developing`；正式支持前仍需以真实容器验证目录同步、组撤权、密码回写和恢复登录。
+
+## 受信 OIDC 应用角色来源
+
+通用 OIDC ATTRIBUTES 的保留来源 `anasRole` 从受信 `SAMBA_DC_ADMIN_GROUP_NAME` 组成员计算 admin/user；
+不读取可自填 LDAP/profile 属性。Consumer 可显式请求 sub:anchor。固定 `2026.5.6` 的
+`patch-canonical-oidc-sub.py` 在原生 `IDToken.new` 完成 profile 映射后校验显式 sub 为非空字符串，
+将其写回 `IDToken.sub` 并移除 claims 中的重复值；未请求 sub 覆盖的 Consumer 保留原生行为。
+只覆盖序列化输出会让 ID Token 使用 anchor、保存的内部 sub 却仍为 Authentik UUID，继而使原生
+session 删除通知按错误主体撤销；此补丁同时修复已签发表示与后续通知的主体来源。
+
+构建时 `verify-canonical-oidc-sub.py` 读取固定上游的实际 `IDToken.new`、Provider encode、
+AccessToken 序列化、session-delete signal 与 logout-token 方法，使用 ORM/context doubles
+并验证真实 PyJWT 签名中的 sub/hashed sid。缺失、重复或已改补丁锚点会中止构建。
+该调用链验证不代替真实 LDAP、IAM HTTP、浏览器与 Immich 的联合 E2E；目录撤权仍单独验收。
+
+## 选定的目录撤权事件扩展
+
+OIDC binding 发布 `OIDC_CAEP_EVENTS=session-revoked` 支持值；Consumer 在现有注册中请求同名
+列表。Runner 清理继承的该字段，校验支持声明来自所选 Provider calculate、请求来自该 Consumer，
+只接受已知事件、OIDC/backchannel 及支持交集。其他 Provider 未声明时不能启用。
+这实现选定的 [CAEP session-revoked 事件](https://openid.net/specs/openid-caep-1_0.html#section-3.1)，
+不声明完整 SSF/CAEP 部署。
+
+固定 `2026.5.6` 没有 `Application.attributes`，因此 `directory_admission.py` 直接消费既有
+`ANAS_IDENTITY_OIDC_CLIENTS`、`ANAS_IAM_CLIENT_*` 和 `ANAS_IAM_BINDING_*`，核对被选择的
+Application、实际 Provider、Samba AD 永久 anchor sub 映射及原有应用准入策略。未请求事件的
+Consumer 保留原行为。`SAMBA_DC_APP_FILTER=false` 时，声明事件的应用仍建立仅检查 `is_active`
+的原有表达式策略，不强迫启用许可组过滤。
+
+LDAP 原生用户/组、成员关系和删除任务完成后，在原有 source lock 内检查停用和准入丧失。
+删除在原生事务中先捕获 source connection 的稳定 anchor，再删除影子用户并入队通知。
+原生 PostgreSQL Broker 的 Task 与该事务一起持久化；无 OAuth AccessToken 也能发通知。
+既有 watcher 和周期 Source Sync 都会进入该路径，不增加服务或调度器。策略执行错误会失败并
+重试，不当作准入丧失。已协商事件的源若同步缓存页丢失，抛出失败而不让原生 group.wait 将
+记录错误后的空返回值视为完成；未协商源保留原行为。原生 OIDC 授权/换 token 已
+`use_cache=False`，sender 直接评估原策略。
+
+请求保留来源 `anasRole` 的应用还接收可信管理员角色丧失通知。判定使用与 claim 相同的
+`ak_is_group_member(user, name=SAMBA_DC_ADMIN_GROUP_NAME)` 递归组谓词；`is_superuser` 可由
+其他标记组提供，不能替代它。原生成员关系替换、组改名和组删除在同一事务中先捕获受影响
+成员的旧角色，完成原更新后只为 true→false 主体持久化同一 CAEP 通知；组删除/改名含后代组。
+普通用户和仍持有可信角色的用户不会每轮被撤权。不依赖进程内的整轮同步快照，失败会随
+更新事务回滚。已提交的真实角色丧失即使后续同步阶段失败也撤销旧权限；恢复准入后需新的
+OIDC callback 获取当前 roleClaim。尚未完成真实目录管理员组丧失与消费者降权的联合验收。
+
+通知沿原生签名、JWKS 和 backchannel URI 发送，含标准 logout event、`sub_id` 的 `iss_sub`
+主体及 CAEP `initiating_entity=policy`。检测时用共享 PostgreSQL `clock_timestamp()` 保存
+`event_timestamp` 到原生 Task 第五参数；重试保留该值，CAEP 签发 `iat/exp` 也用 PostgreSQL 时钟，
+并拒绝检测时间超过 `iat+5`。CAEP 不含 SID，只接受接收端直接返回 200/204；HTTP 失败或跳转
+沿既有持久任务重试。固定上游默认最多重试五次，耗尽后保留 REJECTED 任务，需用既有任务
+重试入口处理；不声明无限自动重投。普通登出仍使用原生 SID/subject 范围，不附加 CAEP 事件。
+
+Dockerfile 固定上游 OCI 多架构 index digest `ed120caf710ccf82ef0026f0bc74e51615bc95ebff228a7a2d6fc60c441c3868`，
+包含 linux/amd64 和 linux/arm64。构建探针执行实际同步、删除、签名与发送方法体，验证失败传递、
+检测时间重试不变、当前注册过滤与普通登出分离。ORM/context doubles 及真实 PyJWT 签名测试仍不
+代替真实目录停用、删除、递归组撤权、消费者会话/API key/分享失效、整机时钟和恢复验收。
+
+Worker 在导入现有受管公共/内部 CA bundle 供 LDAPS 使用后，同时通过 `REQUESTS_CA_BUNDLE` 将同一只读副本交给原生 Python requests HTTP Task。backchannel/目录通知继续验证 TLS peer，不依赖 LDAPS CertificateKeyPair 自动成为 HTTP 信任，也不关闭证书检查。

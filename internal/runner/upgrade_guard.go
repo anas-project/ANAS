@@ -283,6 +283,10 @@ func deploymentSnapshotTrigger(current, target *deploymentManifest) *applySnapsh
 	if current == nil || target == nil {
 		return nil
 	}
+	if providers := postgresMaintenanceProviders(current, target); len(providers) > 0 {
+		return &applySnapshotTrigger{reason: snapshotReasonModuleUpgradeBreaking,
+			detail: "PostgreSQL provider change requires extension maintenance; consumers=" + strings.Join(postgresMaintenanceConsumers(current, target, providers), ",") + "; stop/restart=full workspace"}
+	}
 	// The upgrade case is reported first: it is the more severe of the two, and
 	// only one snapshot is taken either way.
 	breaking := []string{}

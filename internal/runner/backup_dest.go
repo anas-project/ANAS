@@ -276,6 +276,17 @@ func verifyBackup(dest string, manifest backupManifest, present map[string]bool)
 		add("parent_missing", "backup %s is incremental against %s, which is no longer here",
 			manifest.BackupID, manifest.Parent)
 	}
+	if manifest.Mode == backupModeSend || manifest.Mode == backupModeSendFile {
+		if exists(backupMetaTarPath(root)) {
+			if err := verifySnapshotImagesTar(backupMetaTarPath(root)); err != nil {
+				add("images_incomplete", "%v", err)
+			}
+		}
+	} else if exists(filepath.Join(root, "deployment", "deployment.yml")) {
+		if err := verifySnapshotImages(root); err != nil {
+			add("images_incomplete", "%v", err)
+		}
+	}
 	return problems
 }
 

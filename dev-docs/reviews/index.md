@@ -6,6 +6,8 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Immich 初始接入评审与修正](2026-10-02-immich-integration-plan-review.md) | 固定 v3.2.4 与用户确认边界 | 设计评审；末尾修正早期方案，执行结果见私有计划 |
+| [Immich master 整合评估](2026-10-07-immich-master-integration.md) | 9fc699c 与未提交工作树 | 基线差异与验证限制；最新 aa1944a 回归见私有计划 |
 | [Casdoor 可信角色与撤权声明核对](2026-10-04-casdoor-claims-verification.md) | 2026-10-04，`7d612be5` 加当前未提交工作树 | 目录身份、准入和 back-channel 已实现；目录撤权已由另一任务接入；未找到 `anasRole` / CAEP 声明，本地测试通过，声明来源待确认 |
 | [Incus 租约网络、HTTP 发布与端口绑定实施记录](2026-10-03-incus-lease-network-implementation.md) | 2026-10-03，`c7891162` 加当前未提交工作树 | M10a/M10b/M11/M11b/M11c、HOSTACT M5 与运行问题记录 CLI 的实现与本机门禁；撤销停止实例等五项自行决定；实机 e2e 全部未运行 |
 | [finance 保留工作区部署](2026-10-02-finance-workspace-deployment.md) | 2026-10-02，审核Source25与CLI2c；finance新工作区 | 10000入口、Casdoor八Module、真实SSO编辑及验收后恢复；10月3日使用ln DNS key签发公网证书，主机TLS通过，当前外网TLS提前关闭 |

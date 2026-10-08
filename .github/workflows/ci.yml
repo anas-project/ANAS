@@ -121,6 +121,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fixed-source patches and host-harness guards need no daemon, IAM,
+      # Btrfs, or remote target. Real workspace acceptance stays on the lab.
+      - name: Validate Immich patches and workspace harness
+        timeout-minutes: 3
+        run: |
+          node --test modules/immich/immich/*.test.cjs
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s modules/authentik/authentik -p 'test_*.py'
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test-env/scripts -p 'test_immich_workspace*.py'
+
       - name: Validate native Incus browser guards (no browser or VM)
         run: |
           npm run test:incus-browser-guards

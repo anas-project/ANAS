@@ -9,7 +9,7 @@ Provider for `relational_database/postgres` with optional Adminer.
 | --- | --- |
 | Module | `postgres` |
 | Version / revision | `18.4.0-r4` |
-| Status | `release` |
+| Status | `developing` |
 | Category | `database` |
 | Runtime | `compose` |
 <!-- generated:module-facts:end -->
@@ -50,6 +50,12 @@ This module declares no account managed by `anas admin local`; `credential` and 
 ## Database support
 
 This module provides `relational_database/postgres` contract, version `1.0.0`。
+
+Optional `spec.postgres.extensions` lists SQL extension names. This release fixes PostgreSQL `18.4` / Alpine,
+pgvector (`vector`) `0.8.2`, `cube 1.5`, and `earthdistance 1.2`. The provider installs the `cube` dependency
+of `earthdistance`. VectorChord, runtime version selection, and runtime downloads are unsupported.
+Immich requests `[vector, earthdistance]` and uses `DB_VECTOR_EXTENSION=pgvector`. The database and
+provision services use the same ANAS image.
 
 ## All configuration parameters
 
@@ -96,6 +102,19 @@ anas config secret get POSTGRES_PASSWORD -w /srv/anas
 
 Protect persistent state with the workspace snapshot/backup. Database consumers must also back up their bound database resource; generated secrets and local-administrator state must share the same recovery point.
 
+Before opening TCP, both new and existing data directories receive managed SCRAM HBA rules. The existing
+ANAS Secret projection resets the administrator's SCRAM password; resource ensure sets each application's
+own SCRAM password. Wrong/empty passwords, administrator impersonation, and cross-database access must fail.
+Both ensure and inspect make an actual application-role connection and exercise the extensions. Inspect
+creates no objects and changes no passwords.
+
+A PostgreSQL artifact update affects the shared instance. ANAS stops workspace writers, takes a consistent
+recovery point, starts the provider, and completes fixed extension maintenance before consumers start.
+Ordinary ensure/start/restart never upgrade extensions and reject version drift. The supported fixed path is
+pgvector `0.8.1 → 0.8.2`; unknown sources fail, and a partial run retries from actual installed versions.
+Recover the ANAS database, coupled media, configuration/Secrets, and matching images together instead of
+opening unknown new data with an old image.
+
 ```bash
 anas plan -c /srv/anas/config.yml
 anas config list postgres -w /srv/anas
@@ -105,6 +124,10 @@ anas status -w /srv/anas
 ## Current limitations
 
 Ordinary `config set` cannot safely rotate the database superuser password.
+
+Authentication and extensions passed isolated Docker integration tests. Real-server ANAS apply, full-workspace
+consistent restore, and Immich business acceptance are still required. `postgres.password` is not yet wired
+into the generic credential inventory; this change delivers the authentication prerequisite only.
 
 ## Technical documentation
 

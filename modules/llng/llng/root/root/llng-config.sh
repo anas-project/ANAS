@@ -44,7 +44,7 @@ lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
 config_version=$( $lemonldap_ng_cli info | grep -oP 'Num\s+:\s+\K\d+' )
 
 cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
-  | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps")' \
+  | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps", .ldapExportedVars.anasRole)' \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
   > /tmp/config_new.json
 mv /tmp/config_new.json /var/lib/lemonldap-ng/conf/lmConf-$config_version.json
@@ -219,7 +219,13 @@ for app in $SAML_SP_APPS; do
         $lemonldap_ng_cli_addkey \
               samlSPMetaDataExportedAttributes/$app $var "$mandatory;$attr;;"
 
-        if [ "$attr" != "groups" ]; then
+        if [ "$attr" = "anasRole" ]; then
+          # Reserved generic role source: derive it from trusted directory
+          # groups instead of accepting an LDAP/profile value supplied by users.
+          role_admin_group=${SAMBA_DC_ADMIN_GROUP_NAME//\\/\\\\}
+          role_admin_group=${role_admin_group//\"/\\\"}
+          $lemonldap_ng_cli_addkey macros anasRole "inGroup(\"$role_admin_group\") ? 'admin' : 'user'"
+        elif [ "$attr" != "groups" ]; then
           $lemonldap_ng_cli_addkey ldapExportedVars "$attr" "$attr"
         fi
 
@@ -333,7 +339,13 @@ for app in $OIDC_RP_APPS; do
         # declared by an application available in the session first.  `groups`
         # is computed by LLNG's group engine and must not be read as an LDAP
         # attribute.
-        if [ "$attr" != "groups" ]; then
+        if [ "$attr" = "anasRole" ]; then
+          # OIDC-only workspaces must derive the reserved role independently
+          # of SAML configuration, and must never re-export it from LDAP.
+          role_admin_group=${SAMBA_DC_ADMIN_GROUP_NAME//\\/\\\\}
+          role_admin_group=${role_admin_group//\"/\\\"}
+          $lemonldap_ng_cli_addkey macros anasRole "inGroup(\"$role_admin_group\") ? 'admin' : 'user'"
+        elif [ "$attr" != "groups" ]; then
           $lemonldap_ng_cli_addkey ldapExportedVars "$attr" "$attr"
         fi
 

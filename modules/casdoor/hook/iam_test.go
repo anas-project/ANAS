@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestTrustedOIDCRoleUsesManagedGroupNotUserProperties(t *testing.T) {
+	e := casdoorTestEnv()
+	e["SAMBA_DC_ADMIN_GROUP_NAME"] = "DirectoryAdmins"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__ATTRIBUTES"] = "anas_role:anasRole:1"
+	app, err := oidcApplication(e, "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(app)
+	if !strings.Contains(string(data), "ANASRole.DirectoryAdmins") || strings.Contains(string(data), "Properties.anasRole") {
+		t.Fatalf("untrusted role mapping: %s", data)
+	}
+}
+
 func casdoorTestEnv() map[string]string {
 	return map[string]string{
 		"CASDOOR_DOMAIN_FULL":                                   "https://auth.example:443",
@@ -210,5 +224,32 @@ func TestOIDCClientCredentialsAreRequired(t *testing.T) {
 	delete(e, "ANAS_IAM_CLIENT__NEXTCLOUD__CLIENT_SECRET")
 	if _, err := renderInitData(e); err == nil || !strings.Contains(err.Error(), "did not publish credentials") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestOptionalCAEPRegistrationRequiresVerifiedSubjectWideReceiver(t *testing.T) {
+	e := casdoorTestEnv()
+	p := "ANAS_IAM_CLIENT__NEXTCLOUD__"
+	e[p+"OIDC_CAEP_EVENTS"] = "session-revoked"
+	e[p+"OIDC_LOGOUT_SESSION_REQUIRED"] = "false"
+	e[p+"ATTRIBUTES"] = "sub:" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + ":1,anas_role:anasRole:1"
+	app, err := oidcApplication(e, "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app["anasPolicyRevocation"] != true || app["tags"] != nil {
+		t.Fatal(app)
+	}
+	for _, key := range []string{"OIDC_LOGOUT_URI", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED", "ATTRIBUTES"} {
+		saved := e[p+key]
+		e[p+key] = ""
+		if _, err := oidcApplication(e, "nextcloud"); err == nil {
+			t.Fatalf("accepted missing %s", key)
+		}
+		e[p+key] = saved
+	}
+	e[p+"OIDC_CAEP_EVENTS"] = "unknown"
+	if _, err := oidcApplication(e, "nextcloud"); err == nil {
+		t.Fatal("unknown event accepted")
 	}
 }

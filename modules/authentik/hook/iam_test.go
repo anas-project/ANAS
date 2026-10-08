@@ -221,3 +221,66 @@ func TestAuthentikTreatsPreferredSAMLPostAsBrowserBinding(t *testing.T) {
 		t.Fatalf("SAML logout selection = %s/%s, want post/frontchannel_native", binding, method)
 	}
 }
+
+func TestTrustedOIDCRoleComesFromAdministratorGroup(t *testing.T) {
+	got := oidcClaimExpression("anasRole", "anasIdentityAnchor", "Platform Admins")
+	if !strings.Contains(got, `ak_is_group_member(request.user, name="Platform Admins")`) ||
+		!strings.Contains(got, `"admin"`) || !strings.Contains(got, `else "user"`) ||
+		strings.Contains(got, "attributes.get") {
+		t.Fatalf("trusted role expression = %s", got)
+	}
+	if got := oidcClaimExpression("anasIdentityAnchor", "anasIdentityAnchor"); got != `request.user.attributes.get("ldap_uniq")` {
+		t.Fatalf("anchor expression = %s", got)
+	}
+}
+
+func TestCAEPRequestUsesVerifiedExistingRegistration(t *testing.T) {
+	e := boundEnv()
+	e["ANAS_IDENTITY_OIDC_CLIENTS"] = "immich,netbird"
+	e["ANAS_IAM_BINDING__IMMICH__INTERFACE"] = "oidc"
+	e["ANAS_IAM_CLIENT__IMMICH__CLIENT_ID"] = "immich"
+	e["ANAS_IAM_CLIENT__IMMICH__ATTRIBUTES"] = "sub:anasIdentityAnchor:1,anas_role:anasRole:1"
+	e["ANAS_IAM_CLIENT__IMMICH__ALLOW_GROUPS"] = "APP_immich,APP_all,Admins"
+	e["ANAS_IAM_CLIENT__IMMICH__OIDC_CAEP_EVENTS"] = "session-revoked"
+	e["ANAS_IAM_CLIENT__IMMICH__OIDC_LOGOUT_METHODS"] = "backchannel"
+	e["ANAS_IAM_CLIENT__IMMICH__OIDC_LOGOUT_URI"] = "https://photos.example/api/oauth/backchannel-logout"
+	e["ANAS_IAM_CLIENT__NETBIRD__CLIENT_ID"] = "netbird"
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__SP_METADATA_URL"] = "https://nc.example/metadata"
+	if err := publishIAMEndpoints(e); err != nil {
+		t.Fatal(err)
+	}
+	if e["ANAS_IAM_BINDING__IMMICH__OIDC_CAEP_EVENTS"] != "session-revoked" || e["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_CAEP_EVENTS"] != "" {
+		t.Fatal("event support must be published only for OIDC bindings")
+	}
+	blueprint, err := renderClientBlueprint(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"name: anas-access-immich", "logout_method: backchannel", `claims["sub"] = request.user.attributes.get("ldap_uniq")`} {
+		if !strings.Contains(blueprint, value) {
+			t.Fatalf("missing verified event registration prerequisite %q", value)
+		}
+	}
+	if strings.Contains(blueprint, "anas_oidc_caep") {
+		t.Fatal("fixed Application has no attributes field; existing registration env is authoritative")
+	}
+	for _, key := range []string{"OIDC_CAEP_EVENTS", "ATTRIBUTES", "OIDC_LOGOUT_METHODS", "OIDC_LOGOUT_SESSION_REQUIRED"} {
+		original := e["ANAS_IAM_CLIENT__IMMICH__"+key]
+		if key == "OIDC_LOGOUT_SESSION_REQUIRED" {
+			e["ANAS_IAM_CLIENT__IMMICH__"+key] = "true"
+		} else {
+			e["ANAS_IAM_CLIENT__IMMICH__"+key] = "invalid"
+		}
+		if _, err := renderClientBlueprint(e); err == nil {
+			t.Fatalf("invalid %s was accepted", key)
+		}
+		e["ANAS_IAM_CLIENT__IMMICH__"+key] = original
+	}
+	// SAMBA_DC_APP_FILTER=false keeps all active users admitted. CAEP still
+	// needs the existing policy row for disable/delete, without forcing groups.
+	e["ANAS_IAM_CLIENT__IMMICH__ALLOW_GROUPS"] = ""
+	blueprint, err = renderClientBlueprint(e)
+	if err != nil || !strings.Contains(blueprint, "        return request.user.is_active\n") {
+		t.Fatalf("active-only CAEP policy = %q, error %v", blueprint, err)
+	}
+}

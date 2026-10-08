@@ -5,7 +5,13 @@
     "context": "modules/ai_agent/orchestrator",
     "dockerfile": "modules/ai_agent/orchestrator/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/securefs"]
+    "shared_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/computeclient",
+      "internal/computeingress",
+      "internal/securefs"
+    ]
   },
   {
     "module": "authentik",
@@ -48,7 +54,20 @@
     "context": "modules/forgejo/actions-controller",
     "dockerfile": "modules/forgejo/actions-controller/Dockerfile",
     "platforms": "linux/amd64,linux/arm64",
-    "shared_paths": ["go.mod", "go.sum", "internal/computeclient", "internal/computeingress", "internal/securefs"]
+    "shared_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/computeclient",
+      "internal/computeingress",
+      "internal/securefs"
+    ]
+  },
+  {
+    "module": "immich",
+    "image": "anas-immich",
+    "context": "modules/immich/immich",
+    "dockerfile": "modules/immich/immich/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
   },
   {
     "module": "incus",
@@ -108,10 +127,10 @@
     "platforms": "linux/amd64,linux/arm64"
   },
   {
-    "module": "samba_dc",
-    "image": "anas-samba-dc-anchor",
-    "context": "modules/samba_dc/anchor_worker",
-    "dockerfile": "modules/samba_dc/anchor_worker/Dockerfile",
+    "module": "postgres",
+    "image": "anas-postgres",
+    "context": "modules/postgres/postgres",
+    "dockerfile": "modules/postgres/postgres/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {
@@ -119,6 +138,13 @@
     "image": "anas-samba-dc",
     "context": "modules/samba_dc/samba_dc",
     "dockerfile": "modules/samba_dc/samba_dc/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "module": "samba_dc",
+    "image": "anas-samba-dc-anchor",
+    "context": "modules/samba_dc/anchor_worker",
+    "dockerfile": "modules/samba_dc/anchor_worker/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },
   {

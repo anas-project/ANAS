@@ -195,3 +195,8 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ## 当前限制
 
 不要配置已删除的 `LLNG_PASSWORD`；它不会创建上游管理员。
+
+## 受信 OIDC 应用角色来源
+
+通用 OIDC ATTRIBUTES 的保留来源 `anasRole` 使用 `inGroup` 宏从受信管理员组计算 admin/user，
+并删除同名 LDAP exported variable，防止用户属性冒充角色。其他普通目录 claims 仍按原逻辑导出。

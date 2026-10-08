@@ -22,6 +22,30 @@ they must not expose shell, argv, Docker, systemd, or SSH pass-through behavior.
 
 Before adding or modifying a patch to a Module's upstream source code, ask the user and obtain explicit confirmation. Explain why the patch is needed, its scope, and its impact on future upstream upgrades and maintenance.
 
+## Persistent data placement
+
+Classify storage by **recovery semantics**, not by whether a user uploaded a file:
+
+- When a Module needs both database state and files for complete recovery, both belong in managed
+  `data/` (`${DATA_PATH}`), never `userdata/`. A shared database remains owned by its Provider; it need
+  not share the files' subdirectory, but must have a matching recovery point.
+- Use `userdata/` (`${USER_DATA_PATH}`) only for independently usable content with no database, or with
+  a database that is merely an auxiliary index/cache rebuildable from that content. Being able to open
+  an image does not recover database-dependent ownership, albums, permissions, or path relationships.
+- A Module may have both categories. Document each directory's source of truth, database dependency,
+  backup coverage, and restore order. Ordinary Samba shares are independent content; Immich-managed
+  media and its database belong in `data/`. Read-only external libraries retain source ownership,
+  with separate recovery boundaries for source files and Immich metadata.
+
+A path beneath `data/` does not prove coverage: verify external mounts, symlinks, nested subvolumes,
+and external databases. Use ANAS backup coordination for quiescing, capture, and recovery. Deployment
+rollback rewinds the database and files in `data/`; disclose possible loss of content created after
+the snapshot. Moving coupled files to `userdata/` must not be used to evade that consequence.
+
+Apply this rule to new Modules and storage changes. Review existing exceptions for a separate migration
+with quiescing, backup, path/data validation, and failure recovery. Never silently move existing data
+during ordinary apply or treat a mount-path edit as a complete migration.
+
 ## Version and revision ownership
 
 `version` follows the normalized upstream application version. `revision`
@@ -224,6 +248,24 @@ is only a navigation allowlist and never replaces an OIDC notification
 endpoint. A normal `/logout` page is not a back-channel endpoint. Protocol
 switches, domain changes, and repeated apply must remove stale fields from the
 other protocol or former domain.
+
+Consumers that need the two roles `admin` and `user` may request `<claim>:anasRole:1` through the
+existing `ATTRIBUTES` registration. `anasRole` is an ANAS logical source, not a directory attribute
+or standard OIDC claim. Providers calculate it from trusted membership of
+`SAMBA_DC_ADMIN_GROUP_NAME`, never editable profile properties. The Consumer chooses the claim
+name and its application's `roleClaim`. Consumers with another role model omit this optional source.
+This mapping neither changes `sub` nor replaces revocation of existing sessions and independent
+credentials. Each fixed Provider combination requires its own verification.
+
+OIDC consumers that distinguish directory admission loss from ordinary logout may request
+`ANAS_IAM_CLIENT__<APP>__OIDC_CAEP_EVENTS=session-revoked` in the existing generic registration.
+The Provider publishes its supported set in `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` during
+calculate. Runner validates the intersection, backchannel URI, and subject-wide semantics
+(`OIDC_LOGOUT_SESSION_REQUIRED=false`); unknown values, wrong protocols, and unsupported Providers fail.
+The pinned Authentik/Immich implementation adds the [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
+event member to existing signed backchannel delivery; ordinary logout omits it. This does not declare
+a complete SSF/CAEP deployment. Applications use the original event time and verified identity to
+target old credentials; durable retries must preserve credentials issued after admission is restored.
 
 ### OIDC boundary
 

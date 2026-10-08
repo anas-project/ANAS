@@ -1,14 +1,14 @@
 services:
   anas_postgres:
     container_name: ${CONTAINER_PREFIX}postgres
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4
     restart: unless-stopped
     env_file:
       - .env
     volumes:
       - "${DATA_PATH}/postgres:/var/lib/postgresql"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_USERNAME}"]
+      test: ["CMD-SHELL", "PGPASSWORD=$$POSTGRES_PASSWORD psql -X -h 127.0.0.1 -U $$POSTGRES_USER -d postgres -c 'SELECT 1' >/dev/null"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -16,7 +16,7 @@ services:
       - postgres
 
   anas_postgres_provision:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-postgres:18.4-alpine
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4
     restart: "no"
     env_file:
       - .env
@@ -28,6 +28,7 @@ services:
       ANAS_RESOURCE_DATABASE: ${ANAS_RESOURCE_DATABASE:-}
       ANAS_RESOURCE_USERNAME: ${ANAS_RESOURCE_USERNAME:-}
       ANAS_RESOURCE_PASSWORD: ${ANAS_RESOURCE_PASSWORD:-}
+      ANAS_RESOURCE_POSTGRES_EXTENSIONS: ${ANAS_RESOURCE_POSTGRES_EXTENSIONS:-}
     entrypoint: ["/bin/sh", "/operations/provision.sh"]
     volumes:
       - "./providers/relational_database:/operations:ro"

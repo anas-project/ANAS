@@ -26,6 +26,27 @@ Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标
 
 如需新增或修改针对 Module 上游源码的补丁，必须先询问用户并取得明确确认，再实施。询问时说明补丁的必要性、修改范围，以及对后续上游升级和维护的影响。
 
+## 持久数据归属
+
+按**恢复语义**划分目录，不按“是否由用户上传”划分：
+
+- Module 的用户数据若必须结合数据库与文件存储才能完整恢复，数据库和相应文件都必须进入受管
+  `data/`（`${DATA_PATH}`）范围，不得将文件放入 `userdata/`。共享数据库仍由 Provider 保管，
+  不要求和文件处在同一个子目录，但必须具有匹配的恢复点。
+- 只有数据脱离数据库仍可独立存在和使用，或者数据库仅是可从数据重建的辅助索引/缓存时，才可放入
+  `userdata/`（`${USER_DATA_PATH}`）。文件能被图片查看器打开，并不代表应用的资产归属、相册、
+  权限和路径关系能恢复；这些关系依赖数据库时，仍属于前一类。
+- 一个 Module 可以同时有两类目录，但必须逐目录记录事实来源、数据库依赖、备份覆盖和恢复顺序。
+  普通 Samba 共享文件是可独立数据的例子；Immich 受管媒体与数据库应共同归入 `data/`。
+  只读外部图库沿用源目录所有权，源文件与 Immich 内的元数据分别说明恢复边界。
+
+把路径写在 `data/` 下不等于已经被备份：外部挂载、符号链接、嵌套子卷及外置数据库必须核对实际
+覆盖。使用 ANAS 的备份机制协调停写、捕获与恢复；部署回滚会回退 `data/` 中的数据库和文件，必须
+说明快照之后新增内容可能丢失。不得通过把耦合文件放入 `userdata/` 来规避这项影响。
+
+本规则适用于新 Module 和后续存储变更；既有不符合项应单独评审迁移。迁移必须停写、备份、验证数据
+与路径关系并具备失败恢复，不得只改挂载路径或在普通 apply 中静默搬迁。
+
 ## 版本与 revision 所有权
 
 `version` 跟随规范化的上游应用版本；`revision` 表示同一上游版本下已经发布的 ANAS 镜像
@@ -188,6 +209,21 @@ ANAS_IAM_CLIENT__<APP>__SAML_SLS_BINDINGS=redirect,post
 URI 与 method/binding 必须成对。`POST_LOGOUT_REDIRECT_URIS` 只是导航允许列表，不能替代
 OIDC 通知 endpoint；普通 `/logout` 页面不能冒充 back-channel。协议切换、域名变化和重复
 apply 必须清除另一协议或旧域名的残留字段。
+
+需要目录管理员与普通用户两级角色映射的 Consumer，可在现有 `ATTRIBUTES` 中按需声明
+`<claim>:anasRole:1`。`anasRole` 是 ANAS 的逻辑属性来源，不是 LDAP 属性或 OIDC 标准 claim；
+Provider 根据受信 `SAMBA_DC_ADMIN_GROUP_NAME` 组成员资格计算 `admin` / `user`，不得读取用户可编辑
+profile/Properties。Consumer 自行选择 claim 名和应用的 `roleClaim`；不需要两级角色的 Module 不声明。
+此映射不改变 `sub`，也不替代目录变更后旧会话和独立凭据的撤销。当前 Authentik 与 Casdoor 的固定
+实现分别负责受信组计算；支持情况必须有对应版本验证，不能将一方通过结果推广到另一方。
+
+需要区分目录准入丧失与普通退出的 OIDC Consumer，可请求现有通用注册字段
+`ANAS_IAM_CLIENT__<APP>__OIDC_CAEP_EVENTS=session-revoked`。Provider 在自己的 calculate Hook 发布
+`ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` 支持集合；Runner 校验交集、backchannel URI 和
+subject-wide (`OIDC_LOGOUT_SESSION_REQUIRED=false`) 语义，未知值、错协议或未支持 Provider 拒绝。
+当前固定 Authentik/Immich 实现采用 [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
+事件成员及原有签名 backchannel 投递，普通 logout 不携带该成员；没有声明完整 SSF/CAEP 部署。
+应用应按原事件时间和已验证身份定位旧凭据，持久重试不得扩大到恢复准入后的新凭据。
 
 ### OIDC 实现边界
 

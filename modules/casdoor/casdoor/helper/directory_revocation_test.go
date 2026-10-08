@@ -291,3 +291,57 @@ func TestRenameCaptureSendsEachIssuedLogoutOnce(t *testing.T) {
 		t.Fatalf("deliveries=%d pending=%d", deliveries, len(syncer.pendingLogouts))
 	}
 }
+
+func TestPolicyRevocationAndRoleLossWithoutActiveToken(t *testing.T) {
+	s := testDirectoryWatchSettings(t)
+	s.pendingFile = filepath.Join(t.TempDir(), "pending.json")
+	s.applications = []directoryApplication{{Application: "immich", Groups: []string{"APP_immich", "Admins"}, Protocol: "oidc", CAEP: true, AdminGroup: "Admins"}, {Application: "other", Groups: []string{"APP_immich"}, Protocol: "oidc"}}
+	u := casdoorManagedUser{ID: "id", Name: "alice", ExternalID: "anchor", Groups: []string{"anas/APP_immich", "anas/Admins"}, Properties: map[string]string{s.identityAnchor: "anchor"}}
+	d := casdoorDirectoryUser{UID: "alice", Attributes: map[string]string{s.identityAnchor: "anchor"}}
+	requests, err := planDirectoryRevocations([]casdoorDirectoryUser{d}, []casdoorManagedUser{u}, map[string][]string{"anchor": {"anas/APP_immich"}}, s)
+	if err != nil || len(requests) != 1 || len(requests[0].PolicyApplications) != 1 || requests[0].PolicyApplications[0] != "immich" || len(requests[0].Applications) != 1 || requests[0].EventTimestamp <= 0 {
+		t.Fatalf("requests=%#v err=%v", requests, err)
+	}
+	snapshot := requests[0]
+	snapshot.Subject = "anchor"
+	snapshot.Targets = []directoryLogoutTarget{{Application: "immich", Subject: "anchor", Policy: true}}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{"status": "ok", "data": snapshot})
+	}))
+	defer server.Close()
+	s.endpoint = server.URL
+	syncer := &casdoorLDAPSyncer{settings: s, client: server.Client()}
+	if err := syncer.prepareLogouts(requests); err != nil {
+		t.Fatal(err)
+	}
+	if len(syncer.pendingLogouts) != 1 || syncer.pendingLogouts[0].Snapshot.EventTimestamp != snapshot.EventTimestamp {
+		t.Fatalf("policy event discarded without tokens: %#v", syncer.pendingLogouts)
+	}
+	restarted := &casdoorLDAPSyncer{settings: s}
+	if err := restarted.loadPendingLogouts(); err != nil {
+		t.Fatal(err)
+	}
+	if len(restarted.pendingLogouts) != 1 || restarted.pendingLogouts[0].Snapshot.EventTimestamp != snapshot.EventTimestamp {
+		t.Fatal("original event time lost on restart")
+	}
+	// A later removal after readmission needs its own cutoff even when the
+	// previous event is still pending. Deduplicating only by target loses it.
+	snapshot.EventTimestamp += 1
+	if err := syncer.prepareLogouts(requests); err != nil {
+		t.Fatal(err)
+	}
+	if len(syncer.pendingLogouts) != 2 || len(syncer.pendingLogouts[1].Snapshot.Targets) != 1 {
+		t.Fatal("distinct policy cutoff was deduplicated")
+	}
+	// Once directory state is updated, periodic reconciliation must not create a new policy cutoff.
+	u.Groups = []string{"anas/APP_immich"}
+	requests, err = planDirectoryRevocations([]casdoorDirectoryUser{d}, []casdoorManagedUser{u}, map[string][]string{"anchor": {}}, s)
+	if err != nil || len(requests) != 1 || len(requests[0].PolicyApplications) != 1 {
+		t.Fatal(requests, err)
+	}
+	u.Groups = nil
+	requests, err = planDirectoryRevocations([]casdoorDirectoryUser{d}, []casdoorManagedUser{u}, map[string][]string{"anchor": {}}, s)
+	if err != nil || len(requests) != 1 || len(requests[0].PolicyApplications) != 0 {
+		t.Fatal("repeated removal extended policy cutoff", requests, err)
+	}
+}

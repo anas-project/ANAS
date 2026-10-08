@@ -48,6 +48,7 @@ Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验
 | `nextcloud` | 是 | 官方 `user_oidc 8.11.0`；LDAPS provision 用户/组；`user_saml` 保留为显式 fallback | developing；Casdoor 真实改名、原文件与 OIDC Cookie 撤权通过，其他 Provider、客户端和完整发布生命周期待验收 | 身份锚点同时作为 LDAP UUID 和新账号 UID；OIDC 按 `sub` 直接匹配 |
 | `meshcentral` | 是 | IAM/OIDC 认证；LDAPS 同步用户/组；OIDC group 映射应用访问和 site-admin | 已实现 | 身份锚点，**直接作为用户 id**（OIDC `uuid` claim / `ldapUserKey`） |
 | `forgejo` | 是 | IAM/OIDC JIT 建号；`APP_forgejo`/`APP_all` 门禁；管理员组映射 site-admin；保留托管 break-glass | developing；Manifest、Provider 注册、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `sub`（存入 `login_name`）；随 Provider 而稳定 |
+| `immich` | 是 | 共享 PostgreSQL；OIDC JIT；受信管理员 roleClaim | developing；固定镜像、注册、入口限制与 Authentik 目录撤权已实现并本机验证；真实 IAM/移动端/目录链待验收 | anchor → OIDC `sub` → `user.oauthId`；内部 `user.id` 保留上游生成值 |
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `(issuer, sub)`；不可配置，随 Provider 而稳定 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer | 无持久键；每次登录按 `sAMAccountName` 检索后 bind DN |
 | `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：身份锚点（`object_uniqueness_field`）。签发侧：内部用户 UUID，**非 anchor** |
@@ -70,11 +71,14 @@ Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验
 | Nextcloud `user_saml 8.2.0` | `/index.php/apps/user_saml/saml/sls`, Redirect | SP-Initiated SLO | IdP-Initiated SLO | NameID + SessionIndex | 必须 | 无 SLO 时只本地登出 | Authentik Redirect 已有 E2E；LLNG Redirect 入口已实现待隔离 fixture；Casdoor 明确无 SLO |
 | MeshCentral `1.2.4` | discovery/provider RP logout + post-logout URI | 上游支持 | 无标准 receiver | 应用 Cookie/session | 必须 | 本地 session 先失效；IAM 不可用不得卡住本地退出 | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | Forgejo `15.0.7` | `/user/logout` | 仅清应用 session | 无标准 receiver | Forgejo database session | 否 | 本地 session 清除；不声明 IAM session 同步失效 | Hook/容器 helper 单元测试与固定版本文档审查已完成；真实浏览器 E2E 待验收 |
+| Immich `3.2.4` | discovery RP logout + `/api/oauth/backchannel-logout` | 原生路径与服务端断连，本机通过 | Authentik r15；标准 logout + 协商的 CAEP policy session-revoked | 普通退出为 session；策略事件撤旧 grant 的 session/key/share/WS | RP logout 需要 | 原事件时间重试保留新凭据；旧回调与凭据竞态拒绝 | developing；本机通过，真实 IAM/目录链/移动端待验收 |
 | Vikunja `2.4.0` | discovery `end_session_endpoint` + `id_token_hint` + post-logout URI | 上游支持 | 无标准 receiver | Vikunja server-side session | 必须 | 上游先删除本地 session；组装 Provider 登出 URL 失败不阻断本地退出 | Hook/容器入口单元测试与上游固定版本源码审查已完成；真实浏览器 E2E 待验收 |
 | NetBird Dashboard `2.90.9` | discovery `end_session_endpoint` + post-logout URI | 上游支持 | 无标准 receiver | Dashboard 本地认证状态 | 必须 | 本地状态先失效；无通知不声明 IAM→Module | 统一 Playwright 矩阵已实现；`state`、中央 session 结果未在当前主机 fixture 验收，故为“上游支持、待接入” |
 | oauth2-proxy `7.15.3` | `/oauth2/sign_out` | 仅清网关 Cookie | 无 | oauth2-proxy Cookie；不含 IAM/后端 session | 否 | IAM 停止仍清 Cookie，受保护服务重新认证 | 不发布 `OIDC_LOGOUT_*`，不配置 `backend-logout-url`；IAM 不可用 Playwright case 已实现待隔离 fixture |
 
 Provider 固定为 Authentik `2026.5.6`、LLNG `2.23.2`、Casdoor `3.143.0`。SAML HTTP-POST 与 Redirect 都是浏览器 binding，不能由 `post` 字面值推断为后台撤销。Casdoor 只登记显式 OIDC back-channel URI，并在声明消失/协议切换时清理旧值；用户/管理员 exact-`sid` 通知已通过真实标准 Consumer E2E。固定版本没有 SAML SLO 消费路径，因此不发布 SLO。
+
+新增 Authentik r15 的 canonical-sub/策略事件补丁尚未重验表中其他历史 Consumer 组合；它们的既有验收记录不等同 r15 放行。
 
 ## 默认解析规则
 

@@ -86,7 +86,7 @@ func (service *workspaceMaintenanceApplication) CreateSnapshot(ctx context.Conte
 		return application.SnapshotRecord{}, maintenanceCLIError(preconditionErrorf("runtime_lock_unavailable", "%s", err.Error()))
 	}
 	defer unlock()
-	meta, err := createSnapshot(service.workspace, snapshotOptions{
+	meta, err := createManualSnapshot(service.workspace, snapshotOptions{
 		kind: snapshotKindManual, reason: snapshotReasonManual, label: request.Label,
 		includeUserData: request.IncludeUserData, ctx: ctx, events: service.events,
 		restrictedProcessEnvironment: true,
@@ -551,6 +551,9 @@ func publicLocalAdmin(base string, record localAdminRecord) application.LocalAdm
 }
 
 func backupPlanID(targetID string, plan application.BackupPlan) (string, error) {
+	// Available disk space is a live observation, not an operation choice.
+	// Concurrent writes must not invalidate an otherwise identical public plan.
+	plan.DestFreeAfterBytes = nil
 	body, err := json.Marshal(struct {
 		TargetID string                 `json:"target_id"`
 		Plan     application.BackupPlan `json:"plan"`

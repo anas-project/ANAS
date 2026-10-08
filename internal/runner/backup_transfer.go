@@ -25,6 +25,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/compose"
 )
 
 // backupSource is the snapshot-shaped tree a transfer reads from.
@@ -57,6 +59,8 @@ type backupSource struct {
 	// synthesizedSnapshot is written verbatim as snapshot.yml when there is no
 	// real snapshot to copy one from.
 	synthesizedSnapshot *snapshotMeta
+	imageInventory      *snapshotImageInventory
+	sourceArtifact      string
 }
 
 type backupPart struct {
@@ -111,7 +115,7 @@ func capturedUserDataPath(root string, meta *snapshotMeta) string {
 // excluded by not being named, which is a much harder thing to get wrong than a
 // pattern — and impossible to get wrong in the direction that silently drops
 // the data.
-func workspaceBackupSource(workspace string) (*backupSource, error) {
+func workspaceBackupSource(workspace string, preparedImages ...*snapshotImageInventory) (*backupSource, error) {
 	base := stateDir(workspace)
 	active, err := loadActiveState(base)
 	if err != nil {
@@ -141,6 +145,15 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 	if err != nil {
 		return nil, err
 	}
+	var images *snapshotImageInventory
+	if len(preparedImages) != 0 {
+		images = preparedImages[0]
+	} else {
+		images, err = prepareSnapshotImageInventory(artifact, compose.CLI{}, nil, false)
+		if err != nil {
+			return nil, failuref("image_capture_failed", "capture recovery image IDs: %v", err)
+		}
+	}
 	modules := map[string]string{}
 	for name, module := range manifest.Modules {
 		modules[name] = formatModuleRelease(module.Version, module.Revision)
@@ -150,6 +163,7 @@ func workspaceBackupSource(workspace string) (*backupSource, error) {
 		return nil, err
 	}
 	source := &backupSource{
+		imageInventory: images, sourceArtifact: artifact,
 		deploymentID: deploymentID, configDigest: configDigest, modules: modules,
 		dataPath: dataDir(workspace),
 		// Copy mode reads the live workspace, so whatever user content is there
@@ -522,6 +536,13 @@ func writeMetadataTar(req transferRequest) error {
 	}
 	staged := []backupPart{}
 	staged = append(staged, req.source.parts...)
+	if req.source.imageInventory != nil {
+		for i := range staged {
+			if staged[i].rel == "deployment" {
+				staged[i].src = snapshotArtifactDir(req.destRoot)
+			}
+		}
+	}
 	if req.source.root == "" {
 		staged = append(staged,
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaConfigStateName), rel: filepath.Join("meta", snapshotMetaConfigStateName)},
@@ -530,6 +551,12 @@ func writeMetadataTar(req transferRequest) error {
 			backupPart{src: filepath.Join(req.destRoot, "meta", snapshotMetaStateName), rel: filepath.Join("meta", snapshotMetaStateName)},
 			backupPart{src: filepath.Join(req.destRoot, "snapshot.yml"), rel: "snapshot.yml"},
 		)
+		if req.source.imageInventory != nil {
+			staged = append(staged,
+				backupPart{src: snapshotMetaEntry(req.destRoot, snapshotImagesIndex), rel: filepath.Join("meta", snapshotImagesIndex)},
+				backupPart{src: snapshotMetaEntry(req.destRoot, snapshotImagesArchive), rel: filepath.Join("meta", snapshotImagesArchive)},
+			)
+		}
 	}
 	emitProgress(req.json, "send_metadata", 0, int64(len(staged)), "files")
 	path := backupMetaTarPath(req.destRoot)
@@ -563,6 +590,9 @@ func writeMetadataTar(req transferRequest) error {
 	if req.source.root == "" {
 		_ = os.RemoveAll(filepath.Join(req.destRoot, "meta"))
 		_ = os.Remove(filepath.Join(req.destRoot, "snapshot.yml"))
+		if req.source.imageInventory != nil {
+			_ = os.RemoveAll(snapshotArtifactDir(req.destRoot))
+		}
 	}
 	return nil
 }
@@ -575,6 +605,16 @@ func finishSynthesizedMetadata(req transferRequest) error {
 	}
 	if err := writeSynthesizedMeta(req.workspace, req.destRoot, req.source.deploymentID); err != nil {
 		return failuref("metadata_transfer_failed", "%v", err)
+	}
+	if req.source.imageInventory != nil {
+		if !exists(snapshotArtifactDir(req.destRoot)) {
+			if err := copyDirectory(req.source.sourceArtifact, snapshotArtifactDir(req.destRoot)); err != nil {
+				return err
+			}
+		}
+		if err := saveSnapshotImages(req.destRoot, req.source.sourceArtifact, req.source.imageInventory); err != nil {
+			return failuref("image_capture_failed", "capture backup recovery images: %v", err)
+		}
 	}
 	return writeYAMLAtomic(filepath.Join(req.destRoot, "snapshot.yml"), req.source.synthesizedSnapshot, 0600)
 }

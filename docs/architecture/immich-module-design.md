@@ -1,202 +1,121 @@
 ---
-doc_type: architecture
-status: proposed
-created: 2026-10-02
-updated: 2026-10-02
+status: current
+created: 2026-10-03
+updated: 2026-10-08
 ---
 
 # Immich Module 接入设计
 
-**状态：已确认的接入方向，尚未实施或完成运行验收。** 本文落实 2026-10-02 的用户决定，
-不把方案、拟议字段或引用的上游版本当作当前可执行配置。上游证据及本地复用基础见
-[Immich 接入调研](/research/immich-module-integration)。
+状态：当前代码模型，`modules/immich` 为 developing。执行结果和基线记录在[配套计划](https://github.com/anas-project/ANAS/blob/master/modules/immich/dev-docs/plans/immich-module.md)；移动端条件仍缺失。
+基于固定 Immich `v3.2.4` 和 2026-10-03 的用户决策；只面向新装，不建设旧本地账号迁移框架。
 
-本文遵循既有 [Module、Contract 与 Resource](/architecture/module-contract-resource-design)、
-[IAM 能力](/architecture/iam-capability-design) 与 [备份恢复](/guide/backup-and-restore) 边界。
-目录身份和登出以现有 [目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
-及 [双向登出要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/module-iam-bidirectional-logout.md) 为准。
+## 1. 已确定的边界
 
-## 1. 已确定的范围
-
-| 项目 | 本版决定 | 不随本次接入增加的能力 |
-| --- | --- | --- |
-| 产品定位 | 完整的照片、视频备份和图库管理应用 | 不退化成只读图片浏览器 |
-| 数据库 | 共享 ANAS PostgreSQL；独立应用数据库和角色 | 不在 Immich 内复制 PostgreSQL 服务 |
-| 队列 | Immich 专属 Redis/Valkey 服务，复用 Module 的网络、Secret、存储和生命周期 | 不建设共享 Redis Contract/Provider，不连接 Nextcloud 私有 Redis |
-| 用户登录 | 仅 OIDC；目录仍通过现有 IAM 接入 | 不直连 LDAP，不实现 LDAP 密码登录或 LDAP 预建账号 |
-| 身份键 | `user.oauthId = OIDC sub = anasIdentityAnchor` | 不使用邮箱、用户名或 IAM 内部 ID 回退识别 |
-| 灾备 | ANAS 现有 backup/snapshot；本版以完整 workspace 恢复为基线 | 不另建备份服务或独立定时任务 |
-| 运行资源 | 一个基线部署，保留必要的原生功能配置 | 按内存推荐、选择和切换运行方式归下一版本通用方案 |
-| 运行时 | 沿用 Compose Module | 不以 Incus 或远程 ML 编排作为本版前置条件 |
-
-“仅 OIDC”限制的是常规用户登录，不是从 ANAS 删除 Samba AD，也不是免除账号停用后的撤权义务。
-“复用”是复用已有管理路径，不是强求所有有状态服务共用同一个实例。
-
-## 2. 部署与所有权
-
-```text
-Web / iOS / Android
-        │ HTTPS：独立应用子域名
-        ▼
-ANAS Traefik ─── ANAS IAM ─── Samba AD
-        │           └── OIDC sub = anasIdentityAnchor
-        ▼
-immich-server
-   ├── ANAS PostgreSQL Provider → Immich 专用库、角色及扩展
-   ├── 专属 Redis/Valkey → 队列及运行状态
-   ├── 本地 machine-learning（由显式原生配置决定是否启用）
-   ├── 受管媒体目录 → 容器 /data，Immich 独占读写
-   └── 可选外部图库 → 单独授权的只读来源
-```
-
-应用、ML 镜像及适用数据库扩展组合在发布时固定版本和 digest；ML 启用时与 server 使用匹配版本。
-数据库和队列不发布公网端口，ML 不默认对外开放。各容器只获得需要的凭据，不把包含 PG/OIDC
-Secret 的同一份环境文件注入所有服务。部署制品由既有冻结流程产生，不依赖运行时检出的仓库。
-
-| 责任 | 沿用位置 | 本次需要的适配 |
-| --- | --- | --- |
-| 数据库申请、凭据和 retain | `relational_database` 与 PostgreSQL Provider | 扩展需求及实际就绪检查 |
-| OIDC 注册与绑定 | 现有 IAM capability、Hook 与 Secret Store | Immich 回调、严格主体绑定和登出配置 |
-| 队列实例 | Immich 自己的 Compose 服务 | 专属目录、认证、健康检查、受管停启与恢复 |
-| 媒体目录 | workspace 用户数据与现有路径解析 | 独占挂载、容量与来源检查 |
-| 备份和恢复 | 现有 backup/snapshot、停启事务和锁 | 完整数据范围与应用恢复验证 |
-| 资源运行方式 | 下一版本共享配置规划路径 | 本版不实现私有自动选档逻辑 |
-
-Core 不增加 `if module == immich`。确需增加能力时优先扩展现有通用边界；不引入新常驻协调服务。
-
-## 3. 共享 PostgreSQL 的准备
-
-预安装扩展与升级 Contract 配合完成，不是二选一：
-
-1. PostgreSQL 镜像携带选定向量扩展及依赖，验证 PG 大版本、Alpine 环境与目标 CPU 架构。
-2. PostgreSQL Module 管理实例级加载配置；需要重启时走现有变更计划，明确列出受影响 Consumer。
-3. Provider 在 Immich 的数据库内启用扩展；应用只获得自身数据库的角色，不获得共享实例超级用户凭据。
-
-`relational_database` 拟以兼容的 minor 升级增加可选的 PostgreSQL 扩展需求：至少描述扩展名称与接受版本。
-具体 schema 在实现时确定；本文不是现有 `1.0.0` 的 API 文档，不提供伪装成可执行配置的字段样例。
-未使用扩展的旧 Consumer 行为保持不变，MariaDB 不接受或忽略 PostgreSQL 专属需求来假装满足请求。
-
-Provider 的职责是区分“二进制可用”“实例已满足加载条件”“目标库内已启用且版本兼容”。
-`inspect` 保持只读；`ensure` 幂等。未知扩展、版本不合、未加载或需要未批准的实例重启时返回明确阻塞，
-不能只验证库和角色存在就报告 Immich 已就绪。多个 Consumer 的扩展需求共同校验，不能在安装一个应用时
-静默升级共享扩展或覆盖别人的 preload 设置。扩展名称、版本和 schema 使用允许列表与安全标识符处理，
-不允许 Consumer 提交任意管理 SQL。
-
-本地已有 `anas_postgres_provision` 和 `provision.sh`，在这条路径内增加必要管理操作。
-不能只修改空数据目录才运行的初始化脚本，而漏掉已有 PG 的升级和恢复。
-向量实现固定选择并验证一种；关闭 ML 不表示可以跳过应用启动、查询或升级所需的扩展。
-
-## 4. 专属 Redis/Valkey
-
-每个 Immich 部署拥有自己的 Redis/Valkey 服务、凭据、网络边界与持久目录。
-沿用 ANAS 的容器前缀及 Module 隔离，不共享其他应用的进程、逻辑 DB 或 Pub/Sub。
-这项决定取消前稿共享 Redis 的前置工作，不要求先为 ANAS 新建通用 Redis Provider。
-
-队列按非任意丢弃的数据管理：采用 `noeviction`，显式配置并测试 AOF 等持久化策略。
-`noeviction` 不是容量保证；满内存时允许明确的写入失败和告警，不通过淘汰任务来伪装恢复。
-限额按实际负载验证，不把一个未经测量的固定数字写成所有图库的最低要求。
-
-重启、网络中断和恢复时分别验证待处理、处理中、失败及重复任务。恢复旧队列前协调数据库和媒体状态，
-不能无条件重放旧的删除/迁移任务，也不能宣称清空队列后所有工作都会自动重建。
-卸载默认保留数据；销毁队列与销毁原图不是同一个授权动作。
-
-## 5. OIDC-only 与唯一身份
-
-### 5.1 一条登录链路
-
-使用已实现的 IAM capability、客户端注册和绑定方式；`identity` Contract 仍待落地，不能因为已有声明文件
-就把它设为本版依赖。Samba AD → IAM 的 LDAP 链路属于现有身份基础设施；Immich 不新增 LDAP bind
-凭据、同步器、密码回写或账号预配 API。
-
-正常用户通过 OIDC 首次登录创建并绑定应用账号。常规密码登录关闭；首次管理员初始化在受限通道完成后
-关闭 setup。故障恢复仅复用已有的受控管理员恢复方式，不永久开放第二个本地登录入口，也不自动回退 LDAP。
-恢复通道的能力和有效期需要实测，不能把上游密码重置命令当作已经完成 ANAS 应急流程。
-
-### 5.2 anchor 不是应用内部主键
-
-```text
-anasIdentityAnchor = OIDC sub = Immich user.oauthId  # 唯一目录身份绑定
-Immich user.id                                    # 保留上游内部主键
-email / name                                     # 可变资料，不决定资产归属
-```
-
-既有 `user.id` 继续关联照片、相册和应用内对象；不把 anchor 写进用户目录名、storage label 或公开 URL。
-缺失 anchor、同一 anchor 多重绑定、同邮箱不同主体等冲突必须停止建号或绑定，不自动归并。
-账号改名、换邮箱、IAM 重建后仍通过相同 anchor 关联原应用身份；更换 issuer/client 的操作需重新验收。
-
-仅改成 OIDC 登录**不会消除上游邮箱回退**。发布前复核固定版本的回调、数据库唯一约束和 unlink/relink：
-关闭隐式邮箱关联，限制托管用户自助解绑重绑，覆盖并发首次登录。
-若上游无法配置严格绑定，使用最小且可审查的版本化适配或明确阻塞发布；不以关闭 `autoRegister` 冒充修复。
-这项适配仅为 OIDC 身份正确性，不再扩展为 LDAP 预建用户功能。
-
-### 5.3 撤权、角色和客户端
-
-准入与角色来自受控 IAM 策略，不自动把目录组变成共享相册或文件系统 ACL。
-按 anchor 验证改名、角色收回和账号停用；既有应用会话、API key、共享链接分别检查。
-拒绝新登录不等于已经撤销全部访问，停用账号也不能直接删除照片。
-需要补强的事件或撤权能力回到已有 ANAS 机制，不另造 Immich LDAP 轮询服务。
-
-沿用原生 OIDC 的 Web 与移动回调；独立 HTTPS 子域名不套浏览器 ForwardAuth 来代替客户端认证。
-双向登出按现有规范验收，包括旧会话重放、重复/错误登出通知、跨用户隔离及 IAM 故障。
-上游不具备的能力明确列缺口，不因为接口返回成功就标记全局登出完成。
-
-## 6. 完整图库与数据边界
-
-本版目标涵盖手机照片/视频备份、原件保存、浏览、相册、分享、批量导入和可选外部图库。
-AI 功能可通过原生配置手动启停；完整产品范围不等于每台设备同时运行全部高负载任务。
-上传到 Immich 与 ANAS 的灾备是两层独立保证；不能只剩服务器上一份原件就称灾备完成。
-
-媒体使用现有路径解析得到的受管用户目录，例如 `<workspace>/userdata/immich/`，完整挂载至 `/data`。
-该路径是布局示意，实际实现使用现有变量与所有权规则。不要只备份某个假定的原图子目录，
-也不要让 Nextcloud、Samba 和 Immich 同时移动或删除这个受管目录里的文件。
-
-专属队列持久状态进入受管业务数据；模型缓存只有经过可重建验证后才可按现有临时存储契约处理。
-未完成上传、唯一原图、数据库和无法证明可丢弃的队列状态不属于临时缓存。
-清理与磁盘/tmpfs 切换继续服从现有临时存储生命周期，不为资源运行方式另写一套清理器。
-
-外部图库默认只读，逐库声明所有者、允许来源和稳定挂载路径。只读挂载不等于继承底层 AD ACL。
-来源缺失、身份标记不符或挂载突然变空时暂停扫描/缺失清理；该防护需验证应用控制能力，不能假装上游已有开关。
-外部移动、改名及元数据变化的结果作为导入测试范围，不承诺它是双向文件同步。
-
-## 7. 复用 ANAS 备份与恢复
-
-本版默认完整 workspace 灾备，覆盖媒体、共享 PG、专属队列及必要配置/Secret/冻结制品。
-复用已有锁、逆依赖停止、快照或复制、原运行集合恢复和失败补偿；不新建定时器或另一套备份状态库。
-共享数据库正确停库或采用合格数据库备份协议后才能复制数据文件；不能复制运行中 PG 的目录冒充一致备份。
-
-取得可恢复的冻结副本后即可按既有流程恢复服务，再异地传输；非快照模式的复制停写时间需明确展示。
-仅在确认 ANAS 已覆盖数据库后关闭 Immich 内置自动数据库备份，避免重复调度和共享超级用户权限。
-包含 Secret 不代表目的地自动加密；沿用现有权限与目的地保护并验证实际效果。
-
-**完整 workspace 恢复不等于单应用恢复。** 不允许为了恢复 Immich，把共享 PG 的其他应用一起回退。
-需要单应用恢复时，另在现有 Provider/backup 内实现单库逻辑恢复与媒体一致点关联；在此之前明确不支持该恢复粒度。
-外部图库在 workspace 外时，需要源侧备份及恢复路径记录；排除了用户文件的备份不能称为完整图库备份。
-发布回滚不能替代已迁移数据库的恢复；恢复测试要使用匹配的应用、扩展、数据库和队列状态。
-
-## 8. 内存相关能力的版本边界
-
-不同内存采用不同运行方式属于**下一版本**的 [通用设计](/architecture/module-resource-profiles)，覆盖所有 Module。
-本版不新增 `low-memory`/`full-local` 等私有运行档，不按探测到的内存自动重写配置、切换服务或远程发送照片。
-保留普通显式配置，例如手动关闭本地 ML；这不等于已经交付通用选档和切换框架。
-
-约 4GB 仍是后续测试目标，不因框架后移而自动变成“不支持”，也不能在未测试前宣称整机 4GB 可同时运行全部模块。
-区分整机总内存、运行环境限额、为应用分配的预算与当前空闲内存。首版如缺少容量证据，报告未验证条件及实际负载，
-不填造硬门槛或自动降级承诺。下一版本具体安排以通用需求与计划为准，不阻塞本版已确认的接入工作。
-
-## 9. 接入验证与文档交付边界
-
-| 验证面 | 需要的证据 |
+| 项目 | 决定 |
 | --- | --- |
-| 数据库 | 已有 PG 增装扩展、非超级用户新装/升级/恢复、旧 Consumer 回归、冲突和必要重启的计划 |
-| 专属队列 | 双部署互不影响、重启续跑、满内存/断网、旧任务恢复与卸载保留 |
-| OIDC 身份 | Web/iOS/Android、改名换邮箱、邮箱回收、并发建号、解绑限制、正常密码登录关闭 |
-| 撤权和登出 | 旧会话真实请求、角色收回、账号停用、API key/共享链接边界及 IAM 故障 |
-| 图库 | 首次全量/增量上传、代表性大图/视频/手机格式、去重、原件下载校验、相册和共享权限 |
-| 存储故障 | 磁盘不足、上传中断、外部挂载丢失、误换空目录及停止后的安全清理 |
-| 灾备 | 原件 hash、相册/权限/anchor、队列与扩展兼容；共享 PG 的其他应用不被单应用恢复误回退 |
-| 发布 | 冻结制品自足、凭据不泄漏、升级迁移和回退数据集合可解释 |
+| 产品职责 | Immich 承担完整照片/视频备份与管理；ANAS 承担部署、身份接入和服务器灾备 |
+| 数据库 | 复用共享 PostgreSQL；Contract 只增加扩展名称列表，版本与升级归 PG Module |
+| 队列 | Immich Module 自有 Redis/Valkey |
+| 登录与建号 | 从空库开始仅 OIDC；不建立本地密码账号，不增加 LDAP 登录或目录预建号同步框架 |
+| 目录身份 | `anasIdentityAnchor = OIDC sub = Immich user.oauthId`；内部 `user.id` 保持上游生成值 |
+| 受管媒体 | `${DATA_PATH}/immich/media`，容器内 `/data` |
+| 数据库持久目录 | PostgreSQL Provider 自有 `${DATA_PATH}/postgres` |
+| 灾备 | 统一使用 ANAS，不另建 Immich 定时数据库备份任务 |
+| 资源运行方式 | 通用多档运行方式留到下一版本；本版可显式关闭 ML、配置并发，4GB 资格待整机验证 |
 
-这里只定义设计验证面，不把文档写完计为运行验收完成。正式创建可执行 Module 时，将私有需求与实施计划
-放入 `modules/immich/dev-docs/`，按仓库标准建立稳定 ID、里程碑与 e2e 记录，并由文档索引链接。
-本次不创建缺少 `module.yml` 的空模块目录：当前 Runner 会读取 `modules/` 下每个直接子目录的 manifest，
-不能以文档落盘破坏模块发现，也不能用假的可运行 manifest 掩盖尚未实施。
+当前选择 `vector`（pgvector 0.8.2）与 `earthdistance`（含 cube 依赖）路线，PG 为 18.4/Alpine，
+`DB_VECTOR_EXTENSION=pgvector`。不包含 VectorChord，也不让用户选择扩展版本。
+简化后的[Contract 设计](/architecture/relational-database-extension-lifecycle)管理安装及升级，
+不增加扩展版本求解或未发布接口的兼容层。
+
+## 2. 从空库开始、始终只有 OIDC 账号，还会误关联吗？
+
+**在所有账号始终具有正确的非空 oauthId、且不能被解绑或替换的前提下，不会触发按邮箱关联未绑定账号的问题。**
+Immich 仍会保存应用用户记录；“没有本地账号”在这里表示没有独立密码身份，不是没有用户表。
+
+固定版本的回调顺序是按 sub 查找；未找到才查 email。如果 email 对应用户已经具有非空 oauthId，
+会拒绝该次登录；只有 oauthId 为空时才写入新的 sub。因此：
+
+| 场景 | 原生回调行为 |
+| --- | --- |
+| 同一 anchor 再次登录，即使姓名或邮箱变化 | 按 sub 找到同一应用用户 |
+| 新 anchor 使用一个已绑定用户的邮箱 | 拒绝登录，不接管原用户 |
+| 首次 OIDC 登录，sub/email 均无冲突 | 启用 autoRegister 后创建带 oauthId 的用户 |
+| 同邮箱账号存在，但 oauthId 已被清空 | 存在按邮箱自动关联路径 |
+
+依据：[AuthService 回调与 link/unlink](https://github.com/immich-app/immich/blob/v3.2.4/server/src/services/auth.service.ts)。
+
+上一版把“只关闭密码登录开关”与“从创建到运行始终不存在未绑定账号”合并判断，并默认要求完整身份补丁，
+不够准确。后一个部署约束可以消除这条误关联路径，不必为了历史本地账号补一套迁移机制。
+但初始化时没有本地账号，只能证明初始状态；上游服务中仍有清空和替换 oauthId 的方法，运行中入口约束仍需验证。
+
+## 3. 收缩后的身份接入方案
+
+### 3.1 原生 OIDC 建号与管理员初始化
+
+- 在开放入口前写入受管 OIDC 配置，关闭密码登录和本地管理员 setup；
+  上游提供 `IMMICH_ALLOW_SETUP=false`，不要依赖“先建本地管理员，再按邮箱关联”。
+- 复用原生 `oauth.autoRegister`；IAM 的 `sub` 固定为 anchor，并沿用现有应用准入组。
+- 首个管理员由受信 IAM 的 `roleClaim` 明确给出 `admin`；普通用户不能自行控制此 claim。
+  AuthService 会将其传给 createUser，后者允许首个管理员创建、拒绝首个非管理员创建。
+  无需默认引入专用初始化器，也不能把“第一个访问者”自动当管理员。
+- 固定受信 issuer，保留上游签名、audience、state/PKCE 等验证。不替换内部 user.id，
+  不把 anchor 用作公开 URL、storage label 或文件路径。
+
+Hook 已注册 anchor `sub` 与受信 `anas_role`，由现有 Admins 判据生成 admin/user。
+Authentik/LLNG 映射已接线；Casdoor 无此受信条件表达时拒绝该请求。Web/移动端和实际 IAM
+组合仍需验收，不能仅据配置与源码宣称初始化通过。
+[配置来源](https://github.com/immich-app/immich/blob/v3.2.4/server/src/repositories/config.repository.ts)；
+[首个管理员约束](https://github.com/immich-app/immich/blob/v3.2.4/server/src/services/base.service.ts)。
+
+### 3.2 只补维持约束必需的入口限制
+
+运行中保持无本地/未绑定账号、anchor 不可变。验证管理建号、修改身份及 OAuth link/unlink 的服务端路径，
+不能只隐藏按钮。优先使用能在服务端生效的现有配置；若无配置，则只为这些已确认可达的路径维护固定版本
+最小拒绝补丁。单纯 `passwordLogin.enabled=false` 不能作为所有这些路径已经被禁用的证据。
+
+固定版源码确认原生配置不足，镜像构建采用精确匹配补丁：禁止非 OAuth 建号、写密码、
+link/unlink 和管理员批量 unlink-all。保留原生 callback、roleClaim 与内部 user.id。
+不增加通用身份模式、邮箱迁移器、初始化 API、并行 LDAP 同步或 Core 直接改应用表。
+本轮先测同一主体并发首次登录与软删除后重登，真实 PostgreSQL fixture 复现了同 sub 创建重复行。
+据此在原生 migration 锁内、HTTP 启动前增加 oauthId 唯一约束及固定 schema 元数据；
+不合并历史数据、不改绑身份。软删除保留绑定，新建失败关闭；8 路并发实测只保留一条。
+
+发布验证至少包括空库首个 OIDC 管理员、普通用户建号、同 sub 改邮箱、不同 sub 复用邮箱被拒绝、
+本地建号/解绑/重绑不可达、并发建号及移动端备份。若某入口仍能产生空 oauthId，则“纯 OIDC”约束未交付，
+不宣称这一风险已经消失。
+
+### 3.3 登出与目录撤权沿用现有要求
+
+复用既有 IAM 与 Module 双向登出、目录事件要求，不为 Immich 另建通用身份框架。
+普通登出与账号停用不同：普通登出撤销对应会话；目录停用/移出准入组需要检查既有会话、
+移动端 token、API key 和分享策略。只阻止下一次 OIDC 登录不证明旧凭据已经失效。
+
+缺失的应用适配在 Immich 私有需求中验收；不通过删除照片或重新建号模拟撤权。
+这些要求不属于关系数据库 Contract，也不因去掉本地登录而自动完成。
+真实签名 fixture 还复现了原生 sid-less logout token 重放撤销新会话的问题；最小固定版补丁在
+应用数据库同一事务内消费 jti 和删除会话，重放、并发及跨重启已验证。它不代替目录撤权，
+当前 API key 和公开分享仍有效，缺失的目录事件适配继续阻止 release。
+
+## 4. 数据与 ANAS 备份
+
+依照[Module 开发规范](/developer/module-development#持久数据归属)，受管媒体在 `data/immich/media`，
+共享 PG 数据在 `data/postgres`；相册、资产归属与路径关系需要匹配的数据库和文件恢复点。
+只读外部图库保留源目录所有权，源文件另行核对备份范围。
+
+沿用 ANAS 停写、快照/复制、传输和恢复流程。关闭 Immich 内置自动数据库备份调度以统一责任；
+这不是因为它使用 pg_dumpall，`v3.2.4` 实际使用 pg_dump。
+[固定版本备份代码](https://github.com/immich-app/immich/blob/v3.2.4/server/src/services/database-backup.service.ts)
+
+首版验证全 workspace 灾备和升级恢复，覆盖共享 PG、完整媒体、配置/Secret、deployment 和可取得的匹配镜像。
+共同回退会影响其他共享库及恢复点之后上传的内容，不能只检查 Immich 能启动。路径在 data 下也不自动证明
+外部挂载、嵌套子卷或停写时序正确。单应用恢复暂不交付，未来提供时仍纳入 ANAS 框架。
+
+## 5. 实施归属
+
+数据库公共能力按[三阶段计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/archived/relational-database-extensions.md)推进。
+Immich 私有需求与计划已建立，覆盖原生 OIDC 初始化、必要入口限制、撤权、移动端、队列及媒体恢复。
+
+Contract、PG 固定扩展与认证、Provider 维护屏障和 Immich Module 代码已落地。
+私有需求与计划在 `modules/immich/dev-docs/`；e2e 未完成项继续阻止 release。
+通用资源档位仍属下一版本，4GB 整机支持需要 IAM、PG、队列与媒体处理一起测试。

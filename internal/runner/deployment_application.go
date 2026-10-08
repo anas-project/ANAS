@@ -300,8 +300,20 @@ func (service *workspaceDeploymentPlanApplication) Apply(ctx context.Context, re
 			return application.ApplyResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_missing", "%s", err.Error()))
 		}
 		if state.Status != "ready" {
-			return application.ApplyResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_not_ready",
-				"deployment %s has status %q; apply requires ready", deploymentID, state.Status))
+			// Maintenance may have changed shared data before activation failed.
+			// Only its exact frozen candidate can retry; the original recovery
+			// point remains mandatory and an arbitrary failed artifact is unsafe.
+			pending, err := postgresMaintenancePending(base, before.ActiveDeployment)
+			if err != nil {
+				return application.ApplyResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+			}
+			if state.Status != "failed" || pending != deploymentID {
+				return application.ApplyResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("deployment_not_ready",
+					"deployment %s has status %q; apply requires ready or the failed pending PostgreSQL maintenance candidate", deploymentID, state.Status))
+			}
+			if err := verifyPostgresMaintenanceRecoveryPoint(base, before.ActiveDeployment, deploymentID); err != nil {
+				return application.ApplyResult{}, deploymentApplicationErrorFromCLI(err)
+			}
 		}
 	}
 	if err := activateDeployment(base, deploymentID, activateOptions{
@@ -403,6 +415,22 @@ func (service *workspaceDeploymentPlanApplication) ExecuteLifecycle(ctx context.
 		return application.LifecycleResult{}, deploymentApplicationError(service.applicationLockCode(), err)
 	}
 	defer unlock()
+	// Check persistent data safety before preview/Compose or restart's stop.
+	// Wrapping startDeployment's precondition as start_failed hides the
+	// actionable recovery cause from both CLI and HTTP callers.
+	if request.Action != application.LifecycleStop {
+		active, err := loadActiveState(base)
+		if err != nil {
+			return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+		}
+		pending, err := postgresMaintenancePending(base, active.ActiveDeployment)
+		if err != nil {
+			return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("state_unreadable", "%s", err.Error()))
+		}
+		if pending != "" {
+			return application.LifecycleResult{}, deploymentApplicationErrorFromCLI(postgresMaintenanceBlocked(pending))
+		}
+	}
 	preview, err := service.previewLifecycleLocked(ctx, application.LifecyclePreviewRequest{Action: request.Action, Modules: request.Modules})
 	if err != nil {
 		return application.LifecycleResult{}, err
@@ -812,6 +840,7 @@ func deploymentPlanResult(a *app) application.PlanResult {
 		DynamicDNS:         application.PlanDynamicDNS{SelfManaged: []string{}},
 		ModuleLifecycles:   []application.PlanModuleLifecycle{},
 	}
+	a.addPostgresMaintenancePlan(result.ModulePlans)
 	if a.iamProvider != "" && len(a.iamBindings) != 0 {
 		provider := a.iamProvider
 		result.IAM.Provider = &provider

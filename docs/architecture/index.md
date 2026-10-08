@@ -8,6 +8,8 @@
 | --- | --- | --- |
 | [Core 实现标准](core-implementation-standard.md) | 强制架构标准 | Core/Module 参数所有权、禁止特判和通用扩展路径 |
 | [Module、Contract 与 Resource](module-contract-resource-design.md) | 当前模型 | 独立发布单元、跨模块协议、持久资源及 Provider operation |
+| [relational_database 扩展生命周期](relational-database-extension-lifecycle.md) | 当前代码模型；最新 master 主机扩展、失败/中断与全工作区恢复复验通过 | 最小扩展名称声明、PG 固定版本管理、共享实例升级与 ANAS 恢复 |
+| [Immich Module](immich-module-design.md) | developing；服务器与网页基线通过，移动端待验收 | 空库纯 OIDC 与 anchor 绑定、共享 PG、专属队列、媒体与 ANAS 备份 |
 | [Module 专属命令能力设计](module-command-capability-design.md) | 当前模型与明确标注的演进方案 | 命令发现、类型化参数、CLI/anasd 共享调用与执行边界 |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
@@ -17,7 +19,6 @@
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
 | [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |
-| [Immich Module 接入](immich-module-design.md) | 已确认方向，尚未实施 | 完整照片/视频备份、专属 Redis、OIDC-only 与 anchor、共享 PostgreSQL 扩展、ANAS 灾备 |
 | [Module 资源运行方式](module-resource-profiles.md) | 下一版本提案，尚未实施 | 全 Module 资源声明、内存预算、只读推荐与显式 plan/apply；不作为本版 Immich 接入依赖 |
 | [Incus 宿主供给与镜像烘焙](incus-host-provisioning.md) | 提案，基础与发布编排本机回归通过，宿主待验收 | 宿主供给、入站与镜像烘焙；专用控制 bridge、租约 ACL 入站两档、Traefik HTTP 发布与 Docker 式端口绑定、结构化镜像声明与显式 build-once；生产接线和真实烘焙待完成 |
 | [远端备份、异地容灾与分布式部署](remote-backup-and-dr.md) | 研讨中 | 备份目的地远端化、拉模型与勒索抵抗、secrets 边界、容灾接管与分布式的范围划分 |

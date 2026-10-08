@@ -1,10 +1,99 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestTrustedOIDCRoleUsesGroupMacro(t *testing.T) {
+	body, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, want := range []string{`.ldapExportedVars.anasRole`, `if [ "$attr" = "anasRole" ]`, `lemonldap_ng_cli_addkey macros anasRole`, `? 'admin' : 'user'`, `elif [ "$attr" != "groups" ]`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("trusted role setup missing %q", want)
+		}
+	}
+}
+
+func TestTrustedOIDCRoleAttributeLoop(t *testing.T) {
+	body, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	attributeLoop := func(protocol string) string {
+		t.Helper()
+		start := strings.Index(source, "for app in $"+protocol+"_APPS; do")
+		if start < 0 {
+			t.Fatalf("missing %s configuration loop", protocol)
+		}
+		section := source[start:]
+		start = strings.Index(section, "    index=1\n")
+		if start < 0 {
+			t.Fatalf("missing %s attribute loop", protocol)
+		}
+		section = section[start:]
+		end := strings.Index(section, "    done\n")
+		if end < 0 {
+			t.Fatalf("unterminated %s attribute loop", protocol)
+		}
+		return section[:end+len("    done\n")]
+	}
+	samlLoop, oidcLoop := attributeLoop("SAML_SP"), attributeLoop("OIDC_RP")
+	for _, withSAML := range []bool{false, true} {
+		t.Run(fmt.Sprintf("with_SAML_%t", withSAML), func(t *testing.T) {
+			logPath := filepath.Join(t.TempDir(), "role-configuration.log")
+			setup := `set -eo pipefail
+if (( BASH_VERSINFO[0] < 4 )); then exit 77; fi
+record_cli() { printf '%s\n' "$*" >> "$ROLE_CALLS"; }
+lemonldap_ng_cli_addkey=record_cli
+SAMBA_DC_ADMIN_GROUP_NAME=Admins
+app=immich
+OIDC_RP__IMMICH__ATTR01=anas_role,anasRole,1
+OIDC_RP__IMMICH__ATTR02=email,mail,1
+`
+			if withSAML {
+				setup += "SAML_SP__IMMICH__ATTR01=anas_role,anasRole,1\n" + samlLoop
+			}
+			cmd := exec.Command("bash", "-c", setup+oidcLoop)
+			cmd.Env = append(os.Environ(), "ROLE_CALLS="+logPath)
+			output, err := cmd.CombinedOutput()
+			if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 77 {
+				t.Skip("LLNG configuration requires Bash 4 or later; validate on Linux")
+			}
+			if err != nil {
+				t.Fatalf("attribute loop failed: %v\n%s", err, output)
+			}
+			calls, err := os.ReadFile(logPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := string(calls)
+			if strings.Contains(actual, "ldapExportedVars anasRole") {
+				t.Fatalf("reserved role was exported from LDAP:\n%s", actual)
+			}
+			wantMacros := 1
+			if withSAML {
+				wantMacros++
+			}
+			if got := strings.Count(actual, `macros anasRole inGroup("Admins") ? 'admin' : 'user'`); got != wantMacros {
+				t.Fatalf("trusted macro count = %d, want %d:\n%s", got, wantMacros, actual)
+			}
+			for _, want := range []string{"oidcRPMetaDataExportedVars/immich anas_role anasRole", "ldapExportedVars mail mail"} {
+				if !strings.Contains(actual, want) {
+					t.Fatalf("OIDC configuration missing %q:\n%s", want, actual)
+				}
+			}
+		})
+	}
+}
 
 // The calculate environment is shared with every module that has this one in its
 // dependency closure, which since the IAM binding includes all SSO consumers.

@@ -12,9 +12,36 @@
 - `rotate_credential` 需要先更新 provider，再原子提交 Secret，失败必须保留旧凭据。
 - `delete` 遵守资源的 `deletion_policy`；`retain` 是默认安全边界。
 
+## PostgreSQL 扩展
+
+`postgres` interface 的 Resource 可以声明必需的 SQL 扩展名称；普通数据库不需要 `postgres` 块。
+
+```yaml
+spec:
+  name: photos
+  principal: photos
+  credential:
+    policy: generated
+  deletion_policy: retain
+  postgres:
+    extensions: [vector, earthdistance]
+```
+
+`postgres` 只接受 `extensions`，名称列表必须非空、无重复，名称符合 `^[a-z][a-z0-9_]{0,62}$`。
+Runner 拒绝未知字段及非法表示；MariaDB 拒绝整个 `postgres` 块。Provider 在创建数据库或扩展前拒绝其
+固定发布组合不支持的名称。列表中的扩展均为必需项，扩展版本、依赖、preload 和升级由 PostgreSQL
+Module 管理，Consumer 不指定版本或任意 SQL。
+
+应用角色保持普通权限。扩展就绪需要实际应用凭据连接、权限、固定扩展及依赖版本和 preload 检查；
+预装二进制不能证明 ready。已有版本不符时普通 `ensure` 应失败，由 PostgreSQL Module 的受控维护处理。
+移除声明不会自动删除扩展。升级和恢复复用 ANAS 全 workspace 恢复集合，覆盖共享数据库、耦合文件、
+配置、Secret 和匹配镜像；真实升级与恢复验收状态以 PostgreSQL Module 文档和配套实施记录为准。
+
 ## 兼容性与限制
 
-当前 `postgres` 与 `mariadb` 提供实现，Nextcloud、MeshCentral、Authentik 和 LLNG 是 consumer。Contract schema 或语义发生不兼容变化时必须提升 major version；新增可选 operation 或字段可以提升 minor version。
+当前 `postgres` 与 `mariadb` 提供实现，Provider/Consumer 清单见下方生成参考。ANAS 尚未发布，扩展名称列表直接
+完善当前 `1.0.0`，不建立旧接口兼容层或旧 lock 转换。正式发布后的不兼容 schema 或语义变化需要提升
+major version；新增可选 operation 或字段可以提升 minor version。
 
 Provider operation、Secret 边界、Schema 展开和文档生成流程见[技术实现](./relational_database-technical.md)。
 
@@ -24,7 +51,7 @@ Provider operation、Secret 边界、Schema 展开和文档生成流程见[技�
 > 本节由 `contract.yml`、schemas、Module manifests 与 `documentation.yml` 生成，请勿手工编辑。
 
 - Version / 版本：`1.0.0`
-- Status / 状态：`implemented`（reviewed 2026-08-14）
+- Status / 状态：`implemented`（reviewed 2026-10-03）
 - Interfaces / 接口：`postgres`, `mariadb`
 - Resource identity / 资源标识：`consumer`, `resource_id`
 - Resource schema / 资源 Schema：`schemas/resource.yml`
@@ -48,7 +75,7 @@ Provider operation、Secret 边界、Schema 展开和文档生成流程见[技�
 | `schemas/ensure-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
 | `schemas/inspect-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
 | `schemas/inspect-result.yml` | `object` | `exists`, `ready` | `exists`, `ready` |
-| `schemas/resource.yml` | `object` | `name`, `principal`, `credential`, `deletion_policy` | `credential`, `deletion_policy`, `name`, `principal` |
+| `schemas/resource.yml` | `object` | `name`, `principal`, `credential`, `deletion_policy` | `credential`, `deletion_policy`, `name`, `postgres`, `principal` |
 | `schemas/rotate-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
 
 ### 当前 Provider 与 Consumer
@@ -61,6 +88,7 @@ Provider operation、Secret 边界、Schema 展开和文档生成流程见[技�
 | consumer | `authentik` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `casdoor` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `forgejo` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
+| consumer | `immich` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `llng` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `meshcentral` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `nextcloud` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |

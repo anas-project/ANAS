@@ -86,6 +86,9 @@ type app struct {
 	runnerSensitive  map[string]bool
 	resolvedBindings map[string]map[string]string
 	resourceRequests []ResourceRequest
+	// Only a quiesced apply with an ANAS recovery point authorizes privileged
+	// PostgreSQL extension maintenance. This is never rendered into an artifact.
+	postgresMaintenance map[string]bool
 	// credentials is the value-free deployment inventory. During rendering it
 	// is resolved from static Module declarations; artifact lifecycle commands
 	// load the exact frozen records from deployment.yml.
@@ -557,7 +560,7 @@ func (a *app) runAfterStartOf(release string, names []string) error {
 		if a.useFrozenHooks && mod.SourceDir != "" {
 			dir = mod.SourceDir
 		}
-		resp, err := a.runHook(mod, "after_start", dir, a.localAdminHookEnv(name, a.moduleEnv(dir)))
+		resp, err := a.runHook(mod, "after_start", dir, a.postgresMaintenanceHookEnv(name, a.localAdminHookEnv(name, a.moduleEnv(dir))))
 		if err != nil {
 			return err
 		}

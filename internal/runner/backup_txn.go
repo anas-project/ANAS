@@ -80,25 +80,40 @@ func transactionPath(base, id string) string {
 // runtime state files record what anas last intended, not what Docker is
 // actually doing after a reboot or a manual `docker stop`.
 func runningModules(a *app, modulesRoot string) []string {
+	running, _ := checkedRunningModules(a, modulesRoot)
+	return running
+}
+
+// A stop barrier must not interpret a failed runtime query as no writers.
+// Plans keep their best-effort inventory, while execution fails closed.
+func checkedRunningModules(a *app, modulesRoot string) ([]string, error) {
 	running := []string{}
+	var failures []error
 	for _, name := range a.releaseModules(modulesRoot) {
+		if a.reg[name].RuntimeType == "builtin" {
+			continue
+		}
 		dir := filepath.Join(modulesRoot, name)
 		out, err := a.outputCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "ps", "-q")
 		if err != nil {
+			failures = append(failures, fmt.Errorf("query running containers for %s: %w", name, err))
 			continue
 		}
 		if strings.TrimSpace(out) != "" {
 			running = append(running, name)
 		}
 	}
-	return running
+	return running, errors.Join(failures...)
 }
 
 // beginContainerTransaction records the intent and then stops the modules. The
 // order matters: the record has to be on disk before the first container goes
 // down, or a crash in between leaves services stopped with nothing to say so.
 func beginContainerTransaction(base string, a *app, modulesRoot, deploymentID string) (*containerTransaction, error) {
-	modules := runningModules(a, modulesRoot)
+	modules, err := checkedRunningModules(a, modulesRoot)
+	if err != nil {
+		return nil, err
+	}
 	id, err := newDeploymentID()
 	if err != nil {
 		return nil, err
@@ -177,17 +192,54 @@ func stopModulesWithCleanupMarker(a *app, modulesRoot string, modules []string, 
 // would recreate them against whatever the compose file says now — which during
 // a restore is not necessarily what they were.
 func startModules(a *app, modulesRoot string, modules []string) error {
+	if a != nil && a.base != "" {
+		active, err := loadActiveState(a.base)
+		if err != nil {
+			return err
+		}
+		pending, err := postgresMaintenancePending(a.base, active.ActiveDeployment)
+		if err != nil {
+			return err
+		}
+		if pending != "" {
+			return postgresMaintenanceBlocked(pending)
+		}
+	}
 	var failures []string
 	for _, name := range modules {
 		dir := filepath.Join(modulesRoot, name)
+		_, postgres := a.reg[name].providedContract("relational_database", "postgres")
 		if _, err := a.temporaryComposeEnvironment(name); err != nil {
 			failures = append(failures, fmt.Sprintf("%s temporary lease: %v", name, err))
+			if postgres {
+				return fmt.Errorf("start containers: %s", strings.Join(failures, "; "))
+			}
 			continue
 		}
 		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "start"); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
-		} else if err := a.verifyModuleTemporaryStorage(name); err != nil {
+			if postgres {
+				return fmt.Errorf("start containers: %s", strings.Join(failures, "; "))
+			}
+			continue
+		}
+		if err := a.verifyModuleTemporaryStorage(name); err != nil {
 			failures = append(failures, fmt.Sprintf("%s temporary mounts: %v", name, err))
+			if postgres {
+				return fmt.Errorf("start containers: %s", strings.Join(failures, "; "))
+			}
+			continue
+		}
+		if postgres {
+			// compose start returns before TCP/password readiness. A retained
+			// Provider still owns its databases even without active requests;
+			// qualify it before resuming any downstream consumer. Compensation
+			// cannot authorize upgrades or replay other Modules' start Hooks.
+			readonly := *a
+			readonly.postgresMaintenance = nil
+			if err := readonly.runAfterStartOf(modulesRoot, []string{name}); err != nil {
+				return fmt.Errorf("PostgreSQL provider %s readiness after backup pause: %w", name, err)
+			}
 		}
 	}
 	if len(failures) > 0 {

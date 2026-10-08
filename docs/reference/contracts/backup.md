@@ -56,8 +56,20 @@ active 制品必须包含，理由有三条，每一条单独都足够：
 体量上 active 制品在一次非生产环境测量中约占 data 的 3%（42M vs 1.3G），其中 41M 是 13 个
 冻结 hook 二进制。
 
-**恢复仍需从 registry 拉取上游基础镜像**，任何模式都不例外。完全离线恢复属二期
-`--include-images` 范围。
+有 PostgreSQL Resource 的 workspace 自动捕获全部 Compose service 的不可变镜像 ID 与 Docker
+archive；运行容器的 Image 是依据，不以可能移动的 tag 代替。snapshot/copy/send/send-file 均沿现有
+metadata 通道携带归档和完整性校验。恢复加载 archive，仅固定恢复制品的镜像，不改其他部署的 tag。
+捕获不到镜像时备份失败，归档会增加所需空间和停机时间。PG 的保留扩展不因删除声明消失，因此普通
+PG Resource 或仍保留的 PG Provider 也遵循此规则。新建 PG workspace 备份拒绝 `--no-stop`；
+该选项仅能用于传输已有快照，以避免把运行中数据库和媒体的文件复制称为一致备份。
+其他 workspace 尚需 registry 或构建环境，通用 `--include-images` 选项未交付。
+
+本机隔离 Docker 已验证旧镜像缓存删除后的 ID 恢复、tag 保持原值；整台服务器的数据库、媒体及其他
+Consumer 一致恢复仍待验收，不能从镜像 round-trip 推断数据恢复通过。
+
+PG 的 Btrfs 恢复点在停机前拒绝 `data/` 内的外部挂载、嵌套子卷以及逃逸或失效的符号链接，
+避免父子卷快照遗漏真实数据。`copy` 按文件读取并包含可读的挂载/子卷内容，也拒绝逃逸或失效链接；
+它不重建原来的挂载或子卷拓扑。恢复到相应布局前仍须核对挂载配置与完整数据覆盖。
 
 ---
 
@@ -360,6 +372,8 @@ one-file-system 来排除 `snapshots/`——那样会连必须包含的 `data/` 
 
 完整前置校验 + 输出将要执行的动作清单，**不执行**。`backup create` 内部第一步就是
 跑它，plan 不通过直接失败。web 端的"确认页"数据源。
+
+公共 plan ID 绑定目的地与操作选择；磁盘可用空间是实时观测，不参与 ID。执行前仍重新校验空间与其他前置条件。
 
 ```
 anas backup plan --to <dest> --mode <mode> [--snapshot <id>] [--parent <id>]

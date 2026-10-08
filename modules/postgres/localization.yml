@@ -2,7 +2,7 @@ api_version: anas.module-localization/v1
 module: postgres
 module_version: 18.4.0
 module_revision: 4
-reviewed_at: 2026-08-13
+reviewed_at: 2026-10-03
 timezone:
   status: container
   mechanism: PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.

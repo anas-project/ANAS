@@ -141,6 +141,21 @@ func buildBackupPlan(workspace string, opts backupOptions) (*backupPlan, error) 
 		}
 		plan.existingSnapshot = meta
 	}
+	if opts.noStop && plan.existingSnapshot == nil {
+		active, err := loadActiveState(stateDir(workspace))
+		if err != nil {
+			return nil, err
+		}
+		if active.ActiveDeployment != "" {
+			manifest, err := loadDeploymentManifest(deploymentArtifactDir(stateDir(workspace), active.ActiveDeployment))
+			if err != nil {
+				return nil, err
+			}
+			if deploymentNeedsImageRecovery(manifest) {
+				return nil, preconditionErrorf("postgres_backup_quiesce_required", "a PostgreSQL workspace backup must stop writers to capture databases and coupled media together; --no-stop is only supported when transferring an existing snapshot")
+			}
+		}
+	}
 
 	if err := resolveBackupParent(workspace, plan, report, opts); err != nil {
 		return nil, err
@@ -428,6 +443,7 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 	var txn *containerTransaction
 	var a *app
 	var modulesRoot string
+	var images *snapshotImageInventory
 	downtimeStart := time.Now()
 	downtime := 0
 
@@ -444,6 +460,23 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 			a, modulesRoot, _, err = loadDeploymentApp(base, active.ActiveDeployment, cli)
 			if err != nil {
 				return nil, "", 0, err
+			}
+			images, err = prepareSnapshotImageInventory(deploymentArtifactDir(base, active.ActiveDeployment), cli, nil, false)
+			if err != nil {
+				return nil, "", 0, failuref("image_capture_failed", "capture pre-stop backup images: %v", err)
+			}
+			if images != nil {
+				var coverageErr error
+				if plan.useSnapshot {
+					coverageErr = a.validatePostgresRecoveryData(workspace)
+				} else {
+					// Copy traverses nested mounts/subvolumes as files, but an
+					// external symlink only carries the link, not its database.
+					coverageErr = validateRecoverySymlinks(dataDir(workspace))
+				}
+				if coverageErr != nil {
+					return nil, "", 0, preconditionErrorf("postgres_recovery_coverage_incomplete", "%v", coverageErr)
+				}
 			}
 			emitProgress(opts.json, "stop_containers", 0, 0, "containers")
 			txn, err = beginContainerTransaction(base, a, modulesRoot, active.ActiveDeployment)
@@ -474,7 +507,13 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 		// No snapshot means the copy reads live files, so the services have to
 		// stay down until the transfer finishes. The restart still happens, on
 		// the deferred path, after transferBackup returns.
-		source, err := workspaceBackupSource(workspace)
+		var source *backupSource
+		var err error
+		if plan.StopContainers {
+			source, err = workspaceBackupSource(workspace, images)
+		} else {
+			source, err = workspaceBackupSource(workspace)
+		}
 		if err != nil {
 			return nil, "", 0, err
 		}
@@ -489,6 +528,7 @@ func prepareBackupSource(workspace, base string, plan *backupPlan, opts backupOp
 		// a workspace whose user content is not a subvolume still backs up its
 		// deployment rather than failing outright.
 		includeUserData: !opts.skipUserData,
+		imageInventory:  images,
 	})
 	if err != nil {
 		return nil, "", 0, err

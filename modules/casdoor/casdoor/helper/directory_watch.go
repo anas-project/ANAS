@@ -893,6 +893,15 @@ func writeJSONAtomic(path string, value any) error {
 	return directory.Sync()
 }
 
+// The managed service endpoint is on the private Compose network. Sending its
+// Basic credentials through a build proxy breaks access and exposes credentials
+// to an unrelated proxy, so this client connects directly.
+func directoryServiceHTTPClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
 func runDirectoryWatch(args []string) error {
 	settings, err := directoryWatchSettingsFromEnv()
 	if err != nil {
@@ -913,7 +922,7 @@ func runDirectoryWatch(args []string) error {
 		return nil
 	}
 	if len(args) == 2 && args[0] == "--get-user" {
-		syncer := &casdoorLDAPSyncer{settings: settings, client: &http.Client{Timeout: 15 * time.Second}}
+		syncer := &casdoorLDAPSyncer{settings: settings, client: directoryServiceHTTPClient(15 * time.Second)}
 		response, err := syncer.request(http.MethodGet, "get-user", args[1], nil)
 		if err != nil {
 			return err
@@ -929,7 +938,7 @@ func runDirectoryWatch(args []string) error {
 	if len(settings.managedGroups) > 0 {
 		memberships = &ldapDirectoryMembershipResolver{settings: settings}
 	}
-	syncer := &casdoorLDAPSyncer{settings: settings, client: &http.Client{Timeout: 2 * time.Minute}, memberships: memberships}
+	syncer := &casdoorLDAPSyncer{settings: settings, client: directoryServiceHTTPClient(2 * time.Minute), memberships: memberships}
 	watcher := newDirectoryWatcher(settings, syncer)
 	defer watcher.reader.close()
 	log.Printf("watching %s for ldap=%s (debounce=%s min-interval=%s)", settings.eventFile, settings.ldapID, settings.debounce, settings.minimumInterval)

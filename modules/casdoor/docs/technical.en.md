@@ -3,7 +3,7 @@
 This document records the protocol contract, security boundaries, and verification points for maintainers.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.143.0-r10` / `anas.module/v1`.
+> Status: current implementation; based on `3.143.0-r11` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -11,8 +11,8 @@ This document records the protocol contract, security boundaries, and verificati
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r10` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -186,4 +186,29 @@ optional SSO and verified signed-protocol behavior, with application-local logou
 requires signature, NameID/SessionIndex, saved-cookie revocation and isolation acceptance before
 publishing any SLO declaration.
 
-Lifecycle is `developing`; r10 release acceptance remains incomplete. The pinned version has no SAML LogoutRequest/LogoutResponse consumer, so no SLO endpoint or binding is published. Directory password writeback, silent database switching, and using the Casdoor local User ID as the Samba permanent anchor also remain unsupported. The requirement matrix and implementation plan define the accepted release scope.
+r10 completed release acceptance. The r11 candidate adds optional trusted roles and policy events; acceptance of that new scope remains in progress. The pinned version has no SAML LogoutRequest/LogoutResponse consumer, so no SLO endpoint or binding is published. Directory password writeback, silent database switching, and using the Casdoor local User ID as the Samba permanent anchor also remain unsupported. The requirement matrix and implementation plan define the accepted release scope.
+
+## Trusted OIDC application role source
+
+The optional `ATTRIBUTES=<claim>:anasRole:1` maps to the fixed server's
+`ANASRole.<admin-group>` calculation over managed `anas/<group>` membership. Editable Properties
+and custom LDAP attributes cannot supply administrator roles. Optional `OIDC_CAEP_EVENTS=session-revoked`
+requires the anchor subject and subject-wide backchannel registration. Negotiation is stored in
+managed Application `anasPolicyRevocation` boolean (without changing login tag restrictions) and existing directory policy projection. The existing r10 pending-logout
+journal and native privileged API deliver admission/administrator-role loss even without active
+IAM tokens. Retried policy notifications preserve the original cutoff; ordinary sid logout does not
+revoke independent API keys or shares. Real Immich acceptance for r11 is in progress; r10 evidence
+is not evidence that the new combination passed.
+
+The directory watcher connects directly to its managed service API on the private Compose network. Its HTTP client bypasses build and outbound proxies so Basic credentials do not reach an unrelated proxy. The native Casdoor server still delivers signed logout notices to applications.
+
+Trusted roles come from managed directory groups. The pinned patch rejects changes
+of `groups`, `isAdmin` and `externalId` in ordinary users' updates to `anas` accounts even when organization
+`accountItems` is absent. The recovery administrator and directory service retain
+the existing privileged group management entry points.
+
+The pinned upstream `JWT-Custom` emits an empty `nonce` even when authorization
+did not request one, which Immich's strict OIDC validation rejects. The patch
+matches the native standard token's `omitempty` behavior: omit an unrequested
+nonce and preserve a requested value. Client validation stays enabled; no IAM
+parameter is added.

@@ -31,13 +31,15 @@ modules:
     # successful native upgrade.
     baseline: {id: ai-agent-first-release-r2, version: 0.1.0-r2, reason: no_prior_release}
   - name: authentik
-    current: 2026.5.6-r14
+    current: 2026.5.6-r15
     transitions:
-      - {id: authentik-r8-r14, from: 2026.5.6-r8, to: 2026.5.6-r14, suite: modules-authentik}
+      - {id: authentik-r8-r15, from: 2026.5.6-r8, to: 2026.5.6-r15, suite: modules-authentik}
+      - {id: authentik-r14-r15, from: 2026.5.6-r14, to: 2026.5.6-r15, suite: modules-authentik}
   - name: casdoor
-    current: 3.143.0-r10
+    current: 3.143.0-r11
     transitions:
-      - {id: casdoor-r8-r10, from: 3.143.0-r8, to: 3.143.0-r10, suite: modules-casdoor}
+      - {id: casdoor-r8-r11, from: 3.143.0-r8, to: 3.143.0-r11, suite: modules-casdoor}
+      - {id: casdoor-r10-r11, from: 3.143.0-r10, to: 3.143.0-r11, suite: modules-casdoor}
   - name: collabora
     current: 26.4.2-r6
     transitions:
@@ -63,6 +65,11 @@ modules:
     current: 3.2.10-r4
     transitions:
       - {id: freeradius-r3-r4, from: 3.2.10-r3, to: 3.2.10-r4, suite: modules-base}
+  - name: immich
+    current: 3.2.4-r1
+    # Developing first installation; no older ANAS Immich release exists.
+    # This is an inventory baseline, not successful upgrade evidence.
+    baseline: {id: immich-first-release-r1, version: 3.2.4-r1, reason: no_prior_release}
   - name: incus
     current: 7.3.0-r2
     # Still developing: this records the next first-release baseline, not a

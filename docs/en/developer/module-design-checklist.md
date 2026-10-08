@@ -85,6 +85,7 @@ An upstream-version or runtime-asset change must also complete the
 [Module upgrade checklist](/en/developer/module-upgrade-checklist).
 
 - [ ] `[M]` Ownership and host paths are explicit for databases, user files, configuration, secrets, and deployment metadata.
+- [ ] `[M/E]` Review directory classification, actual backup coverage, and storage changes against the [persistent data placement rule in the Module development standard](/en/developer/module-development#persistent-data-placement).
 - [ ] `[E]` Backups keep all persistent planes at one recovery point; restore verifies business data, attachments, identity links, and application secrets/tokens.
 - [ ] `[E]` Fresh install, minimum-supported and previous-version upgrades, repeated apply, restart, interrupted retry, and required rollback are tested.
 - [ ] `[M/E]` Data-migration parameters are not presented as automatic migration; custom upgrade scripts have an applicability range, idempotence evidence, and removal condition.

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"time"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -110,6 +113,11 @@ func handle(req hookRequest) (hookResponse, error) {
 	case "services":
 		return hookResponse{DisableServices: disabledServices(req.Module, env)}, nil
 	case "after_start":
+		if req.Module == "postgres" {
+			if err := maintainExtensions(env); err != nil {
+				return hookResponse{}, err
+			}
+		}
 		return hookResponse{DockerCopies: afterStart(req.Module, env)}, nil
 	default:
 		return hookResponse{}, nil
@@ -125,9 +133,40 @@ func renderEnv(module string, env map[string]string, workdir string) (map[string
 	if module != "postgres" {
 		return map[string]string{}, nil
 	}
-	env["POSTGRES_HOST_AUTH_METHOD"] = "trust"
+	env["POSTGRES_HOST_AUTH_METHOD"] = "scram-sha-256"
+	env["POSTGRES_INITDB_ARGS"] = "--auth-local=scram-sha-256 --auth-host=scram-sha-256"
 	env["ADMINER_DESIGN"] = "nette"
 	return map[string]string{}, nil
+}
+
+// The runner enables upgrade only after stopping affected writers and taking
+// its ANAS recovery point. Ordinary start/restart checks state without updates.
+func maintenanceCommand(env map[string]string) ([]string, error) {
+	container := env["POSTGRES_HOST"]
+	if container == "" {
+		return nil, fmt.Errorf("PostgreSQL lifecycle requires POSTGRES_HOST")
+	}
+	mode := "inspect"
+	if env["ANAS_POSTGRES_EXTENSION_MAINTENANCE"] == "true" {
+		mode = "upgrade"
+	}
+	return []string{"exec", container, "/usr/local/bin/anas-postgres-extensions", mode}, nil
+}
+
+func maintainExtensions(env map[string]string) error {
+	args, err := maintenanceCommand(env)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("PostgreSQL extension readiness/maintenance failed: %w", err)
+	}
+	return nil
 }
 func disabledServices(module string, env map[string]string) []string {
 	if module != "postgres" {

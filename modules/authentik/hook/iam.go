@@ -58,7 +58,9 @@ func publishIAMEndpoints(e map[string]string) error {
 			issuer := base + "/application/o/" + s + "/"
 			e[p+"OIDC_ISSUER_URL"] = issuer
 			e[p+"OIDC_DISCOVERY_URL"] = issuer + ".well-known/openid-configuration"
+			e[p+"OIDC_CAEP_EVENTS"] = "session-revoked"
 		case "saml":
+			delete(e, p+"OIDC_CAEP_EVENTS")
 			// Use the canonical endpoints advertised by authentik metadata. The
 			// canonical SSO endpoint dispatches both Redirect and POST requests;
 			// binding-specific internal endpoints force the response binding and
@@ -142,6 +144,20 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 	b.WriteString("version: 1\n")
 	b.WriteString("metadata:\n  name: anas-clients\n")
 	b.WriteString("entries:\n")
+	// Blueprint discovery dispatches imports without dependency ordering.
+	// Apply the fixed upstream dependencies before resolving their objects.
+	dependencies := []string{
+		"Default - Invalidation flow",
+		"Default - Provider invalidation flow",
+		"Default - Provider authorization flow (implicit consent)",
+	}
+	if len(oidc) > 0 {
+		dependencies = append(dependencies, "System - OAuth2 Provider - Scopes")
+	}
+	for _, dependency := range dependencies {
+		b.WriteString("  - model: authentik_blueprints.metaapplyblueprint\n")
+		b.WriteString("    attrs:\n      identifiers:\n        name: " + yamlString(dependency) + "\n")
+	}
 
 	// Authentik's default provider invalidation flow ends only the current
 	// application session. Bind the existing logout stage so an RP-initiated
@@ -165,9 +181,12 @@ func renderClientBlueprint(e map[string]string) (string, error) {
 		if e[src+"CLIENT_ID"] == "" {
 			return "", fmt.Errorf("oidc client %s published no %sCLIENT_ID", app, src)
 		}
+		if err := validateAuthentikCAEPRegistration(e, app); err != nil {
+			return "", err
+		}
 		s := slug(app)
 		profileMapping := writeOIDCProfileMappingEntry(
-			&b, e[src+"ATTRIBUTES"], s, e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"])
+			&b, e[src+"ATTRIBUTES"], s, e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"], e["SAMBA_DC_ADMIN_GROUP_NAME"])
 		b.WriteString("  - model: authentik_providers_oauth2.oauth2provider\n")
 		b.WriteString("    identifiers:\n      name: " + s + "\n")
 		b.WriteString("    id: provider-" + s + "\n")
@@ -313,7 +332,7 @@ func selectAuthentikSAMLLogout(bindings string) (binding, method string, err err
 // claims cannot leak into another application's tokens. The standard profile
 // values are included here because setting property_mappings on an authentik
 // OAuth provider replaces its implicit default mapping set.
-func writeOIDCProfileMappingEntry(b *strings.Builder, attributes, appSlug, identityAnchor string) string {
+func writeOIDCProfileMappingEntry(b *strings.Builder, attributes, appSlug, identityAnchor string, adminGroup ...string) string {
 	if len(splitCSV(attributes)) == 0 {
 		return ""
 	}
@@ -340,13 +359,22 @@ func writeOIDCProfileMappingEntry(b *strings.Builder, attributes, appSlug, ident
 		if claim == "" || source == "" {
 			continue
 		}
-		b.WriteString("        claims[" + yamlString(claim) + "] = " + oidcClaimExpression(source, identityAnchor) + "\n")
+		b.WriteString("        claims[" + yamlString(claim) + "] = " + oidcClaimExpression(source, identityAnchor, adminGroup...) + "\n")
 	}
 	b.WriteString("        return claims\n")
 	return id
 }
 
-func oidcClaimExpression(source, identityAnchor string) string {
+func oidcClaimExpression(source, identityAnchor string, adminGroups ...string) string {
+	if source == "anasRole" {
+		adminGroup := "Admins"
+		if len(adminGroups) > 0 && adminGroups[0] != "" {
+			adminGroup = adminGroups[0]
+		}
+		// This reserved source comes from the trusted group membership engine,
+		// never a user-editable LDAP attribute or profile property.
+		return `("admin" if ak_is_group_member(request.user, name=` + yamlString(adminGroup) + `) else "user")`
+	}
 	if identityAnchor != "" && strings.EqualFold(source, identityAnchor) {
 		return `request.user.attributes.get("ldap_uniq")`
 	}
@@ -425,9 +453,43 @@ func writeApplicationEntry(b *strings.Builder, e map[string]string, app, s strin
 	}
 }
 
+func validateAuthentikCAEPRegistration(e map[string]string, app string) error {
+	prefix := iamClientPrefix + envName(app) + "__"
+	events := splitCSV(e[prefix+"OIDC_CAEP_EVENTS"])
+	if len(events) == 0 {
+		return nil
+	}
+	if len(events) != 1 || events[0] != "session-revoked" {
+		return fmt.Errorf("oidc client %s requested unsupported OIDC_CAEP_EVENTS", app)
+	}
+	method, err := selectAuthentikOIDCLogoutMethod(e[prefix+"OIDC_LOGOUT_METHODS"])
+	if err != nil || method != "backchannel" || e[prefix+"OIDC_LOGOUT_URI"] == "" {
+		return fmt.Errorf("oidc client %s CAEP requires backchannel logout", app)
+	}
+	if e[prefix+"OIDC_LOGOUT_SESSION_REQUIRED"] == "true" {
+		return fmt.Errorf("oidc client %s CAEP requires subject-wide logout", app)
+	}
+	anchor := e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"]
+	subSource := ""
+	for _, raw := range splitCSV(e[prefix+"ATTRIBUTES"]) {
+		parts := strings.Split(raw, ":")
+		if len(parts) > 1 && strings.TrimSpace(parts[0]) == "sub" {
+			subSource = strings.TrimSpace(parts[1])
+		}
+	}
+	if anchor == "" || !strings.EqualFold(subSource, anchor) {
+		return fmt.Errorf("oidc client %s CAEP requires the verified directory anchor sub mapping", app)
+	}
+	if e[iamBindingPrefix+envName(app)+"__OIDC_ISSUER_URL"] == "" {
+		return fmt.Errorf("oidc client %s CAEP requires its published issuer", app)
+	}
+	return nil
+}
+
 func writeAccessPolicyEntries(b *strings.Builder, e map[string]string, app, s string) {
 	groups := splitCSV(e[iamClientPrefix+envName(app)+"__ALLOW_GROUPS"])
-	if len(groups) == 0 {
+	caep := len(splitCSV(e[iamClientPrefix+envName(app)+"__OIDC_CAEP_EVENTS"])) > 0
+	if len(groups) == 0 && !caep {
 		return
 	}
 	quoted := make([]string, 0, len(groups))
@@ -439,8 +501,12 @@ func writeAccessPolicyEntries(b *strings.Builder, e map[string]string, app, s st
 	b.WriteString("    id: access-policy-" + s + "\n")
 	b.WriteString("    attrs:\n")
 	b.WriteString("      expression: |\n")
-	b.WriteString("        allowed = [" + strings.Join(quoted, ", ") + "]\n")
-	b.WriteString("        return any(ak_is_group_member(request.user, name=name) for name in allowed)\n")
+	if len(groups) == 0 {
+		b.WriteString("        return request.user.is_active\n")
+	} else {
+		b.WriteString("        allowed = [" + strings.Join(quoted, ", ") + "]\n")
+		b.WriteString("        return any(ak_is_group_member(request.user, name=name) for name in allowed)\n")
+	}
 	b.WriteString("  - model: authentik_policies.policybinding\n")
 	b.WriteString("    identifiers:\n")
 	b.WriteString("      target: !KeyOf application-" + s + "\n")

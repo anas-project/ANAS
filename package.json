@@ -40,7 +40,8 @@
     "e2e:vikunja-browser": "playwright test --config test-env/playwright/vikunja-browser.config.mjs",
     "e2e:vikunja-llng-browser": "playwright test --config test-env/playwright/vikunja-llng-browser.config.mjs",
     "e2e:vikunja-authentik-matrix-browser": "playwright test --config test-env/playwright/vikunja-authentik-matrix-browser.config.mjs",
-    "e2e:vikunja-load-browser": "playwright test --config test-env/playwright/vikunja-load-browser.config.mjs"
+    "e2e:vikunja-load-browser": "playwright test --config test-env/playwright/vikunja-load-browser.config.mjs",
+    "e2e:immich-browser": "playwright test --config test-env/playwright/immich-browser.config.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

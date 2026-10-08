@@ -1,0 +1,25 @@
+api_version: anas.module-localization/v1
+module: immich
+module_version: 3.2.4
+module_revision: 1
+reviewed_at: 2026-10-03
+timezone:
+  status: container
+  mechanism: The server and ML container receive ANAS TZ; media timestamps remain owned by Immich metadata.
+language:
+  status: supported
+  scope: Immich Web UI
+  selection: browser
+  global_default: not_consumed
+  global_locale: not_consumed
+  upstream_format: Translation filenames use underscores; Chinese aliases select zh_Hans or zh_Hant; upstream tl is canonicalized to fil.
+  fallback: Saved user preference or browser language selects the closest available locale; unmatched languages fall back to English. Script variants remain separate.
+  supported: [af, ar, az, be, bg, bi, bn, br, bs, ca, cs, cv, da, de, de-CH, el, en, en-GB, eo, es, et, eu, fa, fi, fil, fr, ga, gl, gsw, gu, he, hi, hr, hu, hy, id, is, it, ja, ka, kab, kk, km, kmr, kn, ko, kxm, lb, lmo, lt, lv, mfa, mi, mk, ml, mn, mr, ms, nb-NO, ne, nl, nn, pa, pl, pt, pt-BR, ro, ru, si, sk, sl, sq, sr-Cyrl, sr-Latn, sv, sw, swg, ta, te, th, tr, uk, ur, uz, vi, yue-Hant, zh-Hans, zh-Hant]
+  evidence:
+    - version: 3.2.4
+      url: https://github.com/immich-app/immich/tree/v3.2.4/i18n
+      path: translation JSON filenames
+    - version: 3.2.4
+      url: https://github.com/immich-app/immich/blob/v3.2.4/web/src/lib/utils/i18n.ts
+      path: langCodes, convertBCP47, aliases, getPreferredLocale
+  notes: No module language override is exposed; application preferences and browser negotiation remain native.

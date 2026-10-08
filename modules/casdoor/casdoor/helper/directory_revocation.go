@@ -15,24 +15,29 @@ type directoryApplication struct {
 	Application string   `json:"application"`
 	Groups      []string `json:"groups"`
 	Protocol    string   `json:"protocol"`
+	CAEP        bool     `json:"caep"`
+	AdminGroup  string   `json:"adminGroup"`
 }
 
 type directoryLogoutTarget struct {
 	Application string `json:"application"`
 	SID         string `json:"sid"`
 	Subject     string `json:"subject,omitempty"`
+	Policy      bool   `json:"policy,omitempty"`
 }
 
 type directorySessionSnapshot struct {
-	Owner        string                  `json:"owner"`
-	UserID       string                  `json:"userId"`
-	Name         string                  `json:"name"`
-	Subject      string                  `json:"subject"`
-	All          bool                    `json:"all"`
-	Applications []string                `json:"applications"`
-	Tokens       []string                `json:"tokens"`
-	Targets      []directoryLogoutTarget `json:"targets"`
-	Sessions     []struct {
+	Owner              string                  `json:"owner"`
+	UserID             string                  `json:"userId"`
+	Name               string                  `json:"name"`
+	Subject            string                  `json:"subject"`
+	PolicyApplications []string                `json:"policyApplications,omitempty"`
+	EventTimestamp     float64                 `json:"eventTimestamp,omitempty"`
+	All                bool                    `json:"all"`
+	Applications       []string                `json:"applications"`
+	Tokens             []string                `json:"tokens"`
+	Targets            []directoryLogoutTarget `json:"targets"`
+	Sessions           []struct {
 		Owner       string   `json:"owner"`
 		Name        string   `json:"name"`
 		Application string   `json:"application"`
@@ -101,7 +106,18 @@ func planDirectoryRevocations(directory []casdoorDirectoryUser, managed []casdoo
 					allowed = true
 				}
 			}
-			if all || !allowed {
+			previouslyAllowed := !user.IsForbidden && !user.IsDeleted && (len(app.Groups) == 0)
+			for _, group := range app.Groups {
+				if !user.IsForbidden && !user.IsDeleted && slices.Contains(user.Groups, "anas/"+group) {
+					previouslyAllowed = true
+				}
+			}
+			roleLost := app.AdminGroup != "" && slices.Contains(user.Groups, "anas/"+app.AdminGroup) && !slices.Contains(memberships[anchor], "anas/"+app.AdminGroup)
+			if app.CAEP && ((previouslyAllowed && (!exists || !allowed)) || roleLost) {
+				request.PolicyApplications = append(request.PolicyApplications, app.Application)
+				request.EventTimestamp = float64(time.Now().UnixMilli()) / 1000
+			}
+			if all || !allowed || roleLost {
 				request.Applications = append(request.Applications, app.Application)
 			}
 		}
@@ -166,7 +182,7 @@ func (syncer *casdoorLDAPSyncer) prepareLogouts(requests []directorySessionSnaps
 		if err := json.Unmarshal(response.Data, &snapshot); err != nil {
 			return err
 		}
-		if len(snapshot.Tokens) == 0 && len(snapshot.Sessions) == 0 {
+		if len(snapshot.Tokens) == 0 && len(snapshot.Sessions) == 0 && len(snapshot.Targets) == 0 {
 			continue
 		}
 		// Rename and the second capture can contain the same issued session.
@@ -178,7 +194,7 @@ func (syncer *casdoorLDAPSyncer) prepareLogouts(requests []directorySessionSnaps
 				if saved.Snapshot.Owner != snapshot.Owner || saved.Snapshot.UserID != snapshot.UserID {
 					continue
 				}
-				if slices.Contains(saved.Snapshot.Targets, target) {
+				if slices.Contains(saved.Snapshot.Targets, target) && (!target.Policy || saved.Snapshot.EventTimestamp == snapshot.EventTimestamp) {
 					duplicate = true
 					break
 				}

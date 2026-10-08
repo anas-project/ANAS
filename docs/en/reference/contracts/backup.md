@@ -73,8 +73,24 @@ By volume, one measurement in a non-production environment put the active
 artifacts at roughly 3% of data (42M against 1.3G), of which 41M was 13 frozen
 hook binaries.
 
-**Restore still pulls upstream base images from a registry**, in every mode. A
-fully offline restore belongs to the phase-two `--include-images` scope.
+A workspace with a PostgreSQL Resource automatically captures immutable image IDs and a Docker archive for
+all Compose services, using the running container's Image instead of a movable tag. Existing metadata channels
+carry the archive and integrity checks in snapshot/copy/send/send-file modes. Restore loads it and pins only
+the restored artifact; other deployment tags remain unchanged. Missing images fail the backup, and archives
+increase space and outage requirements. Ordinary PG Resources follow the same rule because removed requests
+can leave retained extensions; a retained PG Provider is protected after all consumers are removed.
+Creating a new PG workspace backup refuses `--no-stop`; that option can only transfer an existing snapshot,
+so a live database/media file copy cannot be presented as a consistent backup.
+Other workspaces still need a registry or build environment; the general
+`--include-images` option remains unimplemented.
+
+An isolated local Docker round-trip verified restoration after deleting an old image cache and preservation
+of the current tag. Whole-server database/media/other-consumer consistency still requires acceptance.
+
+Before stopping a PG workspace, Btrfs recovery points reject external mounts, nested subvolumes, and escaping
+or broken symlinks inside `data/`, so a parent snapshot cannot silently omit live data. The `copy` mode reads
+files across readable mounts/subvolumes and also rejects escaping or broken links; it does not recreate the
+original mount or subvolume topology. Restore still requires checking the mount configuration and complete data coverage.
 
 ---
 
@@ -432,6 +448,8 @@ is not the same thing.
 ---
 
 ## `anas backup plan`
+
+The public plan ID binds the destination and operation choices. Available disk space is a live observation and does not affect this ID. Execution still rechecks space and other preconditions.
 
 Full precondition validation plus the action list that would be executed —
 **without executing it**. `backup create` runs it as its first step and fails

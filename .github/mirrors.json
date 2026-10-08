@@ -1,5 +1,21 @@
 [
   {
+    "modules": ["immich"],
+    "image": "anas-mirror-immich-machine-learning",
+    "tag": "3.2.4",
+    "source": "ghcr.io/immich-app/immich-machine-learning:v3.2.4",
+    "digest": "sha256:e16c2f166a8174901959fdf85e2e4c7bd1ebc4b37e0b6655de97c41408a260c4",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
+    "modules": ["immich"],
+    "image": "anas-mirror-immich-valkey",
+    "tag": "9.1.1",
+    "source": "docker.io/valkey/valkey:9",
+    "digest": "sha256:70739f85ad2ee01a726a965584a0f94895f01b0c60b3cc8b0aeef11eaa6888cf",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
     "modules": ["collabora"],
     "image": "anas-mirror-collabora",
     "tag": "26.04.2.4.1",

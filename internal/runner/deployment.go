@@ -492,6 +492,12 @@ func materializeDeployment(opts prepareOptions, build, jsonMode bool) (string, e
 			return "", preconditionErrorf("compose_missing", "%s", err.Error())
 		}
 		a.compose = cli
+		// A target build can replace the only tag of a running old image.
+		// Preserve exact old IDs before that happens, so the later quiesced
+		// recovery point can still export the binaries that wrote its data.
+		if err := retainActiveSnapshotImages(opts.base, cli, opts.context, opts.restrictedProcessEnvironment); err != nil {
+			return "", preconditionErrorf("postgres_recovery_images_missing", "retain active deployment images before build: %v", err)
+		}
 		selection, err := selectModules(a, opts.modules)
 		if err != nil {
 			return "", usageErrorf("%s", err.Error())
@@ -1006,6 +1012,19 @@ func runActive(action string, args []string, jsonMode bool) error {
 }
 
 func startDeployment(a *app, modulesRoot string, selection []string, jsonMode bool) error {
+	if a.base != "" && len(a.postgresMaintenance) == 0 {
+		active, err := loadActiveState(a.base)
+		if err != nil {
+			return err
+		}
+		pending, err := postgresMaintenancePending(a.base, active.ActiveDeployment)
+		if err != nil {
+			return err
+		}
+		if pending != "" {
+			return postgresMaintenanceBlocked(pending)
+		}
+	}
 	if err := a.requireTemporaryCleanupConfirmed(); err != nil {
 		return err
 	}
@@ -1104,6 +1123,13 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if err != nil {
 		return preconditionErrorf("state_unreadable", "%s", err.Error())
 	}
+	pending, err := postgresMaintenancePending(base, active.ActiveDeployment)
+	if err != nil {
+		return preconditionErrorf("state_unreadable", "%s", err.Error())
+	}
+	if pending != "" && (pending != id || opts.rollback) {
+		return postgresMaintenanceBlocked(pending)
+	}
 	newApp, newRoot, target, err := loadDeploymentApp(base, id, cli)
 	if err != nil {
 		return preconditionErrorf("deployment_unreadable", "%s", err.Error())
@@ -1133,6 +1159,16 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	if err := credentialStoreConsistencyError(base, target); err != nil {
 		return err
 	}
+	var current *deploymentManifest
+	if active.ActiveDeployment != "" {
+		current, err = loadDeploymentManifest(deploymentArtifactDir(base, active.ActiveDeployment))
+		if err != nil {
+			return preconditionErrorf("deployment_unreadable", "%s", err.Error())
+		}
+	}
+	if err := postgresProviderReadditionAllowed(base, active, current, target); err != nil {
+		return err
+	}
 	if active.ActiveDeployment == id {
 		if err := startDeployment(newApp, newRoot, newApp.order, opts.json); err != nil {
 			return failuref("start_failed", "%s", err.Error())
@@ -1148,7 +1184,6 @@ func activateDeployment(base, id string, opts activateOptions) error {
 	}
 	var oldApp *app
 	var oldRoot string
-	var current *deploymentManifest
 	quiesced := false
 	if active.ActiveDeployment != "" {
 		oldApp, oldRoot, current, err = loadDeploymentApp(base, active.ActiveDeployment, cli)
@@ -1158,6 +1193,13 @@ func activateDeployment(base, id string, opts activateOptions) error {
 		oldApp.commandContext, oldApp.events = opts.ctx, opts.events
 		oldApp.restrictedProcessEnvironment = opts.restrictedProcessEnvironment
 		oldApp.retainTemporaryLeases = true
+		newApp.postgresMaintenance = postgresMaintenanceProviders(current, target)
+		if err := postgresMaintenanceTransitionAllowed(current, target, newApp.postgresMaintenance); err != nil {
+			return err
+		}
+		if opts.rollback && len(newApp.postgresMaintenance) > 0 {
+			return preconditionErrorf("postgres_restore_required", "a PostgreSQL provider artifact with extensions cannot be rolled back over current shared data; restore the matching ANAS recovery point")
+		}
 		if !opts.rollback {
 			changes := settingChangesWithEffect(current, target, "image_rebuild")
 			if len(changes) > 0 && !target.ImagesBuilt {
@@ -1196,7 +1238,17 @@ func activateDeployment(base, id string, opts activateOptions) error {
 				return preconditionErrorf("temp_transition_failed", "%s", err.Error())
 			}
 		}
-		if !opts.rollback {
+		if pending != "" {
+			if err := verifyPostgresMaintenanceRecoveryPoint(base, current.ID, id); err != nil {
+				return err
+			}
+			// A previous compensation may have failed to stop part of the
+			// candidate. Confirm the stop again before retrying maintenance.
+			if err := newApp.stopRelease(newRoot, opts.json); err != nil {
+				return failuref("postgres_maintenance_quiesce_failed", "stop the failed PostgreSQL candidate before retrying maintenance: %v", err)
+			}
+			quiesced = true
+		} else if !opts.rollback {
 			quiesced, err = snapshotBeforeApply(base, opts, oldApp, oldRoot, current, target)
 			if err != nil {
 				if tempSwitch {
@@ -1207,6 +1259,11 @@ func activateDeployment(base, id string, opts activateOptions) error {
 					return failure
 				}
 				return err
+			}
+		}
+		if len(newApp.postgresMaintenance) > 0 && pending == "" {
+			if err := recordPostgresMaintenanceIntent(base, active, id); err != nil {
+				return failuref("write_failed", "record PostgreSQL maintenance intent before changing data: %v", err)
 			}
 		}
 	}
@@ -1358,6 +1415,17 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 		trigger = &applySnapshotTrigger{reason: snapshotReasonPreApply, detail: "--snapshot was requested"}
 	}
 	workspace := workspaceOf(base)
+	if len(postgresMaintenanceProviders(current, target)) > 0 {
+		if opts.noSnapshot {
+			return false, preconditionErrorf("postgres_recovery_point_required", "PostgreSQL extension maintenance cannot skip its ANAS recovery point")
+		}
+		if code, reason := snapshotUnavailable(workspace, target); code != "" {
+			return false, preconditionErrorf("postgres_recovery_point_required", "PostgreSQL extension maintenance requires an ANAS snapshot covering shared databases and coupled files: %s", reason)
+		}
+		if err := oldApp.validatePostgresRecoveryData(workspace); err != nil {
+			return false, preconditionErrorf("postgres_recovery_coverage_incomplete", "%s", err.Error())
+		}
+	}
 	if opts.noSnapshot {
 		deploymentWarning(opts.events, opts.json, trigger.reason, "%s", trigger.detail)
 		deploymentWarning(opts.events, opts.json, "no_snapshot_requested",
@@ -1372,6 +1440,10 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 	}
 	// Quiescing first: a snapshot taken while services are mid-write captures a
 	// crash-consistent database rather than a clean one.
+	images, err := prepareSnapshotImageInventory(deploymentArtifactDir(base, current.ID), oldApp.compose, oldApp.subprocessContext(), oldApp.restrictedProcessEnvironment, len(postgresMaintenanceProviders(current, target)) > 0)
+	if err != nil {
+		return false, preconditionErrorf("postgres_recovery_images_missing", "cannot capture the active deployment's exact images: %v", err)
+	}
 	if exists(temporaryStatePath(base)) {
 		registry, err := oldApp.loadTemporaryRegistry(false)
 		if err != nil {
@@ -1393,9 +1465,11 @@ func snapshotBeforeApply(base string, opts activateOptions, oldApp *app, oldRoot
 		kind: snapshotKindAuto, reason: trigger.reason,
 		from: current.ID, to: target.ID, json: opts.json, events: opts.events,
 		ctx: opts.ctx, restrictedProcessEnvironment: opts.restrictedProcessEnvironment,
+		imageInventory: images,
 	}); err != nil {
-		_ = startDeployment(oldApp, oldRoot, oldApp.order, opts.json)
-		return false, err
+		return false, recordActivationFailure(base, target.ID, "snapshot_failed", err, func() []map[string]any {
+			return []map[string]any{recoveryResult("previous_restore", startDeployment(oldApp, oldRoot, oldApp.order, opts.json))}
+		})
 	}
 	return true, nil
 }

@@ -219,13 +219,14 @@ a placeholder contract that has not been migrated.
 | --- | --- | --- | --- |
 | [`ai_agent`](/en/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
 | [`authentik`](/en/reference/modules/authentik/) | `identity` | `deprecated` | Identity provider serving OIDC and SAML with per-application endpoints. |
-| [`casdoor`](/en/reference/modules/casdoor/) | `identity` | `release` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
+| [`casdoor`](/en/reference/modules/casdoor/) | `identity` | `developing` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/en/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
 | [`ddns_go`](/en/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [`ddns_updater`](/en/reference/modules/ddns_updater/) | `network` | `release` | Dynamic DNS updater for the base domain and wildcard host. |
 | [`eturnal`](/en/reference/modules/eturnal/) | `communication` | `release` | TURN service used by realtime communication modules. |
 | [`forgejo`](/en/reference/modules/forgejo/) | `app` | `developing` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [`freeradius`](/en/reference/modules/freeradius/) | `network` | `developing` | RADIUS server module scaffold. |
+| [`immich`](/en/reference/modules/immich/) | `app` | `developing` | Photo and video upload, mobile backup, albums, and search with OIDC-only accounts. |
 | [`incus`](/en/reference/modules/incus/) | `compute` | `developing` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [`lam`](/en/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
 | [`lego`](/en/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
@@ -235,7 +236,7 @@ a placeholder contract that has not been migrated.
 | [`netbird`](/en/reference/modules/netbird/) | `network` | `developing` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |
 | [`nextcloud`](/en/reference/modules/nextcloud/) | `app` | `developing` | File sync, sharing, office integration, memories, and Talk. |
 | [`oauth2_proxy`](/en/reference/modules/oauth2_proxy/) | `identity` | `release` | Authenticated gate in front of services that have no login of their own. |
-| [`postgres`](/en/reference/modules/postgres/) | `database` | `release` | PostgreSQL database service with optional Adminer UI. |
+| [`postgres`](/en/reference/modules/postgres/) | `database` | `developing` | PostgreSQL database service with optional Adminer UI. |
 | [`samba_dc`](/en/reference/modules/samba_dc/) | `identity` | `release` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [`samba_fs`](/en/reference/modules/samba_fs/) | `storage` | `release` | File sharing service joined to the Samba domain. |
 | [`traefik`](/en/reference/modules/traefik/) | `network` | `release` | HTTPS reverse proxy and dashboard for all web-facing services. |

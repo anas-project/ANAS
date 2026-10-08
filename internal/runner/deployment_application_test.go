@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,125 @@ func TestCLIApplyCannotReplayActiveFrozenDeployment(t *testing.T) {
 	state, err := loadDeploymentState(base, id)
 	if err != nil || state.Status != "active" || !bytes.Equal(beforeJSON, afterJSON) {
 		t.Fatal("rejected active deployment replay changed its lifecycle state", err)
+	}
+}
+
+func TestCLIApplyFailedCandidateRequiresExactMaintenanceIntentAndRecoveryPoint(t *testing.T) {
+	for _, mode := range []string{"no-intent", "other-target", "missing-recovery"} {
+		t.Run(mode, func(t *testing.T) {
+			workspace := newWorkspace(t)
+			base, before, candidate := stateDir(workspace), "dep-before", "dep-candidate"
+			if err := saveDeploymentState(base, deploymentState{ID: before, Status: "active"}); err != nil {
+				t.Fatal(err)
+			}
+			active := &activeDeploymentState{ActiveDeployment: before, RuntimeStatus: "stopped"}
+			if err := saveActiveState(base, active); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "no-intent" {
+				target := candidate
+				if mode == "other-target" {
+					target = "dep-other"
+				}
+				if err := recordPostgresMaintenanceIntent(base, active, target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := saveDeploymentState(base, deploymentState{ID: candidate, Status: "failed"}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", nil).Apply(context.Background(), application.ApplyRequest{DeploymentID: candidate, Confirmed: true})
+			code := "deployment_not_ready"
+			if mode == "missing-recovery" {
+				code = "postgres_recovery_point_required"
+			}
+			assertDeploymentApplicationCode(t, err, application.ErrorKindFailedPrecondition, code)
+		})
+	}
+}
+
+func TestCLIApplyRetriesFailedFrozenMaintenanceCandidateAfterHookFailure(t *testing.T) {
+	fakeBtrfs(t)
+	fakeRecoveryImageCommands(t, "sha256:"+strings.Repeat("b", 64))
+	workspace, before := newSnapshotWorkspace(t)
+	base, candidate := stateDir(workspace), "dep-candidate"
+	artifact := deploymentArtifactDir(base, before)
+	moduleDir := filepath.Join(artifact, "modules", "core")
+	manifest, err := loadDeploymentManifest(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Modules["core"] = deploymentModule{Name: "core", Version: "18.4.0", Revision: 4, RuntimeType: "compose", ComposeFile: "docker-compose.yml", RenderDigest: "before", Providers: []ContractProvider{{Name: "relational_database", Interface: "postgres"}}, Hook: HookConfig{Command: []string{"sh", "hook.sh"}, Phases: []string{"after_start"}}}
+	for file, body := range map[string]string{
+		".env":               "CONTAINER_PREFIX=anas_test_\n",
+		"docker-compose.yml": "services:\n  service:\n    image: fixture-image\n",
+		"hook.sh":            "#!/bin/sh\ninput=$(cat)\ncase \"$input\" in *'\"ANAS_POSTGRES_EXTENSION_MAINTENANCE\":\"true\"'*) ;; *) exit 31 ;; esac\nif [ -f fail-maintenance ]; then exit 37; fi\nprintf '{}'\n",
+	} {
+		if err := os.WriteFile(filepath.Join(moduleDir, file), []byte(body), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeYAMLAtomic(filepath.Join(artifact, "deployment.yml"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := prepareSnapshotImageInventory(artifact, fakeRecoveryCompose(t), nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := createSnapshot(workspace, snapshotOptions{kind: snapshotKindAuto, reason: snapshotReasonPreApply, from: before, to: candidate, imageInventory: inventory}); err != nil {
+		t.Fatal(err)
+	}
+	candidateRoot := deploymentArtifactDir(base, candidate)
+	if _, err := copyDeploymentTree(artifact, candidateRoot); err != nil {
+		t.Fatal(err)
+	}
+	manifest.ID = candidate
+	module := manifest.Modules["core"]
+	module.RenderDigest = "after"
+	manifest.Modules["core"] = module
+	if err := writeYAMLAtomic(filepath.Join(candidateRoot, "deployment.yml"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveDeploymentState(base, deploymentState{ID: candidate, Status: "failed"}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := loadActiveState(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := recordPostgresMaintenanceIntent(base, active, candidate); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\ncase \"$*\" in *'config --services'*) printf 'service\\n';; esac\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	failure := filepath.Join(candidateRoot, "modules", "core", "fail-maintenance")
+	if err := os.WriteFile(failure, []byte("injected"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", nil)
+	request := application.ApplyRequest{DeploymentID: candidate, Confirmed: true}
+	_, err = service.Apply(context.Background(), request)
+	assertDeploymentApplicationCode(t, err, application.ErrorKindInternal, "start_failed")
+	state, err := loadDeploymentState(base, candidate)
+	if err != nil || state.Status != "failed" {
+		t.Fatal("hook failure did not preserve the retry candidate", state, err)
+	}
+	if pending, err := postgresMaintenancePending(base, before); err != nil || pending != candidate {
+		t.Fatal("maintenance uncertainty was lost after failure", pending, err)
+	}
+	if err := os.Remove(failure); err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Apply(context.Background(), request)
+	if err != nil || result.DeploymentID != candidate {
+		t.Fatal("public apply could not retry the qualified frozen candidate", result, err)
+	}
+	active, err = loadActiveState(base)
+	if err != nil || active.ActiveDeployment != candidate || active.RuntimeStatus != "running" {
+		t.Fatal("maintenance retry did not commit the candidate", active, err)
 	}
 }
 
@@ -308,5 +428,55 @@ func seedDeploymentPlanModuleView(t *testing.T, workspace string) {
 		ModuleRoot: filepath.Join(repoRoot(t), "modules"),
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLifecyclePreservesPostgresAndRestorePreconditionsBeforeCompose(t *testing.T) {
+	for _, action := range []application.LifecycleAction{application.LifecycleStart, application.LifecycleRestart} {
+		for _, restoring := range []bool{false, true} {
+			t.Run(string(action)+"/restore="+fmt.Sprint(restoring), func(t *testing.T) {
+				workspace := newWorkspace(t)
+				base, id := stateDir(workspace), "dep-before"
+				writeLifecycleDeploymentFixture(t, workspace, id)
+				if err := saveDeploymentState(base, deploymentState{ID: id, Status: "active"}); err != nil {
+					t.Fatal(err)
+				}
+				active := &activeDeploymentState{ActiveDeployment: id, RuntimeStatus: "stopped"}
+				if err := saveActiveState(base, active); err != nil {
+					t.Fatal(err)
+				}
+				var err error
+				code := "postgres_recovery_required"
+				if restoring {
+					err = beginDataRestoreGuard(base, id, "snapshot:incomplete")
+					code = "data_restore_incomplete"
+				} else {
+					err = recordPostgresMaintenanceIntent(base, active, "dep-candidate")
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				bin, called := t.TempDir(), filepath.Join(t.TempDir(), "docker-called")
+				t.Setenv("ANAS_TEST_DOCKER_CALLED", called)
+				if err := os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nprintf called > \"$ANAS_TEST_DOCKER_CALLED\"\nexit 0\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+				before, err := os.ReadFile(activeStatePath(base))
+				if err != nil {
+					t.Fatal(err)
+				}
+				service := newCLIDeploymentPlanService(workspace, workspaceConfigPath(workspace), "", nil)
+				_, err = service.ExecuteLifecycle(context.Background(), application.LifecycleRequest{Action: action})
+				assertDeploymentApplicationCode(t, err, application.ErrorKindFailedPrecondition, code)
+				after, err := os.ReadFile(activeStatePath(base))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(before, after) || exists(called) {
+					t.Fatal("blocked lifecycle changed state or reached Compose")
+				}
+			})
+		}
 	}
 }

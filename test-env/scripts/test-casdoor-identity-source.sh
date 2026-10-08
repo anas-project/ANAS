@@ -44,3 +44,7 @@ cp "$repo_root/test-env/fixtures/casdoor-identity-probe/identity_candidate_test.
 cp "$repo_root/test-env/fixtures/casdoor-identity-probe/revocation_test.go.in" object/anas_revocation_test.go
 printf 'casdoor_identity_runtime=source_functions counts_as_e2e=false runtime_enabled=true\n'
 go test -count=1 -v -run '^(TestANASDirectorySubjectCandidate|TestNewLogoutTokenClaims|TestCustomClaimsIncludeSessionID|TestANASDirectoryRevocationIsolation)$' ./object
+
+patch --batch --fuzz=0 -p1 <"$module_root/patches/0007-trusted-role-policy-revocation.patch"
+cp "$repo_root/test-env/fixtures/casdoor-identity-probe/policy_revocation_test.go.in" object/anas_policy_revocation_test.go
+go test -count=1 -v -run '^(TestANASTrustedRoleAndPolicyClaims|TestANASSignedPolicyLogout)$' ./object

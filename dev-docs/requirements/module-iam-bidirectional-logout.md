@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-21
-updated: 2026-08-28
+updated: 2026-10-03
 ---
 
 # 使用 OIDC/SAML 的 Module 双向登出要求
@@ -176,6 +176,14 @@ ANAS_IAM_CLIENT__<APP>__OIDC_LOGOUT_SESSION_REQUIRED=true
 
 上游应用没有标准通知 endpoint 时，Module 必须省略全部 `OIDC_LOGOUT_*` 字段，并在 README
 标记为“仅本地登出”或“只支持应用发起登出”。不得登记一个看似可用的普通退出页。
+
+准入丧失须区别于普通退出。当前选定事件扩展复用上述注册，Consumer 请求
+`OIDC_CAEP_EVENTS=session-revoked`，Provider 在自身 `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS`
+发布支持集合，Runner 只允许已支持交集、OIDC backchannel 和 `OIDC_LOGOUT_SESSION_REQUIRED=false`。
+字段属于 Provider-neutral 注册，不建立新的请求 ABI；不支持的组合在 render/启动前拒绝。
+签名 token 同时含标准 backchannel member 与 [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
+策略事件，绑定可信 issuer/sub_id 与原始撤权时间。普通登出不因此撤销独立 API key/分享；目录撤权
+必须处理既有凭据及延迟回调/创建竞态，重试不得撤销恢复准入后的新凭据。该选定事件扩展不声明完整 SSF 部署。
 
 ### 4.3 OIDC 多机制选择与降级
 

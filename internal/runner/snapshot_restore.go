@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/anas-project/ANAS/internal/compose"
 )
@@ -78,6 +77,28 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 		return nil, preconditionErrorf("not_btrfs",
 			"%s is not a Btrfs subvolume, so it cannot be replaced by one: %v", source, err)
 	}
+	active, err := loadActiveState(base)
+	if err != nil {
+		return nil, err
+	}
+	var preImages *snapshotImageInventory
+	if active.ActiveDeployment != "" {
+		preImages, err = prepareSnapshotImageInventory(deploymentArtifactDir(base, active.ActiveDeployment), compose.CLI{}, nil, false)
+		if err != nil {
+			return nil, failuref("image_capture_failed", "capture pre-restore images: %v", err)
+		}
+		if preImages != nil {
+			if err := (&app{}).validatePostgresRecoveryData(workspace); err != nil {
+				return nil, preconditionErrorf("postgres_recovery_coverage_incomplete", "%v", err)
+			}
+		}
+	}
+	if err := loadSnapshotImages(root); err != nil {
+		return nil, failuref("image_restore_failed", "restore matching snapshot images: %v", err)
+	}
+	if err := beginDataRestoreGuard(base, meta.DeploymentID, "snapshot:"+meta.ID); err != nil {
+		return nil, failuref("restore_failed", "persist data restore guard: %v", err)
+	}
 
 	// Stopping first: the containers hold open file descriptors into the data
 	// directory that is about to be renamed out from under them, and a service
@@ -101,6 +122,7 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 		// went on to overwrite it would leave the one thing that cannot be
 		// regenerated with no way back.
 		includeUserData: restoreUserData,
+		imageInventory:  preImages,
 	})
 	if err != nil {
 		return nil, err
@@ -140,27 +162,10 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 	if err := restoreDeploymentArtifact(root, base, meta.DeploymentID); err != nil {
 		return nil, failuref("restore_failed", "restore deployment %s: %v", meta.DeploymentID, err)
 	}
+	if err := pinRestoredSnapshotImages(root, deploymentArtifactDir(base, meta.DeploymentID)); err != nil {
+		return nil, failuref("image_restore_failed", "pin restored snapshot service images: %v", err)
+	}
 	restored = append(restored, "deployment")
-
-	if err := copyFileMode(snapshotMetaEntry(root, snapshotMetaStateName), deploymentStatePath(base, meta.DeploymentID), 0600); err != nil {
-		return nil, failuref("restore_failed", "restore deployment state: %v", err)
-	}
-	// active.yml is regenerated rather than copied. The snapshot's own
-	// deployment_id already says which deployment was active; a copied
-	// active.yml would additionally assert a previous_deployments history
-	// pointing at deployments this snapshot does not contain.
-	now := time.Now().UTC().Format(time.RFC3339)
-	if err := saveActiveState(base, &activeDeploymentState{
-		APIVersion: activeStateVersion, ActiveDeployment: meta.DeploymentID,
-		RuntimeStatus: "stopped",
-		ActivatedAt:   now, VerifiedAt: now,
-	}); err != nil {
-		return nil, failuref("restore_failed", "rewrite active.yml: %v", err)
-	}
-	if err := rebuildDeploymentIndex(base); err != nil {
-		return nil, err
-	}
-	restored = append(restored, "state")
 
 	emitProgress(jsonMode, "restore-data", 0, 0, "bytes")
 	if err := restoreDataSubvolume(snapshotDataPath(root), source, meta.ID); err != nil {
@@ -183,6 +188,10 @@ func restoreSnapshot(workspace string, meta *snapshotMeta, restoreUserData, json
 	if err := rebuildSnapshotIndex(workspace); err != nil {
 		return nil, err
 	}
+	if err := finishDataRestore(base, snapshotMetaEntry(root, snapshotMetaStateName), meta.DeploymentID, "snapshot:"+meta.ID); err != nil {
+		return nil, failuref("restore_failed", "commit restored deployment state: %v", err)
+	}
+	restored = append(restored, "state")
 	return &restoreOutcome{
 		Workspace: workspace, RestoredFrom: meta.ID, PreRestoreSnapshot: pre.ID,
 		Restored: restored, DeploymentID: meta.DeploymentID,
@@ -256,6 +265,20 @@ func stopActiveDeployment(base string) error {
 	}
 	if err := requireLocalDeploymentWorkspace(base, active.ActiveDeployment); err != nil {
 		return err
+	}
+	manifest, err := loadDeploymentManifest(deploymentArtifactDir(base, active.ActiveDeployment))
+	if err != nil {
+		return err
+	}
+	hasCompose := false
+	for _, module := range manifest.Modules {
+		if module.RuntimeType == "compose" {
+			hasCompose = true
+			break
+		}
+	}
+	if !hasCompose {
+		return nil
 	}
 	cli, err := compose.Detect()
 	if err != nil {

@@ -18,8 +18,10 @@ export SAMBA_DC_SERVER_STRING="${SAMBA_DC_SERVER_STRING:-'Samba Domain Controlle
 
 if [ ! -f /etc/timezone ] && [ ! -z "$TZ" ]; then
   echo 'Set timezone'
-  cp /usr/share/zoneinfo/$TZ /etc/localtime
-  echo $TZ >/etc/timezone
+  if [ ! "/usr/share/zoneinfo/$TZ" -ef /etc/localtime ]; then
+    cp "/usr/share/zoneinfo/$TZ" /etc/localtime
+  fi
+  printf '%s\n' "$TZ" >/etc/timezone
 fi
 
 # Cores must exist before samba runs, not after: provisioning already starts

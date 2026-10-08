@@ -32,8 +32,8 @@
 ```
 
 **快照必须自足到仅凭自身即可恢复系统。** 送到外部盘之后那边没有 `.anas`，所以
-config、lock、secrets、可运行制品、数据全部是实体副本而非引用。唯一无法覆盖的是
-上游基础镜像（需要 registry），见"恢复语义"。
+config、lock、secrets、可运行制品、数据全部是实体副本而非引用。PG Resource 的镜像归档见
+下文“PostgreSQL 扩展恢复点”；其他 workspace 的上游基础镜像仍需要 registry。
 
 `config.yml` 与 `secrets.yml` 含明文密钥，`local-admins.yml` 虽不含密码但属于
 安全库存，故 `snapshots/` 整体 0700、`meta/` 下文件 0600。恢复时三者必须一起回滚，
@@ -125,8 +125,8 @@ deployment 无法回收。
 data 一同回退是自洽的，但"只恢复 meta 保留当前 data"会造成密钥与数据错配，CLI 必须
 拒绝该组合。
 
-恢复后仍需从 registry 拉取上游基础镜像。完全离线恢复需要 `docker save` 级别的镜像
-归档，属二期 `--include-images` 范围。
+PG Resource 的恢复点自动包含运行镜像 archive；其他 workspace 恢复仍需 registry 或构建环境。
+通用 `--include-images` 选项尚未交付。
 
 ## 真相源
 
@@ -690,10 +690,12 @@ anas snapshot restore <id> -w <workspace> [--dry-run] [-y] [--json]
 
 | 树 | 内容 | 快照默认 | restore 默认 |
 |---|---|---|---|
-| `<workspace>/data` | 应用状态（数据库、AD 库、证书） | **总是包含** | **总是还原** |
-| `<workspace>/userdata` | 用户自己存的文件 | **不包含** | **不还原** |
+| `<workspace>/data` | 应用状态，以及必须与数据库共同恢复的文件 | **总是包含** | **总是还原** |
+| `<workspace>/userdata` | 脱离数据库可独立使用、或数据库仅为可重建辅助索引的内容 | **不包含** | **不还原** |
 
-分开的理由是正确性而非整洁：restore 会整体替换 `data/`，用户文件若在里面，**每次部署回滚都会删掉快照之后保存的文件**——那些文件和被回滚的部署毫无关系。
+restore 会整体替换 `data/`，其中的数据库和耦合文件一起回到恢复点，快照后新增内容可能丢失。
+目录归属规则统一见[Module 开发规范](/developer/module-development#持久数据归属)；本节只说明快照覆盖
+和恢复行为，不改变现有参数默认值。
 
 `snapshot.yml` 用 `coverage` 记录每棵树捕获与否，未捕获时给出原因：
 
@@ -718,3 +720,21 @@ coverage:
 - `anas snapshot restore <id> [--restore-userdata]` —— 默认不还原；交互式终端会额外问一次；`-y` 走默认值（不还原），因为它的意思是"别问我"而不是"做更狠的那个"
 - 自动的 pre-apply 快照**永不包含** userdata
 - `anas backup create [--skip-userdata]` —— **默认包含**，方向与快照相反：备份是为了盘挂了还能回来，用户文件是唯一 redeploy 补不回来的部分
+
+## PostgreSQL 扩展恢复点
+
+有 PostgreSQL Resource 绑定的 Provider 制品变化必须停全 workspace 并取得 ANAS Btrfs 恢复点，
+不能用 `--no-snapshot` 绕过。嵌套子卷、外部挂载和逃出 data 的符号链接会被拒绝，因为父快照
+无法完整覆盖其内容。真实容器镜像 ID 与经过完整性校验的 Docker archive 进入
+`meta/compose-images.yml`、`meta/compose-images.tar`，沿既有备份 metadata 通道传输。
+恢复加载 archive，并仅将恢复制品的 service 镜像固定为原 ID，不重打其他部署的镜像标签。
+镜像归档会增加空间和停机时间。删除扩展声明后仍可能保留扩展，因此普通 PG 请求及保留的 Provider 同样受保护。
+手动 PG snapshot 也先捕获实际镜像，沿既有容器事务停全 workspace，快照完成后再恢复运行；
+容器运行状态无法可靠读取时拒绝生成。恢复前的 PG 保护快照在停写前捕获当前运行镜像。
+
+失败或中断后消费者保持停止；重试同一冻结候选并检查原恢复点。旧制品须先做匹配的 ANAS 数据恢复。
+恢复先持久记录未完成保护，全部 data/userdata、制品及配置/Secret 操作成功后才提交 state/active。
+中途失败会阻止 start/apply 和旧备份事务的自动重启；成功恢复后才解除保护。
+代码接线不等于真实主机或全 workspace 恢复已经验收；剩余证据记录在 PostgreSQL/Immich 计划。
+
+目标构建前，Runner 为当前 PG workspace 的实际运行镜像建立 workspace/服务专属本地保留引用。Docker 的 containerd 镜像存储可能在构建替换标签后无法按旧 ID 导出；这些固定服务引用随下一次构建更新，不推送、不改动其他部署标签。恢复点仍按不可变 ID 导出无标签 archive，服务停写后才捕获数据。
