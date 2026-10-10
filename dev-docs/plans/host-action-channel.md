@@ -67,7 +67,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | M0：通道形态、授权与审计 | R-001—R-004 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；完整矩阵与其他动作独立验收 |
 | M1：入口划分与升级绑定 | R-005、R-006、R-017 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
-| M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收；2026-10-10 修复计划参数规范化与控制台丢失端口范围（§15），23 项门禁待在新构建上重跑 |
+| M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收；2026-10-10 修复计划参数规范化与控制台丢失端口范围，2026-10-11 新构建 23 项门禁通过（§15） |
 | M4：动作清单治理 | R-012、R-013 | 实施中；anas host actions 已提供本机编译清单；服务端清单、定期复审与特权写动作评审仍待办 |
 | M5：边界内同步动作 | R-014、R-015 | 实施中；2026-10-03 实现 `incus.traefik.sync` 与 `incus.ports.sync`：参数恒为 `{}`，需 `incus.configure` 的批准，hostd 自己读取 Docker 与冻结部署，原子替换并读回，经共享队列与审计，由 anasd 以系统身份触发；单元与拒绝调用方条目的测试通过，实机运行随 Incus M10a/M11c 的 e2e（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），设计见[宿主通道架构](../../docs/architecture/host-action-channel.md) §15 |
 | M6：身份链简化与调用记录 | R-016 | 实施中；2026-09-30 实现完成：对端只认 root/root，调用记录与 `host.invocation.status` 取代回连 broker 和 systemd 退出观察，见 §14；Linux 原生门禁通过，实机审批门禁在 Ubuntu 26.04 与 Debian 13 上各 23/23 通过；anasd 重启时的结清尚未实现 |
@@ -115,6 +115,7 @@ Linux 专属 peer/文件系统测试须分开记录，交叉编译不等于原�
 | R-004 | `test-env/scripts/server-incus-host-action-e2e.py` | CLI stdin 会话及真实 HTTPS API，共享 job/确认/执行 | 2026-09-23 | 实际链路通过；不声称已操作浏览器 UI 或已验全部动作 |
 | R-011 | `test-env/scripts/server-incus-host-action-e2e.py` | 真实五分钟到期，不改时钟/ledger，旧计划不续签，新计划可执行 | 2026-09-23 | API/CLI 原生通过；浏览器重新展示和勾选的视觉交互仍待验收 |
 | R-016 | `test-env/scripts/server-incus-host-action-e2e.py`（`shared_jobs_and_invocation_records`）与 `test-env/scripts/test-host-action-native.sh` | 全新 Ubuntu 26.04 与 Debian 13 amd64 VM，已安装 root systemd 服务，`0.0.0-native.31`；一次性 Debian 13 VM 里的非 root Linux 原生用例 | 2026-09-30 | 审批门禁 23/23 通过：14 个共享 job 各有一份带终态的 hostd 调用记录且结果一致，另有 14 次激活；控制桥四项直接连 Incus 网关；Debian 13 重试同样 23/23，见 [本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md) §5 |
+| R-003、R-004、R-010、R-011、R-014、R-016 | `test-env/scripts/server-incus-host-action-e2e.py` | ln 一次性 QEMU VM，Ubuntu 26.04 cloud image（`4908fb59…`），VM 内 `docker.io` 29.1.3，已安装 root systemd 服务，`0.0.0-native.20261011.1`（master `d0cb28c3`） | 2026-10-11 | **23/23 通过**（§15）：全部计划请求都不带端口范围，`incus.configure` 确认的是默认范围；14 个共享 job 成功且各有一份调用记录；卸载删除 4 个受管包；证据归档 `8f182de4…6229`；正常关机，宿主 10 项基线一致。实验根 `/data/anas-incus-hostaction-20261011.v3BUw2`（不入 Git） |
 
 ## 5. 文档同步
 
@@ -301,5 +302,20 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
     解码测试通过，去掉范围即摘要不符；
   - `HOSTACT-R-009`—`R-011` 的存储往返（`TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff`）改用写明默认
     范围的规范化请求后通过。
-- **待办**：在含本修复的构建上重跑 23 项审批门禁；浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 的受限
-  恢复动作仍未实现，finance 上被拦截的队列只能在测试机上重置作业状态解除。
+- **实机结果（2026-10-11）**：
+  - 构建：master `d0cb28c3`，`scripts/ci/build-anas-release.sh` amd64，`0.0.0-native.20261011.1`，归档 SHA-256
+    `9f76547d…a34c`；`anas` `de51a3d5…`、`anasd` `d17f78c4…`、`anas-hostd` `4ff1f4c7…`；e2e 脚本 `d9f889c1…`。
+  - 23 项审批门禁：ln 上的一次性 QEMU VM（Ubuntu 26.04，VM 内 `docker.io` 29.1.3）**23/23 通过**，第一轮即通过。
+    `HOSTACT-R-003`、`R-004`、`R-010`、`R-011`、`R-016` 同 2026-09-30 的覆盖；`R-014`：脚本的 install/configure/enroll/
+    uninstall 计划都不带端口范围，确认与执行均成功。14 个共享 job、14 份 hostd 调用记录；卸载删除 4 个受管包；证据
+    归档 `8f182de4…6229`；正常关机，宿主 10 项基线一致，VM 磁盘已删。原始日志在 ln
+    `/data/anas-incus-hostaction-20261011.v3BUw2/r1-n20261011-ubuntu2604/reports/`（不入 Git）。外层所有者脚本沿用
+    2026-09-30 的 `hostaction-lab.py`，未改。
+  - finance.hlong.wang：换装同一归档的 `anas`、`anasd`、`anas-hostd`，`/etc/anas/hostd.json` 改为新 release，单元文件
+    不变（与归档一致），旧文件备份在 `/tmp/anas-deploy-20261011/prev/`。重启后 anasd 与 hostd socket 正常，c397e92e
+    上每 30 秒一次的 `Traefik event stream stopped: exit status 64`（Docker 29 的 `docker events` 格式缺陷）不再出现。
+    那台机器上的作业存储已在 2026-10-10 20:13 被另一会话换新，没有 `execution_containment_lost` 记录，所以无需重置；
+    新存储里 c397e92e 的两次 `incus.configure` 以 `incus_host_action_failed` 失败，原因未从日志取得，新构建在 VM 中
+    configure 通过，但 finance 上没有 owner 会话，未重试。
+- **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 的受限恢复动作仍未实现；finance 上的
+  `incus.configure` 需由持有 owner 会话的操作者在新构建上重试。

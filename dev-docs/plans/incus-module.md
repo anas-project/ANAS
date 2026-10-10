@@ -1476,9 +1476,12 @@ e2e 记录中的相应行保留为历史。
     通过，旧控制台代码上失败；`TestOpenAPIHostActionRequestsAndResponsesMatchTypedHandlers` 通过，旧 OpenAPI 上失败。
   - `TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff` 的夹具改用写明默认范围的规范化请求，经真实
     Store、确认签发与消费、执行器交接到 hostd 解码，通过。
-- **未执行**：finance 上没有重跑；浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）。finance 上那条
-  `execution_containment_lost` 作业仍阻断宿主队列：受限恢复动作尚未实现（[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §5.1.7「动作执行失联后的持久化拦截」），
-  只能在这台测试机上换用含修复的构建并重置 ANAS 作业状态。
+- **实机结果（2026-10-11）**：master `d0cb28c3`（`0.0.0-native.20261011.1`）在 ln 一次性 VM（Ubuntu 26.04）上的宿主动作
+  23 项审批门禁 23/23 通过，计划请求都不带端口范围，`incus.configure` 确认默认范围（`INCUS-R-153`）；同一归档已装到
+  finance，详见[宿主通道计划](host-action-channel.md) §15。finance 的作业存储在 2026-10-10 20:13 已由另一会话换新，
+  不再有被拦截的作业；2026-10-10 记录时推断那里的宿主队列仍被阻断，核实不成立。
+- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；finance 上 `incus.configure` 未在新构建上重试
+  （没有 owner 会话）。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 
