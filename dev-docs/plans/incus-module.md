@@ -1480,8 +1480,10 @@ e2e 记录中的相应行保留为历史。
   23 项审批门禁 23/23 通过，计划请求都不带端口范围，`incus.configure` 确认默认范围（`INCUS-R-153`）；同一归档已装到
   finance，详见[宿主通道计划](host-action-channel.md) §15。finance 的作业存储在 2026-10-10 20:13 已由另一会话换新，
   不再有被拦截的作业；2026-10-10 记录时推断那里的宿主队列仍被阻断，核实不成立。
-- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；finance 上 `incus.configure` 未在新构建上重试
-  （没有 owner 会话）。
+- **finance 重试（2026-10-11）**：重置控制台存储并重新登记 owner 后，新构建上不带端口范围的 `incus.configure.plan`
+  成功、确认参数写明默认范围；但宿主状态里旧构建留下 `configure.traefik-address-set` 的 failed intent（Incus 201
+  缺陷），计划阻断为 `host_effect_recovery_required`，configure 与 uninstall 都不能继续，见宿主通道计划 §15。
+- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；finance 上 failed intent 的恢复方式待操作者决定。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 

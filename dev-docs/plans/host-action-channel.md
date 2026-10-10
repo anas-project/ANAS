@@ -314,8 +314,12 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
   - finance.hlong.wang：换装同一归档的 `anas`、`anasd`、`anas-hostd`，`/etc/anas/hostd.json` 改为新 release，单元文件
     不变（与归档一致），旧文件备份在 `/tmp/anas-deploy-20261011/prev/`。重启后 anasd 与 hostd socket 正常，c397e92e
     上每 30 秒一次的 `Traefik event stream stopped: exit status 64`（Docker 29 的 `docker events` 格式缺陷）不再出现。
-    那台机器上的作业存储已在 2026-10-10 20:13 被另一会话换新，没有 `execution_containment_lost` 记录，所以无需重置；
-    新存储里 c397e92e 的两次 `incus.configure` 以 `incus_host_action_failed` 失败，原因未从日志取得，新构建在 VM 中
-    configure 通过，但 finance 上没有 owner 会话，未重试。
-- **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 的受限恢复动作仍未实现；finance 上的
-  `incus.configure` 需由持有 owner 会话的操作者在新构建上重试。
+    那台机器上的作业存储已在 2026-10-10 20:13 被另一会话换新，没有 `execution_containment_lost` 记录。之后按操作者要求
+    把控制台存储与确认账本改名移走（`/var/lib/anas/console.reset-20261011T0552`、`/run/anas/confirmations.reset-20261011T0552`），
+    用 `anas console token` 重新登记 owner（随机口令只存于 finance 的 `/root/anas-console-owner-password`，root 0600），
+    在工作区 `a` 重试 `incus.configure`：不带端口范围的计划成功，确认参数写明 30000–32767（`HOSTACT-R-014` 在实机上
+    通过）；但计划阻断为 `host_effect_recovery_required`、没有步骤，执行按设计失败。原因是宿主状态里 c397e92e 留下的
+    `configure.traefik-address-set` intent 为 `failed`（2026-10-10 12:24 UTC），即 efb3fa7c 修复的 Incus 201 缺陷；
+    设计不允许自动恢复或改写 failed intent，`incus.uninstall` 同样被阻断。
+- **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 与 failed host intent 的受限恢复动作都未实现；
+  finance 上的 Incus 宿主供给需操作者决定恢复方式后才能继续 configure。
