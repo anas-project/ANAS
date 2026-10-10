@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/hostaction"
 	"github.com/anas-project/ANAS/internal/hostconfirmation"
+	"github.com/anas-project/ANAS/internal/incusprovision"
 )
 
 func TestHostTypedRoutesRejectAmbiguousJSONBeforeAdmission(t *testing.T) {
@@ -107,6 +109,20 @@ func TestOpenAPIHostActionRequestsAndResponsesMatchTypedHandlers(t *testing.T) {
 	request := objectAt(t, schemas, "IncusHostRequest")
 	if request["additionalProperties"] != false {
 		t.Fatal("host request schema allows arbitrary properties")
+	}
+	// Plans return the normalized request and apply must send it back, so
+	// every request field hostd accepts has to be documented (the port range
+	// was missing, and the console dropped it).
+	documented := objectAt(t, request, "properties")
+	fields := reflect.TypeOf(incusprovision.Request{})
+	for i := range fields.NumField() {
+		name, _, _ := strings.Cut(fields.Field(i).Tag.Get("json"), ",")
+		if _, ok := documented[name]; !ok {
+			t.Fatalf("IncusHostRequest does not document %q", name)
+		}
+	}
+	if len(documented) != fields.NumField() {
+		t.Fatal("IncusHostRequest documents a field hostd does not accept")
 	}
 	for _, phase := range []string{"plan", "apply"} {
 		operation := objectAt(t, objectAt(t, paths, "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/"+phase), "post")

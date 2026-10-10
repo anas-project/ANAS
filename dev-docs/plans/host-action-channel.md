@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-09-04
-updated: 2026-10-03
+updated: 2026-10-10
 ---
 
 # 宿主特权动作通道实施计划
@@ -67,7 +67,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | M0：通道形态、授权与审计 | R-001—R-004 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；完整矩阵与其他动作独立验收 |
 | M1：入口划分与升级绑定 | R-005、R-006、R-017 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
-| M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收 |
+| M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收；2026-10-10 修复计划参数规范化与控制台丢失端口范围（§15），23 项门禁待在新构建上重跑 |
 | M4：动作清单治理 | R-012、R-013 | 实施中；anas host actions 已提供本机编译清单；服务端清单、定期复审与特权写动作评审仍待办 |
 | M5：边界内同步动作 | R-014、R-015 | 实施中；2026-10-03 实现 `incus.traefik.sync` 与 `incus.ports.sync`：参数恒为 `{}`，需 `incus.configure` 的批准，hostd 自己读取 Docker 与冻结部署，原子替换并读回，经共享队列与审计，由 anasd 以系统身份触发；单元与拒绝调用方条目的测试通过，实机运行随 Incus M10a/M11c 的 e2e（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），设计见[宿主通道架构](../../docs/architecture/host-action-channel.md) §15 |
 | M6：身份链简化与调用记录 | R-016 | 实施中；2026-09-30 实现完成：对端只认 root/root，调用记录与 `host.invocation.status` 取代回连 broker 和 systemd 退出观察，见 §14；Linux 原生门禁通过，实机审批门禁在 Ubuntu 26.04 与 Debian 13 上各 23/23 通过；anasd 重启时的结清尚未实现 |
@@ -282,3 +282,24 @@ M0/M1 和 Incus M10 保持实施中；单元通过不登记 Linux/systemd/Incus/
 
 同日删除转发许可与观察配置/HTTP 观察三组宿主动作（`incus.forwarding.*`、`incus.ingress.observer*`、
 `incus.ingress.observe_http`）；上文 §1 与 2026-09-21 各节里关于它们的五问评审只作历史记录。
+
+## 15. 2026-10-10：计划参数规范化与端口范围确认
+
+finance.hlong.wang（Ubuntu 26.04，master `c397e92e` 原生构建）上，不带端口范围的 `incus.install.plan` 在 hostd 成功，
+anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦截。根因是 Incus 计划把调用方原始请求放进待确认
+参数，而 `5c75aa99` 起 hostd 的规范化请求会填入默认端口范围，公开投影要求二者相等；`efb3fa7c` 已改为确认规范化请求。
+复核时另发现浏览器控制台重建 apply 参数会丢掉端口范围、OpenAPI 未写这两个字段，本次一并修复。经过与逐项测试见
+[Incus 计划](incus-module.md) §14.3，设计见
+[宿主通道架构](../../docs/architecture/host-action-channel.md) §13 与[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §5.1.8。
+
+- **为什么 23 项门禁没有发现**：最近一次 `server-incus-host-action-e2e.py` 23/23 是 2026-09-30 的 `0.0.0-native.31`，
+  早于 `5c75aa99`（2026-10-04）。该脚本的计划请求本来就不带端口范围，在 `5c75aa99` 之后、`efb3fa7c` 之前的构建上重跑
+  会在第一个计划阶段失败；它之后没有再跑过。缺陷首次在 Incus 租约网络验收 r16（2026-10-08）中出现并修复。
+- **结果（按需求 ID，本机单元，未在实机重跑）**：
+  - `HOSTACT-R-010`：控制台与 CLI 都原样送回计划的 `parameters`；vitest 用例与 OpenAPI 字段契约测试通过，修复前失败；
+  - `HOSTACT-R-014`：操作者确认的端口范围写在待确认参数里并进入参数摘要；四个 Incus 计划动作的投影、确认摘要与 hostd
+    解码测试通过，去掉范围即摘要不符；
+  - `HOSTACT-R-009`—`R-011` 的存储往返（`TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff`）改用写明默认
+    范围的规范化请求后通过。
+- **待办**：在含本修复的构建上重跑 23 项审批门禁；浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 的受限
+  恢复动作仍未实现，finance 上被拦截的队列只能在测试机上重置作业状态解除。

@@ -51,6 +51,26 @@ describe("Incus approval workflow", () => {
     }
   })
 
+  // The server fills in the default range and binds the confirmation to it;
+  // dropping it changes the confirmed parameters and the apply is refused.
+  it("preserves the server's approved port range through approval", async () => {
+    const { flow, api } = fixture()
+    const response = plan()
+    const request = (response.job.result?.value as { parameters: { request: Record<string, unknown> } }).parameters.request
+    request.port_range_first = 30000
+    request.port_range_last = 32767
+    vi.mocked(api.plan).mockResolvedValueOnce(response)
+    await flow.prepare(input)
+    await flow.execute(input, true)
+    expect(vi.mocked(api.apply).mock.calls[0]?.[3].request).toEqual({ ...input.request, port_range_first: 30000, port_range_last: 32767 })
+    flow.dispose()
+    for (const [first, last] of [[30000, undefined], [undefined, 32767], [1023, 32767], [30000, 65536], [32767, 30000], ["30000", 32767], [30000.5, 32767]]) {
+      request.port_range_first = first
+      request.port_range_last = last
+      expect(() => readIncusPlan(response, input, "plan-1")).toThrow()
+    }
+  })
+
   it("shows the server plan and applies only after explicit approval without exposing the token", async () => {
     const { flow, api, changed } = fixture()
     await flow.prepare(input)

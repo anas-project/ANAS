@@ -1355,6 +1355,10 @@ export interface components {
             storage_size_gib?: number;
             /** @description Frozen mainland distribution-package mirror choice. Install plans resolve it from the managed workspace CHINESE_SPEEDUP setting; apply must preserve the returned value. Incus packages retain the fixed Zabbly source. */
             chinese_speedup?: boolean;
+            /** @description First host port the operator approves for compute port bindings. Omitting both port range fields selects 30000-32767; the plan returns the explicit range and apply must preserve it. */
+            port_range_first?: number;
+            /** @description Last host port of the approved range, inclusive and not below port_range_first. */
+            port_range_last?: number;
         };
         IncusHostApplyParameters: {
             /** @constant */

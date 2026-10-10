@@ -876,7 +876,7 @@ removed by `incus.uninstall`:
 | --- | --- | --- |
 | FORWARD static rules (`anas-lease-forward-1`-`6`) | Appended after Docker's rules: lease bridge forwarding is left to the ACL; from a lease bridge to a Docker bridge only connections Docker translated are admitted (`INCUS-R-126`) | configure and boot restore only |
 | address set `anas-traefik` | The Traefik containers' current addresses, which hostd reads from Docker itself | sync action `incus.traefik.sync`, triggered by anasd at start and on Traefik container starts (`INCUS-R-118`) |
-| `/var/lib/anas/incus-host/network.json` | The port binding range the operator approved; the incus Hook reads it for Core (`INCUS_PORT_BINDING_RANGE`) | configure only |
+| `/var/lib/anas/incus-host/network.json` | The port binding range the operator approved (30000-32767 when the request omits it; the plan writes it into the parameters to confirm and apply sends them back unchanged); the incus Hook reads it for Core (`INCUS_PORT_BINDING_RANGE`) | configure only |
 | nft table `inet anas_incus_ports` | The Docker-style chain: traffic addressed to the host itself (`fib daddr type local`, loopback excepted) is DNATed through four port maps | the chain by configure; the maps only by the sync action `incus.ports.sync` |
 | systemd units `anas-port-{tcp,udp}@<port>.{socket,service}` | One pair per binding in effect: an `Accept=no` socket holds the port and a resident `sleep infinity` (`DynamicUser=yes`) keeps it | the sync action, taking new holds before releasing old ones |
 | `anas-incus-network.service` | Runs `anas-hostd --restore-network` at boot, after Docker and before Incus | configure only |

@@ -1450,6 +1450,36 @@ e2e 记录中的相应行保留为历史。
   R-096 见 compute Contract 技术文档 `auth: none` 处的说明。
 - **未覆盖**：ARM64、VM 档与其他发行版。
 
+### 14.3 2026-10-10 finance.hlong.wang：省略端口范围的计划被判为执行无法确认
+
+- **现象**：finance.hlong.wang（Ubuntu 26.04）运行 master `c397e92e` 的原生构建。请求不带端口范围的
+  `incus.install.plan`（`{"interface":"incus_container","storage_size_gib":16}`，即
+  `server-incus-host-action-e2e.py` 发送的形状）在 hostd 成功，anasd 却把作业记为 `interrupted`/
+  `execution_containment_lost`；此后 `HostActionService.advance` 遇到这条记录就拒绝执行任何宿主动作，直到显式恢复。
+- **根因**：与 §14.1 第 1 项相同。`5c75aa99`（M11c 端口绑定）让 `incusprovision.Request.normalized()` 填入默认范围
+  30000–32767，而 `buildProvisionPlanValue` 仍把调用方的原始请求放进待确认参数，`ProjectActionEvent` 要求它与
+  `inspect.Plan.Request` 相等，于是拒绝终态事件，执行器结清时再投影一次仍失败，记为 containment 丢失。修复随
+  `efb3fa7c` 合入 master，在 `c397e92e` 之后，所以 finance 上的构建没有它；r16、r26、r27 测的是含修复的工作树快照。
+  确认绑定没有放宽：参数摘要按写明范围的参数计算，hostd 执行时按同一份参数重算摘要并比对。
+- **复核新发现（已修复）**：浏览器控制台的 `readIncusPlan`（`web/src/maintenance/incus-flow.ts`）按已知字段逐个重建
+  apply 参数，丢掉 `port_range_first`/`port_range_last`；OpenAPI 的 `IncusHostRequest` 也没有这两个字段（且
+  `additionalProperties: false`）。计划写明范围后，控制台页面的确认 apply 会因参数摘要不符被 anasd 拒绝（不产生宿主
+  效果）。§14.1、§14.2 记作「控制台审批」的阶段实际是 CLI 经控制台 HTTPS API 原样送回计划参数，没有经过浏览器页面，
+  所以没有发现。现在控制台校验并保留服务端返回的范围，OpenAPI 写明两个字段，契约测试比对 OpenAPI 与
+  `incusprovision.Request` 的字段集合。
+- **结果（按需求 ID，本机）**：
+  - `INCUS-R-153`、`HOSTACT-R-014`：`TestProvisionPlanConfirmsTheNormalizedRequest` 对 install/configure/enroll/uninstall
+    四个计划动作，从不带范围的请求生成计划值，经 `ProjectActionEvent` 投影，再按 anasd 确认路径
+    （`CanonicalParameters` + `FrozenRequest`）重算摘要与 `parameters_digest` 一致，hostd 的 `DecodeApplyParameters`
+    解出默认范围，去掉范围的参数摘要不同。通过；回退修复后在投影处失败。
+  - `HOSTACT-R-010`（CLI 与 Web 用同一确认机制）：vitest `preserves the server's approved port range through approval`
+    通过，旧控制台代码上失败；`TestOpenAPIHostActionRequestsAndResponsesMatchTypedHandlers` 通过，旧 OpenAPI 上失败。
+  - `TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff` 的夹具改用写明默认范围的规范化请求，经真实
+    Store、确认签发与消费、执行器交接到 hostd 解码，通过。
+- **未执行**：finance 上没有重跑；浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）。finance 上那条
+  `execution_containment_lost` 作业仍阻断宿主队列：受限恢复动作尚未实现（[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §5.1.7「动作执行失联后的持久化拦截」），
+  只能在这台测试机上换用含修复的构建并重置 ANAS 作业状态。
+
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 
 需求见[Incus 要求](../requirements/incus-module.md) §7septies 与 `INCUS-R-130`—`R-164`（`R-130` 归 M10a、`R-159`

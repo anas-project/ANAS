@@ -45,7 +45,10 @@ func TestConfirmedIncusPlanSurvivesQueuePersistenceAndExecutorHandoff(t *testing
 		t.Fatal("confirmed action re-read workspace policy instead of the frozen plan")
 		return false, nil
 	}
-	request := incusprovision.Request{Interface: "incus_container", StorageSizeGiB: 64, ChineseSpeedup: true}
+	// hostd's plan normalizes the empty request: defaults, the frozen mirror
+	// choice and the default port range are explicit in what is confirmed.
+	request := incusprovision.Request{Interface: "incus_container", StorageSizeGiB: 64, ChineseSpeedup: true,
+		PortRangeFirst: incusprovision.DefaultPortRangeFirst, PortRangeLast: incusprovision.DefaultPortRangeLast}
 	params := hostaction.IncusApplyParameters{Schema: "anas.host-action.incus/v1", Request: request,
 		Binding: incusprovision.Binding{Schema: incusprovision.Schema, Phase: incusprovision.PhaseInstall, PlanDigest: strings.Repeat("b", 64), Destructive: true}}
 	body, err := json.Marshal(params)

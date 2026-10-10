@@ -719,7 +719,7 @@ HTTP 发布不经过本 Module 的 Provider operation：Provider 只按冻结的
 | --- | --- | --- |
 | FORWARD 静态规则（`anas-lease-forward-1`—`6`） | 追加在 Docker 规则之后：租约网桥的转发交给 ACL；从租约网桥到 Docker 网桥只放行 Docker 已 DNAT 的连接（`INCUS-R-126`） | 只在 configure 与开机恢复时 |
 | address set `anas-traefik` | Traefik 容器的当前地址，hostd 自己从 Docker 读取 | 同步动作 `incus.traefik.sync`：anasd 在启动时与 Traefik 容器启动时触发（`INCUS-R-118`） |
-| `/var/lib/anas/incus-host/network.json` | 操作者批准的端口绑定范围；incus Hook 读取后交给 Core（`INCUS_PORT_BINDING_RANGE`） | 只在 configure |
+| `/var/lib/anas/incus-host/network.json` | 操作者批准的端口绑定范围（请求省略时为 30000–32767，计划把它写进待确认参数，apply 原样送回）；incus Hook 读取后交给 Core（`INCUS_PORT_BINDING_RANGE`） | 只在 configure |
 | nft 表 `inet anas_incus_ports` | Docker 式规则链：目的地址是本机（`fib daddr type local`，回环除外）时按四张端口表做 DNAT | 链随 configure；端口表只由同步动作 `incus.ports.sync` 替换 |
 | systemd 单元 `anas-port-{tcp,udp}@<端口>.{socket,service}` | 每个生效的绑定一对：`Accept=no` 的套接字占住端口，常驻的 `sleep infinity`（`DynamicUser=yes`）持有它 | 同步动作先建后删 |
 | `anas-incus-network.service` | 开机在 Docker 之后、Incus 之前运行 `anas-hostd --restore-network` | 只在 configure |

@@ -48,13 +48,18 @@ export function readIncusPlan(response: HostActionJob, input: IncusInput, expect
   const request = object(parameters.request)
   const digest = plan.digest
   const expiresAt = Date.parse(job.created_at) + 300_000
+  // The server plan fills the default port range in; the confirmed parameters must keep it.
+  const first = request.port_range_first as number
+  const last = request.port_range_last as number
+  const hasPortRange = first !== undefined || last !== undefined
+  const validPortRange = !hasPortRange || (Number.isInteger(first) && Number.isInteger(last) && first >= 1024 && first <= last && last <= 65535)
   if (value.schema !== "anas.host-action.incus/v1" || inspect.schema !== "anas.incus-host-provision/v1" || plan.schema !== inspect.schema ||
       value.action !== `incus.${input.phase}` || value.phase !== input.phase ||
       parameters.schema !== value.schema || binding.schema !== "anas.incus-host-provision/v1" || binding.phase !== input.phase ||
       binding.destructive !== true || typeof digest !== "string" || !/^[a-f0-9]{64}$/.test(digest) || binding.plan_digest !== digest ||
       (request.interface ?? "incus_container") !== input.request.interface || (request.storage_size_gib ?? 64) !== input.request.storage_size_gib ||
       request.remove_packages !== undefined || (request.skip !== undefined && request.skip !== false) || !Number.isFinite(expiresAt) ||
-      (request.chinese_speedup !== undefined && typeof request.chinese_speedup !== "boolean") ||
+      (request.chinese_speedup !== undefined && typeof request.chinese_speedup !== "boolean") || !validPortRange ||
       !Array.isArray(plan.steps) || plan.steps.length > 128) throw new APIProblemError({ code: "maintenance_response_invalid" })
   const steps = plan.steps.map((raw) => {
     const step = object(raw)
@@ -72,6 +77,7 @@ export function readIncusPlan(response: HostActionJob, input: IncusInput, expect
       ...(request.storage_size_gib !== undefined ? { storage_size_gib: input.request.storage_size_gib } : {}),
       ...(request.skip !== undefined ? { skip: false } : {}),
       ...(request.chinese_speedup !== undefined ? { chinese_speedup: request.chinese_speedup as boolean } : {}),
+      ...(hasPortRange ? { port_range_first: first, port_range_last: last } : {}),
     },
     binding: { schema: "anas.incus-host-provision/v1", phase: input.phase, plan_digest: digest, destructive: true },
   }
