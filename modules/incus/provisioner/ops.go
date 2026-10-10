@@ -418,9 +418,8 @@ func ensureNetwork(ctx context.Context, c *client, l lease) (network, leaseAddre
 	if !l.Daemon.AddressSets {
 		return network{}, leaseAddressing{}, fmt.Errorf("incus daemon does not support network address sets (network_address_set); compute leases need Incus 7.0 LTS or newer")
 	}
-	// The set must cover this bridge before an ACL names it, so a lease
-	// never runs a moment without excluding the others.
-	if err := ensureLeasesAddressSet(ctx, c); err != nil {
+	// The ACL names every other lease bridge on the daemon by its subnets.
+	if addressing.Others, err = otherLeaseSubnets(ctx, c, addressing.Subnets); err != nil {
 		return network{}, leaseAddressing{}, err
 	}
 	if l.Network.NeedsTraefik() {
@@ -913,9 +912,6 @@ func inspect(ctx context.Context, c *client, l lease) (inspectResult, error) {
 	}
 	if verifyACL(acl, l, addressing) != nil {
 		return result, nil
-	}
-	if covers, err := leasesAddressSetCovers(ctx, c); err != nil || !covers {
-		return result, err
 	}
 	if l.Network.NeedsTraefik() {
 		if present, err := traefikAddressSetPresent(ctx, c); err != nil || !present {

@@ -91,6 +91,9 @@ type ResourceRequest struct {
 	ComputeImages   *computeimage.Snapshot
 	LeaseSecretKey  string
 	LeaseSecret     string
+	// HTTPRequestOwner is the declared uid:gid of the lease's HTTP request
+	// directory, frozen with the deployment.
+	HTTPRequestOwner string
 }
 
 func loadContractRegistry(moduleRoot string) (map[string]Contract, error) {
@@ -708,6 +711,7 @@ func (m *resourceMaterializer) materialize(consumer string) error {
 			Provider: provider, Interface: iface, Spec: spec, ComputeImages: images,
 			SecretKey: secretKey, Credential: credential,
 			LeaseSecretKey: leaseSecretKey, LeaseSecret: leaseSecret,
+			HTTPRequestOwner: required.HTTPRequestOwner,
 		})
 	}
 	return nil

@@ -972,7 +972,7 @@ mTLS 客户端证书认证，Traefik 终止 TLS 会打断它，且暴露它等�
 LAN 未来启用前必须重新验证后端可达性、双协议族边界及宿主路由；不承诺复用当前链路即可支持，
 也不以 macvlan shim 作为绕开授权的捷径。
 
-### 5.1.7 选定方案：HTTP 发布经租约 ACL 与 anasd 内的中介（2026-09-28 定案，2026-10-03 实现，实机待验收）
+### 5.1.7 选定方案：HTTP 发布经租约 ACL 与 anasd 内的中介（2026-09-28 定案，2026-10-03 实现，2026-10 容器档实机通过）
 
 ```text
 公网 IPv4/IPv6 HTTPS
@@ -997,8 +997,9 @@ Traefik 地址；ACL 链首条 `ct state established,related accept` 让实例�
 
 **控制面。** 消费者只写本租约请求目录。发布中介在 anasd 进程内运行，不持有 Incus 凭据、租约证书、
 `lease_secret` 或其他 Secret，不调用宿主特权动作。它校验请求里的地址在本租约 IPv4 网段内（排除网络地址、
-网关与广播地址）、端口已声明、域名落在本租约命名空间，再用 `ANAS_TRAEFIK_ROUTE__*` 渲染器把路由写进 Traefik
-动态目录下的专属子目录。整个过程是「冻结授权 + 请求文件 → 路由文件」的纯函数：请求目录的文件事件与部署激活
+网关与广播地址）、端口已声明、域名落在本租约命名空间，再按冻结授权自己渲染路由，写进 Traefik 动态目录下的专属
+子目录 `compute-http/`。路由与 `ANAS_TRAEFIK_ROUTE__*` 声明的路由同形（`Host` 规则、`https` 入口、TLS、冻结的
+middleware、后端地址），Traefik 侧不为此增加配置；两边的路由形状由契约测试对照。整个过程是「冻结授权 + 请求文件 → 路由文件」的纯函数：请求目录的文件事件与部署激活
 触发重算，另有低频全量重算补漏；不需要回执、墓碑或锁协议。中介停机时，已发布的路由继续可用，新发布等待。
 
 **生命周期。** 共享客户端停止或删除实例时撤销它的发布，janitor 清理实例已不存在的请求。部署改变或撤销授权时，
@@ -1011,7 +1012,7 @@ Core 在 apply 中删除受影响租约的路由文件，Provider 同步 ACL，C
 只读几个小文件，省去 inotify 的平台代码。路由写在活动部署的 Traefik 运行时目录 `dynamic/compute-http/`，
 文件名带租约、授权摘要与域名摘要；Traefik 的文件 provider 只监视顶层目录，所以每次变更后改写顶层的
 `compute-http.reload`。激活时 Core 按授权摘要（不含部署 ID）删除授权被移除或改变的租约的路由。代码与单元测试
-见 `internal/runner/compute_http.go`、`internal/computeingress/route.go`；真实 Traefik、guest 与两档的端到端尚未运行。
+见 `internal/runner/compute_http.go`、`internal/computeingress/route.go`；容器档经真实 Traefik 与 guest 的端到端已于 2026-10 在 Ubuntu 26.04 与 Debian 13 实机通过，VM 档未运行。
 
 **取代的旧方案。** 旧方案把每次发布当成对某个实例某一次运行的授权：宿主逐次发布加 30 秒期限的 nft 许可，另有
 `/32` 设备路由、永久邻居、回复来源绑定与 conntrack 清理，中介经 hostd 观察实例身份后续期。期限防的是中介失联时
@@ -1352,8 +1353,10 @@ HTTP 发布是七层反向代理：Traefik 终止 HTTPS，按域名分流，以 
   [2026-09-30 探测](https://github.com/anas-project/ANAS/blob/master/dev-docs/reviews/2026-09-30-incus-lease-network-probe.md)又在 docker.io 26 与 Docker CE 29 下验证了局域网 TCP/UDP（IPv4、IPv6，guest 看到真实客户端地址）、
   宿主本机与 Docker 容器的访问（容器来源经 Docker masquerade 变成租约网关）。回环地址（`127.0.0.0/8`、`::1`）
   不接管，与 Docker 关闭 userland proxy 时一致；本机访问用宿主的其他地址。
-- **同租约**：租约的入站 ACL 用「全部租约网段」清单挡住其他租约，而 drop 先于 allow，同租约实例经宿主端口访问
-  自己的槽位也会被挡住。租约内直连由 `intra_lease` 决定，不为此给每个租约维护不含自己的清单。
+- **同租约**：租约的入站 ACL 用其他租约的网段挡住其他租约，不含本租约。Incus 的网桥 ACL 也过滤同一网桥内实例之间
+  的流量，所以同租约实例经宿主端口访问自己的槽位、以及租约内直连，都由 `intra_lease` 决定：打开时 ACL 两个方向各
+  放行本租约的实例地址（不含网关）。2026-10-08 实测后由全局「全部租约网段」清单改为此做法，原清单含本租约网段，
+  使 `intra_lease` 与经本网关访问宿主都无法生效。
 - **声明**：`network.slots` 列出槽位并写死实例名；`publish.ports` 每项写协议、宿主端口、槽位与 guest 端口，apply
   时冻结；运行时不增删、不改指向，也没有 owner。Module 与用户主机实例用同一机制。
 - **槽位**：Provider 为槽位预留 DHCP 动态范围外的固定 IPv4；租约启用 IPv6 时另预留固定 IPv6，即租约网段内的内网
@@ -1438,8 +1441,8 @@ ARP）。v6 需要 NDP，是新代码。
 
 - **档位**：`internet`（默认）、`internet_lan`、`internet_lan_host`、`modules_only`，由申请实例的 Module 在租约
   声明中选择，随部署冻结。开关 `module_access` 与 `intra_lease` 默认都关闭。
-- **执行**：Provider 把档位写进租约网桥的 Incus network ACL，与来源围栏共用同一份 ACL；局域网清单放在 Provider
-  维护的 address set 里，Traefik 地址清单只按名字引用。宿主侧只有一组随 `incus.configure` 安装的固定规则，把
+- **执行**：Provider 把档位写进租约网桥的 Incus network ACL，与来源围栏共用同一份 ACL；局域网网段与其他租约的
+  网段直接写成 ACL 规则，每次 `ensure` 按当前值重写，Traefik 地址清单只按名字引用。宿主侧只有一组随 `incus.configure` 安装的固定规则，把
   租约网桥的转发交给 ACL 决定，排在管理员规则和 Docker 规则之后；其中从租约网桥到 Docker 网桥只放行 Docker 已做
   DNAT 的连接（发布端口），其余丢弃。Debian 的 docker.io 26 不自己丢弃未发布端口，只交给 ACL 会放行它们；
   Docker 28 起自带这层拦截，两种版本下这组规则都满足 `internet_lan_host` 的要求。
@@ -1475,7 +1478,9 @@ ARP）。v6 需要 NDP，是新代码。
 **多租约。**
 
 - 租约之间不直连：出站各档都拒绝其他租约；端口绑定改写后的目的地址落在其他租约的网段时，访问方的出站 ACL 会拒绝；
-  入站放行也用 Provider 维护的「全部租约网段」地址清单排除其他租约。同一消费者的多个租约之间也是如此。
+  入站放行也排除其他租约。其他租约的网段由 Provider 在每次 `ensure` 时直接写进本租约 ACL；之后新建的租约要等本租约
+  下次 `ensure` 才进入列表，在此之前由新租约自己两个方向的规则挡住本租约，任意两租约之间至少一侧拦截。同一消费者
+  的多个租约之间也是如此。
 - 跨租约访问只经 Traefik 的 HTTP 发布，访问方与访问 ANAS Module 一样，靠出站档位或 `module_access` 到达 Traefik。
 - 「协议 + 宿主端口」、HTTP 域名命名空间与网段在租约之间唯一；Docker 式规则按端口区分，多个租约可以各自在宿主
   所有地址上绑定不同端口。撤销或变更一个租约只影响它自己的 ACL 放行、路由文件与端口绑定。

@@ -14,7 +14,7 @@ VM 档。没有新增调用方 nesting 开关，也不会自动改写或重启�
 | 项目 | 值 |
 | --- | --- |
 | Module | `incus` |
-| 版本 / revision | `7.3.0-r2` |
+| 版本 / revision | `7.3.0-r3` |
 | 状态 | `developing` |
 | 类别 | `compute` |
 | 运行时 | `compose` |
@@ -235,7 +235,7 @@ REST 边界、证书固定、幂等与测试见[技术文档](docs/technical.md)
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`7.3.0-r2`（reviewed 2026-09-21）
+- Module version / 版本：`7.3.0-r3`（reviewed 2026-09-21）
 - Timezone / 时区：`not_applicable` — The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
 - Language scope / 语言范围：no user interface; the provisioner emits machine-readable JSON only
 - Selection / 选择方式：`none`

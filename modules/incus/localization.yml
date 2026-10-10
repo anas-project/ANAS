@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: incus
 module_version: 7.3.0
-module_revision: 2
+module_revision: 3
 reviewed_at: 2026-09-21
 timezone:
   status: not_applicable

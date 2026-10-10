@@ -287,8 +287,11 @@ func buildProvisionPlanValue(ctx context.Context, backend incusBackend, spec Act
 	if err != nil {
 		return nil, err
 	}
+	// The operator confirms the request the plan describes: the backend's
+	// normalized form, with defaults such as the approved port range filled
+	// in. The public projection requires the two to be identical.
 	applyParams := IncusApplyParameters{
-		Schema: parameterSchema, Request: request,
+		Schema: parameterSchema, Request: inspect.Plan.Request,
 		Binding: incusprovision.Binding{Schema: incusprovision.Schema, PlanDigest: inspect.Plan.Digest, Phase: spec.Phase, Destructive: true},
 	}
 	body, err := marshalCanonical(applyParams)

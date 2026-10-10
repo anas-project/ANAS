@@ -352,10 +352,11 @@ The egress tiers: `internet` reaches public addresses only; `internet_lan` adds 
 subnets of the host's default-route interface plus operator-configured extra subnets, recomputed on every apply);
 `internet_lan_host` adds the host's own addresses and ports Docker publishes; `modules_only` reaches only ANAS
 Modules through Traefik. The Provider writes the tiers, switches and publications into the lease bridge's network
-ACL, whose default action is drop in both directions. "Every lease subnet" is the global address set `anas-leases`
-the Provider maintains, used in both directions to exclude other leases; the Traefik containers' current addresses
-are in the global address set `anas-traefik`, which only hostd writes. Both need Incus 7.0 or later (the
-`network_address_set` API extension).
+ACL, whose default action is drop in both directions. The other leases' subnets are written into this lease's
+egress and ingress drop rules at every `ensure`, never this lease's own (Incus ACLs also filter traffic between
+instances on one bridge); an open `intra_lease` also allows this lease's instance addresses, gateway excluded. The
+Traefik containers' current addresses are in the global address set `anas-traefik`, which only hostd writes; it needs
+Incus 7.0 or later (the `network_address_set` API extension).
 
 ## HTTP publication
 

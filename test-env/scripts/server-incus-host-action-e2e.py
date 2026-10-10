@@ -70,10 +70,11 @@ def public_failure(error):
 
 
 def public_effect_summary(state):
+    network = {'lease-forwarding', 'traefik-address-set', 'port-binding-range', 'port-bindings', 'network-restore-unit'}
     steps = {'install': {'packages', 'service'},
-             'configure': {'storage', 'docker-network', 'firewall', 'listener'},
+             'configure': {'storage', 'docker-network', 'firewall', 'listener'} | network,
              'enroll': {'trust', 'bundle'},
-             'uninstall': {'bundle', 'trust', 'listener', 'firewall', 'docker-network', 'storage', 'packages'}}
+             'uninstall': {'bundle', 'trust', 'listener', 'firewall', 'docker-network', 'storage', 'packages'} | network}
     require(isinstance(state, dict) and state.get('schema') == 'anas.incus-host-state/v1' and
             isinstance(state.get('disabled', False), bool), 'effect_summary_schema')
     intents = state.get('intents') or []

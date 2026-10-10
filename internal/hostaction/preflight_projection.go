@@ -31,6 +31,8 @@ func ProjectActionEvent(action string, e actionabi.Event) (actionabi.Event, erro
 	}
 	if e.Type == "error" && e.Error != nil {
 		if (e.Error.Outcome == actionabi.Failed && e.Error.Code == "incus_host_action_failed" && e.Error.Message == "Incus host action could not be completed") ||
+			// hostd's own record of an admitted request it did not start.
+			(e.Error.Outcome == actionabi.Failed && e.Error.Code == "host_action_not_started" && e.Error.Message == "Host action was not started") ||
 			(e.Error.Outcome == actionabi.Unknown && e.Error.Code == "host_audit_unconfirmed" && e.Error.Message == "Host action audit completion could not be confirmed") {
 			return e, nil
 		}
@@ -91,6 +93,30 @@ func ProjectActionEvent(action string, e actionabi.Event) (actionabi.Event, erro
 		}
 		canonical, err := json.Marshal(value)
 		if err != nil || value.Confirm == nil || value.Confirm["summary_digest"] != value.Inspect.Plan.Digest || value.Confirm["state_digest"] != value.Inspect.Plan.StateDigest {
+			return actionabi.Event{}, ErrRequest
+		}
+		e.Result.Value = canonical
+		return e, nil
+	}
+	if spec.Sync {
+		// The two bounded syncs report what hostd itself read and applied;
+		// neither is a provisioning phase result.
+		var canonical []byte
+		switch action {
+		case ActionTraefikSync:
+			var result incusprovision.TraefikSyncResult
+			if decodePublicActionValue(e.Result.Value, &result) != nil || result.Schema != incusprovision.TraefikSyncSchema || !result.Approved ||
+				result.AddressSet != incusprovision.TraefikAddressSet {
+				return actionabi.Event{}, ErrRequest
+			}
+			canonical, _ = json.Marshal(result)
+		case ActionPortsSync:
+			var result incusprovision.PortSyncResult
+			if decodePublicActionValue(e.Result.Value, &result) != nil || result.Schema != incusprovision.PortSyncSchema || !result.Approved {
+				return actionabi.Event{}, ErrRequest
+			}
+			canonical, _ = json.Marshal(result)
+		default:
 			return actionabi.Event{}, ErrRequest
 		}
 		e.Result.Value = canonical

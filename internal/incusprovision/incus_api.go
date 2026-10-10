@@ -210,7 +210,9 @@ func (c *incusUnixClient) doSyncOnly(ctx context.Context, method, path string, b
 	if err != nil {
 		return err
 	}
-	return decodeIncusEnvelope(status, raw, out)
+	// Decode by the actual method: a synchronous POST creation answers HTTP
+	// 201, which a read must never accept.
+	return decodeIncusMethodEnvelope(method, status, raw, out)
 }
 
 func (c *incusUnixClient) request(ctx context.Context, method, path string, body any) (status int, raw []byte, result error) {

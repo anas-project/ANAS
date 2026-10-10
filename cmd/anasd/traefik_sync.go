@@ -125,11 +125,7 @@ func sleepContext(ctx context.Context, d time.Duration) bool {
 // host's default Docker, limited to containers carrying label when given.
 func dockerContainerStarts(ctx context.Context, label string) (<-chan struct{}, <-chan error) {
 	starts, failed := make(chan struct{}, 16), make(chan error, 1)
-	args := []string{"events", "--filter", "type=container", "--filter", "event=start", "--format", "{{.ID}}"}
-	if label != "" {
-		args = append(args, "--filter", "label="+label)
-	}
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", dockerStartEventArgs(label)...)
 	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LANG=C"}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -154,4 +150,15 @@ func dockerContainerStarts(ctx context.Context, label string) (<-chan struct{}, 
 		failed <- cmd.Wait()
 	}()
 	return starts, failed
+}
+
+// dockerStartEventArgs is the docker events invocation. The format names
+// Actor.ID: Docker 29's CLI no longer has the message's top-level ID field and
+// exits with status 64 on {{.ID}} (seen 2026-10-08 on Ubuntu 26.04).
+func dockerStartEventArgs(label string) []string {
+	args := []string{"events", "--filter", "type=container", "--filter", "event=start", "--format", "{{.Actor.ID}}"}
+	if label != "" {
+		args = append(args, "--filter", "label="+label)
+	}
+	return args
 }

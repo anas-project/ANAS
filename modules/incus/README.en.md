@@ -17,7 +17,7 @@ instances is introduced.
 | Item | Value |
 | --- | --- |
 | Module | `incus` |
-| Version / revision | `7.3.0-r2` |
+| Version / revision | `7.3.0-r3` |
 | Status | `developing` |
 | Category | `compute` |
 | Runtime | `compose` |

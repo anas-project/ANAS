@@ -85,6 +85,37 @@ func lastAddress(p netip.Prefix) netip.Addr {
 	return addr
 }
 
+// memberRanges is a bridge subnet without its network address and gateway,
+// as ACL address ranges: the addresses this lease's instances can hold. The
+// gateway is the host, which intra_lease must not open (INCUS-R-113,
+// INCUS-R-130); the network address and the IPv4 broadcast are no instance.
+func memberRanges(p netip.Prefix) []string {
+	gateway, first, last := p.Addr(), p.Masked().Addr().Next(), lastAddress(p)
+	if p.Addr().Is4() {
+		last = last.Prev()
+	}
+	var out []string
+	add := func(from, to netip.Addr) {
+		switch from.Compare(to) {
+		case 0:
+			out = append(out, from.String())
+		case -1:
+			out = append(out, from.String()+"-"+to.String())
+		}
+	}
+	if gateway.Compare(first) < 0 || gateway.Compare(last) > 0 {
+		add(first, last)
+		return out
+	}
+	if gateway != first {
+		add(first, gateway.Prev())
+	}
+	if gateway != last {
+		add(gateway.Next(), last)
+	}
+	return out
+}
+
 func addrAdd(a netip.Addr, n int) netip.Addr {
 	for ; n > 0; n-- {
 		a = a.Next()
@@ -104,9 +135,10 @@ func addressingConfig(current network, l lease) (map[string]string, []string, le
 	if err != nil {
 		return nil, nil, leaseAddressing{}, err
 	}
-	addressing := leaseAddressing{Subnets: []string{v4.Masked().String()}}
+	addressing := leaseAddressing{Subnets: []string{v4.Masked().String()}, Members: memberRanges(v4)}
 	if l.NetworkIPv6 {
 		addressing.Subnets = append(addressing.Subnets, v6.Masked().String())
+		addressing.Members = append(addressing.Members, memberRanges(v6)...)
 	}
 	config := map[string]string{}
 	var remove []string

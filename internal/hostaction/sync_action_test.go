@@ -116,3 +116,59 @@ func TestPortSyncExecutesOnlyThePortSync(t *testing.T) {
 		t.Fatalf("event = %+v, %v, calls %d/%d", event, err, backend.calls, backend.portCalls)
 	}
 }
+
+// The real path, as hostd and anasd run it: the recorded execution emits a
+// progress frame and a terminal, each encoded as hostd sends it and projected
+// as anasd records it. Before 2026-10-08 the syncs had no phase, the progress
+// frame failed to encode and neither action ever ran on a real host; their
+// results also had no projection.
+func TestSyncActionsRunThroughTheRecordedPath(t *testing.T) {
+	release := ReleaseIdentity{Version: "1.2.3", Commit: "0123456789abcdef0123456789abcdef01234567"}
+	for _, action := range []string{ActionTraefikSync, ActionPortsSync} {
+		t.Run(action, func(t *testing.T) {
+			backend := &syncOnlyBackend{}
+			previous := newIncusBackend
+			newIncusBackend = func() incusBackend { return backend }
+			t.Cleanup(func() { newIncusBackend = previous })
+			call, err := prepare(actionabi.Request{ABI: actionabi.Version, JobID: "job-1", InvocationID: "inv-1", Action: action, Parameters: json.RawMessage(`{}`)},
+				Peer{pid: 10, uid: 0, gid: 0, verified: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var frames []actionabi.Event
+			event, err := executeRecorded(context.Background(), call, &recordingJournal{}, newMemoryLedger(), release, func() error { return nil },
+				func(progress actionabi.Event) error {
+					if _, err := actionabi.EncodeExecutorEvent(progress); err != nil {
+						return err
+					}
+					frames = append(frames, progress)
+					return nil
+				})
+			if err != nil || len(frames) != 1 || event.Type != "result" {
+				t.Fatalf("event=%+v frames=%d err=%v", event, len(frames), err)
+			}
+			for _, frame := range append(frames, event) {
+				if _, err := ProjectActionEvent(action, frame); err != nil {
+					t.Fatalf("anasd cannot project %s frame %s: %v", action, frame.Type, err)
+				}
+			}
+		})
+	}
+}
+
+// A request hostd admitted but did not start is recorded with a fixed
+// terminal. anasd must accept it as a failure, not as an unconfirmed
+// execution that blocks every later host action.
+func TestNotStartedTerminalProjects(t *testing.T) {
+	e := actionabi.Event{ABI: actionabi.Version, JobID: "job-1", InvocationID: "inv-1", Type: "error",
+		Error: &actionabi.Failure{Outcome: actionabi.Failed, Code: "host_action_not_started", Message: "Host action was not started"}}
+	for _, action := range []string{ActionTraefikSync, ActionConfigure, ActionInstallPlan} {
+		if _, err := ProjectActionEvent(action, e); err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+	}
+	e.Error.Message = "private detail"
+	if _, err := ProjectActionEvent(ActionTraefikSync, e); err == nil {
+		t.Fatal("an altered not-started message projected")
+	}
+}

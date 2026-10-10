@@ -87,11 +87,8 @@ func TestLeaseBridgeCarriesNetworkPolicyACL(t *testing.T) {
 			if acl.Config["user.anas.consumer"] != l.Consumer || acl.Config["user.anas.sandbox"] != l.Sandbox || acl.Config[leaseCredentialKey] != l.Credential {
 				t.Fatalf("ACL ownership = %v", acl.Config)
 			}
-			set := d.addressSets[leasesAddressSet]
-			for _, subnet := range want {
-				if !slices.Contains(set.Addresses, subnet) {
-					t.Fatalf("lease subnet set %v lacks %s", set.Addresses, subnet)
-				}
+			if listed := listedOtherLeases(acl); len(listed) != 0 {
+				t.Fatalf("a lone lease drops other leases %v", listed)
 			}
 		})
 	}
@@ -135,7 +132,7 @@ func TestEgressTiersWriteTheirRules(t *testing.T) {
 	internet := base(t, computenet.EgressInternet, false)
 	if !egressRule(internet, "allow", "1.0.0.0/8") || egressRule(internet, "allow", "192.168.0.0/16") ||
 		!egressRule(internet, "drop", "203.0.113.0/24") || !egressRule(internet, "drop", "203.0.113.7/32") ||
-		!egressRule(internet, "drop", "$"+leasesAddressSet) || traefik(internet) {
+		traefik(internet) {
 		t.Fatalf("internet tier = %+v", internet.Egress)
 	}
 	if !traefik(base(t, computenet.EgressInternet, true)) {
@@ -148,7 +145,7 @@ func TestEgressTiersWriteTheirRules(t *testing.T) {
 	}
 	hostTier := base(t, computenet.EgressInternetLANHost, false)
 	if !egressRule(hostTier, "allow", "192.168.1.10/32") || !egressRule(hostTier, "allow", "172.16.0.0/12") ||
-		egressRule(hostTier, "drop", "192.168.1.10/32") || !egressRule(hostTier, "drop", "$"+leasesAddressSet) ||
+		egressRule(hostTier, "drop", "192.168.1.10/32") ||
 		egressRule(hostTier, "allow", "169.254.0.0/16") {
 		t.Fatalf("internet_lan_host tier = %+v", hostTier.Egress)
 	}
@@ -193,8 +190,8 @@ func TestPublicIPv4ComplementsReservedRanges(t *testing.T) {
 	}
 }
 
-// INCUS-R-125, R-134: drift in the ACL, its attachment, the shared lease
-// subnet set or the port isolation is not ready, and ensure repairs it.
+// INCUS-R-125, R-134: drift in the ACL, its attachment or the port isolation
+// is not ready, and ensure repairs it.
 func TestNetworkPolicyDriftBlocksInspectAndEnsureRepairs(t *testing.T) {
 	for name, drift := range map[string]func(*fakeDaemon, string, string){
 		"widened source": func(d *fakeDaemon, b, _ string) {
@@ -226,12 +223,13 @@ func TestNetworkPolicyDriftBlocksInspectAndEnsureRepairs(t *testing.T) {
 			d.networks[b].Config["security.acls.default.ingress.action"] = "allow"
 		},
 		"ACL deleted": func(d *fakeDaemon, b, _ string) { delete(d.acls, b); delete(d.networks[b].Config, "security.acls") },
-		"lease set shrunk": func(d *fakeDaemon, _, _ string) {
-			s := d.addressSets[leasesAddressSet]
-			s.Addresses = nil
-			d.addressSets[leasesAddressSet] = s
+		"own subnet dropped": func(d *fakeDaemon, b, _ string) {
+			a := d.acls[b]
+			own := rule("drop", otherLeasesDescription)
+			own.Destination = netip.MustParsePrefix(d.networks[b].Config["ipv4.address"]).Masked().String()
+			a.Egress = append(a.Egress, own)
+			d.acls[b] = a
 		},
-		"lease set deleted":  func(d *fakeDaemon, _, _ string) { delete(d.addressSets, leasesAddressSet) },
 		"DHCP range widened": func(d *fakeDaemon, b, _ string) { delete(d.networks[b].Config, "ipv4.dhcp.ranges") },
 		"port isolation off": func(d *fakeDaemon, _, project string) {
 			delete(d.profiles[project+"/"+computeclient.ProfileName].Devices["eth0"], "security.port_isolation")
@@ -242,6 +240,8 @@ func TestNetworkPolicyDriftBlocksInspectAndEnsureRepairs(t *testing.T) {
 			c := d.clientFor(t)
 			l := testLease(t, "vm")
 			l.NetworkIPv6 = true
+			// A host address gives the internet tier a drop rule to lose.
+			l.HostAddresses = []netip.Prefix{netip.MustParsePrefix("192.168.1.10/32")}
 			ensureReady(t, d, l)
 			bridge := computeclient.NetworkName(l.Sandbox)
 			drift(d, bridge, l.Sandbox)
@@ -281,37 +281,138 @@ func TestForeignNetworkACLIsNotAdopted(t *testing.T) {
 	}
 }
 
-func TestForeignLeaseSubnetSetIsNotAdopted(t *testing.T) {
+// INCUS-R-136: a lease drops every other lease in both directions, never its
+// own subnet. A lease created later is in an older lease's list only after the
+// older one's next ensure; until then the newer lease's own rules keep the two
+// apart, and the older lease is not reported as drifted.
+func TestLeasesDropEachOtherButNotThemselves(t *testing.T) {
 	d := newFakeDaemon(t)
-	d.addressSets[leasesAddressSet] = addressSet{Name: leasesAddressSet, Addresses: []string{"10.0.0.0/8"}, Config: map[string]string{}}
-	if _, err := ensure(context.Background(), d.clientFor(t), testLease(t, "container")); err == nil {
-		t.Fatal("ensure rewrote an address set ANAS does not manage")
-	}
-	if got := d.addressSets[leasesAddressSet].Addresses; len(got) != 1 || got[0] != "10.0.0.0/8" {
-		t.Fatalf("foreign set changed: %v", got)
-	}
-}
-
-// One shared set excludes every lease from every other: the second lease's
-// ensure adds its subnet, so the first lease is protected without re-ensure.
-func TestLeaseSubnetSetCoversEveryLease(t *testing.T) {
-	d := newFakeDaemon(t)
+	withTraefikSet(d)
 	c := d.clientFor(t)
-	a := testLease(t, "container")
-	b := testLease(t, "container")
+	a := publishedLease(t, true)
+	b := publishedLease(t, true)
 	b.Consumer, b.Sandbox, b.InstancePrefix = "ai_agent", "anas-ai-agent", "anas-agent-"
+	b.Network.Slots = []computenet.Slot{{Name: "db", Instance: "anas-agent-db"}, {Name: "dev", Instance: "anas-agent-dev"}}
 	ensureReady(t, d, a)
 	ensureReady(t, d, b)
-	set := d.addressSets[leasesAddressSet].Addresses
+	aSubnets, bSubnets := bridgeSubnets(t, d, a), bridgeSubnets(t, d, b)
+	dropsBoth := func(acl networkACL, others []string) bool {
+		var egress, ingress bool
+		for _, r := range acl.Egress {
+			egress = egress || r.Action == "drop" && slices.Equal(normalizedSubjects(split(r.Destination)), normalizedSubjects(others))
+		}
+		for _, r := range acl.Ingress {
+			ingress = ingress || r.Action == "drop" && slices.Equal(normalizedSubjects(split(r.Source)), normalizedSubjects(others))
+		}
+		return egress && ingress
+	}
+	if !dropsBoth(d.acls[computeclient.NetworkName(b.Sandbox)], aSubnets) {
+		t.Fatalf("the newer lease does not drop the older one both ways: %+v", d.acls[computeclient.NetworkName(b.Sandbox)])
+	}
+	if listed := listedOtherLeases(d.acls[computeclient.NetworkName(a.Sandbox)]); len(listed) != 0 {
+		t.Fatalf("the older lease names %v before its next ensure", listed)
+	}
+	if result, err := inspect(context.Background(), c, a); err != nil || !result.Ready {
+		t.Fatalf("an older lease is not drift because a newer one exists: %+v, %v", result, err)
+	}
+	ensureReady(t, d, a)
+	if !dropsBoth(d.acls[computeclient.NetworkName(a.Sandbox)], bSubnets) {
+		t.Fatal("re-ensure did not add the newer lease")
+	}
 	for _, l := range []lease{a, b} {
-		for _, subnet := range bridgeSubnets(t, d, l) {
-			if !slices.Contains(set, subnet) {
-				t.Fatalf("set %v lacks %s", set, subnet)
+		for _, own := range bridgeSubnets(t, d, l) {
+			if slices.Contains(listedOtherLeases(d.acls[computeclient.NetworkName(l.Sandbox)]), own) {
+				t.Fatalf("%s drops its own subnet %s", l.Sandbox, own)
 			}
 		}
 	}
-	if result, err := inspect(context.Background(), c, a); err != nil || !result.Ready {
-		t.Fatalf("first lease after the second was ensured = %+v, %v", result, err)
+}
+
+// INCUS-R-117, R-136: modules_only writes no egress drop for other leases, its
+// default drop covers them. Ensure must not require one, and with published
+// ingress the other leases are read back from the ingress drop instead.
+func TestModulesOnlyLeaseNamesOtherLeasesOnlyWhereItDropsThem(t *testing.T) {
+	d := newFakeDaemon(t)
+	withTraefikSet(d)
+	c := d.clientFor(t)
+	other := testLease(t, "container")
+	other.Consumer, other.Sandbox, other.InstancePrefix = "ai_agent", "anas-ai-agent", "anas-agent-"
+	ensureReady(t, d, other)
+	closed := testLease(t, "container")
+	closed.Network.Egress = computenet.EgressModulesOnly
+	ensureReady(t, d, closed)
+	if listed := listedOtherLeases(d.acls[computeclient.NetworkName(closed.Sandbox)]); len(listed) != 0 {
+		t.Fatalf("a modules_only lease without published ingress names %v", listed)
+	}
+	published := publishedLease(t, true)
+	published.Consumer, published.Sandbox, published.InstancePrefix = "lnmods", "anas-lnmods", "anas-lnmods-"
+	published.Network.Egress = computenet.EgressModulesOnly
+	ensureReady(t, d, published)
+	want := slices.Concat(bridgeSubnets(t, d, other), bridgeSubnets(t, d, closed))
+	if listed := listedOtherLeases(d.acls[computeclient.NetworkName(published.Sandbox)]); !slices.Equal(normalizedSubjects(listed), normalizedSubjects(want)) {
+		t.Fatalf("published modules_only lease names %v, want %v", listed, want)
+	}
+	for _, l := range []lease{closed, published} {
+		if result, err := inspect(context.Background(), c, l); err != nil || !result.Ready {
+			t.Fatalf("%s inspect = %+v, %v", l.Sandbox, result, err)
+		}
+		ensureReady(t, d, l)
+	}
+}
+
+// INCUS-R-123: the ACL also filters traffic inside the bridge, so intra_lease
+// allows this lease's instance addresses both ways. The gateway, which is the
+// host, stays outside the ranges (INCUS-R-113, R-130).
+func TestIntraLeaseAllowsInstanceAddressesNotTheGateway(t *testing.T) {
+	d := newFakeDaemon(t)
+	l := testLease(t, "container")
+	l.NetworkIPv6 = true
+	l.Network.IntraLease = true
+	ensureReady(t, d, l)
+	bridge := computeclient.NetworkName(l.Sandbox)
+	acl := d.acls[bridge]
+	v4 := netip.MustParsePrefix(d.networks[bridge].Config["ipv4.address"])
+	v6 := netip.MustParsePrefix(d.networks[bridge].Config["ipv6.address"])
+	members := append(memberRanges(v4), memberRanges(v6)...)
+	var egress, ingress bool
+	for _, r := range acl.Egress {
+		egress = egress || r.Action == "allow" && r.Description == intraLeaseDescription && slices.Equal(split(r.Destination), members)
+	}
+	for _, r := range acl.Ingress {
+		ingress = ingress || r.Action == "allow" && r.Description == intraLeaseDescription && slices.Equal(split(r.Source), members)
+	}
+	if !egress || !ingress {
+		t.Fatalf("intra_lease rules missing: %+v", acl)
+	}
+	for _, rangeText := range members {
+		from, to, _ := strings.Cut(rangeText, "-")
+		low, high := netip.MustParseAddr(from), netip.MustParseAddr(to)
+		for _, gateway := range []netip.Addr{v4.Addr(), v6.Addr()} {
+			if gateway.BitLen() == low.BitLen() && low.Compare(gateway) <= 0 && gateway.Compare(high) <= 0 {
+				t.Fatalf("range %s includes the gateway %s", rangeText, gateway)
+			}
+		}
+	}
+	l.Network.IntraLease = false
+	ensureReady(t, d, l)
+	for _, r := range append(d.acls[bridge].Egress, d.acls[bridge].Ingress...) {
+		if r.Description == intraLeaseDescription {
+			t.Fatal("closing intra_lease kept its rules")
+		}
+	}
+}
+
+func TestMemberRangesSkipNetworkGatewayAndBroadcast(t *testing.T) {
+	for prefix, want := range map[string][]string{
+		"10.1.2.1/24":   {"10.1.2.2-10.1.2.254"},
+		"10.1.2.200/24": {"10.1.2.1-10.1.2.199", "10.1.2.201-10.1.2.254"},
+		"10.1.2.254/24": {"10.1.2.1-10.1.2.253"},
+		"fd42:1::1/64":  {"fd42:1::2-fd42:1::ffff:ffff:ffff:ffff"},
+		"10.1.2.1/30":   {"10.1.2.2"},
+	} {
+		if got := memberRanges(netip.MustParsePrefix(prefix)); !slices.Equal(got, want) {
+			t.Errorf("%s = %v, want %v", prefix, got, want)
+		}
 	}
 }
 

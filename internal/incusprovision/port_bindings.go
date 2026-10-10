@@ -471,6 +471,10 @@ func (h portHost) syncPortBindings(ctx context.Context, first, last int) (PortSy
 		return result, err
 	}
 	result.Rejected = append(result.Rejected, rejected...)
+	applied, err := h.loadApplied()
+	if err != nil {
+		return result, err
+	}
 	held, err := h.enabledHolds()
 	if err != nil {
 		return result, err
@@ -483,6 +487,13 @@ func (h portHost) syncPortBindings(ctx context.Context, first, last int) (PortSy
 	var accepted []PortBinding
 	for _, b := range desired {
 		reason := h.validatePortBinding(b, first, last)
+		// At boot anasd may trigger a sync before Incus has brought the lease
+		// bridges back. A binding already applied to the same slot address
+		// keeps its hold and rules until the bridge returns (INCUS-R-161);
+		// a new or changed one still waits for the bridge.
+		if reason == "lease_bridge_missing" && slices.Contains(applied, b) {
+			reason = ""
+		}
 		switch {
 		case reason != "":
 		case taken[b.key()]:

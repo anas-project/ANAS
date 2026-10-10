@@ -101,6 +101,9 @@ func validateFrozenComputeIngress(r ResourceRequest, deploymentID string) error 
 	if err := r.ComputeIngress.ValidateSpec(r.Spec); err != nil {
 		return err
 	}
+	if r.HTTPRequestOwner != "" && !httpRequestOwnerPattern.MatchString(r.HTTPRequestOwner) || r.ComputeIngress != nil && r.HTTPRequestOwner == "" {
+		return fmt.Errorf("frozen HTTP authorization has no valid request directory owner")
+	}
 	if g := r.ComputeIngress; g != nil {
 		if g.Deployment != deploymentID || g.Consumer != r.Consumer || g.Resource != r.ID || g.Provider != r.Provider || g.Interface != r.Interface || g.LeaseSecretRef != r.LeaseSecretKey {
 			return fmt.Errorf("frozen HTTP authorization does not match the deployment lease")

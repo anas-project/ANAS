@@ -19,7 +19,7 @@ This page is generated from the current Module manifests. The checked-in page an
 | [Forgejo](/en/reference/modules/forgejo/) | `15.0.7-r2` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [FreeRADIUS](/en/reference/modules/freeradius/) | `3.2.10-r4` | `developing` | `network` | RADIUS server module scaffold. |
 | [Immich](/en/reference/modules/immich/) | `3.2.4-r1` | `developing` | `app` | Photo and video upload, mobile backup, albums, and search with OIDC-only accounts. |
-| [Incus compute provider](/en/reference/modules/incus/) | `7.3.0-r2` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
+| [Incus compute provider](/en/reference/modules/incus/) | `7.3.0-r3` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [LDAP Account Manager](/en/reference/modules/lam/) | `9.6.0-r8` | `release` | `identity` | Web UI for LDAP account administration. |
 | [Lego ACME certificates](/en/reference/modules/lego/) | `5.3.1-r5` | `release` | `certificate` | Issues and stores wildcard certificates used by Traefik and domain services. |
 | [LemonLDAP::NG](/en/reference/modules/llng/) | `2.23.2-r12` | `developing` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
@@ -31,6 +31,6 @@ This page is generated from the current Module manifests. The checked-in page an
 | [PostgreSQL](/en/reference/modules/postgres/) | `18.4.0-r4` | `developing` | `database` | PostgreSQL database service with optional Adminer UI. |
 | [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r12` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [Samba file server](/en/reference/modules/samba_fs/) | `4.23.6-r6` | `release` | `storage` | File sharing service joined to the Samba domain. |
-| [Traefik reverse proxy](/en/reference/modules/traefik/) | `3.7.10-r6` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [Traefik reverse proxy](/en/reference/modules/traefik/) | `3.7.10-r7` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
 | [VersityGW S3 gateway](/en/reference/modules/versitygw/) | `1.7.0-r3` | `developing` | `storage` | S3-compatible API backed by a dedicated POSIX directory. |
 | [Vikunja](/en/reference/modules/vikunja/) | `2.4.0-r4` | `developing` | `app` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |

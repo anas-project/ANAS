@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `traefik`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.7.10-r6` / `anas.module/v1`.
+> Status: current implementation; based on `3.7.10-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -17,7 +17,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r6` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r7` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -100,12 +100,12 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 ## Tests and implementation locations
 
-The entrypoint adds an internal `ANAS_TRAEFIK_RENDER_ONLY=true` mode for the trusted HTTP publication mediator (Incus M11) to
-reuse `ANAS_TRAEFIK_ROUTE__*` validation and templates in private staging. It skips certificate setup and
-Traefik startup, exiting after route generation. The default `false` retains normal startup; other values
-are rejected. This is not a user setting or consumer publication API. The caller supplies only frozen
-Host/backend/HTTPS/TLS/middleware fields in a clean environment, without the live dynamic directory.
-Validation of this mode and regressions of normal startup remain deferred; Incus ingress is not enabled.
+HTTP publication for compute resources (Incus) does not go through this Module. The anasd publication
+mediator renders each route itself from the frozen authorization and writes it to the `compute-http/`
+subdirectory of the same dynamic directory, in the same shape as a route declared through
+`ANAS_TRAEFIK_ROUTE__*`; Traefik has no configuration for it. `internal/computeingress/route_template_test.go`
+renders the same route through this entrypoint and compares the two, so a change to either shape must be
+made in both.
 
 - [`local_admin_test.go`](../hook/local_admin_test.go)
 - [`main_test.go`](../hook/main_test.go)

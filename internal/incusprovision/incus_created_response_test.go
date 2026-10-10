@@ -28,6 +28,31 @@ func TestIncusUnixCreatedResponseCompletesOnePostWithoutRetry(t *testing.T) {
 	}
 }
 
+// doSyncOnly creates the anas-traefik address set with a POST; Incus 7.0.1
+// answers 201. Decoding it as a read failed every incus.configure on the
+// 2026-10-08 lease network host.
+func TestIncusSyncOnlyCreationAcceptsCreated(t *testing.T) {
+	calls := 0
+	c := &incusUnixClient{transport: incusRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost {
+			t.Fatal("creation was replayed or polled")
+		}
+		return incusTestResponse(http.StatusCreated, `{"type":"sync","status":"Success","status_code":200,"operation":"","error_code":0,"error":"","metadata":{}}`), nil
+	})}
+	if err := c.doSyncOnly(context.Background(), http.MethodPost, "/1.0/network-address-sets?project=default", map[string]string{"name": "anas-traefik"}, nil); err != nil || calls != 1 {
+		t.Fatalf("completed synchronous creation rejected: %v (calls=%d)", err, calls)
+	}
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodDelete} {
+		c := &incusUnixClient{transport: incusRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return incusTestResponse(http.StatusCreated, `{"type":"sync","status_code":200,"metadata":{}}`), nil
+		})}
+		if err := c.doSyncOnly(context.Background(), method, "/1.0/network-address-sets/anas-traefik?project=default", nil, nil); err == nil {
+			t.Fatalf("%s accepted HTTP 201", method)
+		}
+	}
+}
+
 func TestIncusCreatedResponseCannotMasqueradeAsReadOrUnknownSuccess(t *testing.T) {
 	for _, tc := range []struct {
 		method, body string

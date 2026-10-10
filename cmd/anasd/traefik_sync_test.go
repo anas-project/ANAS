@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -89,4 +90,16 @@ func waitFor(t *testing.T, condition func() bool) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("condition not reached")
+}
+
+// Docker 29 removed the event message's top-level ID; Actor.ID exists in
+// every supported CLI version.
+func TestDockerStartEventArgsUseActorID(t *testing.T) {
+	args := dockerStartEventArgs("anas.traefik.instance")
+	if !slices.Contains(args, "{{.Actor.ID}}") || slices.Contains(args, "{{.ID}}") || !slices.Contains(args, "label=anas.traefik.instance") {
+		t.Fatalf("docker events arguments = %v", args)
+	}
+	if slices.Contains(dockerStartEventArgs(""), "--filter=label=") || len(dockerStartEventArgs("")) != 7 {
+		t.Fatalf("unfiltered docker events arguments = %v", dockerStartEventArgs(""))
+	}
 }

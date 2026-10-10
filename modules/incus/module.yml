@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: incus
 version: 7.3.0
-revision: 2
+revision: 3
 app_version: 7.3.0
 abi:
   supports:

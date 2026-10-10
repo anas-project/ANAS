@@ -38,15 +38,11 @@ func computeHTTPRequestDir(base, consumer, id string) string {
 
 // prepareComputeHTTPRequestDir creates the request directory with the owner
 // the consumer declared, mode 0700: only that consumer's process can write
-// it, and only this lease's directory is mounted into it.
+// it, and only this lease's directory is mounted into it. The owner comes
+// from the resource request, which a frozen deployment carries: applying one
+// rebuilds the Modules without their resource declarations.
 func (a *app) prepareComputeHTTPRequestDir(request ResourceRequest) error {
-	owner := ""
-	for _, requirement := range a.reg[request.Consumer].Resources {
-		if requirement.ID == request.ID {
-			owner = requirement.HTTPRequestOwner
-		}
-	}
-	match := httpRequestOwnerPattern.FindStringSubmatch(owner)
+	match := httpRequestOwnerPattern.FindStringSubmatch(request.HTTPRequestOwner)
 	if match == nil {
 		return fmt.Errorf("resource %s.%s publishes HTTP but declares no http_request_owner", request.Consumer, request.ID)
 	}

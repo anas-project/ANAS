@@ -3,7 +3,7 @@
 本文面向 Module 维护者，记录 `traefik` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.7.10-r6` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.7.10-r7` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -17,7 +17,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r6` | `` | 3 |
+| `anas_traefik` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-traefik:3.7.10-r7` | `` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -100,11 +100,10 @@ anas admin local rotate traefik primary --prompt -w /srv/anas
 
 ## 测试与实现位置
 
-entrypoint 新增内部 `ANAS_TRAEFIK_RENDER_ONLY=true` 模式，供受信的 HTTP 发布中介（Incus M11）在私有 staging
-目录复用 `ANAS_TRAEFIK_ROUTE__*` 的校验与模板；它跳过证书配置和 Traefik 启动，仅生成路由后退出。
-默认 `false` 保留正常启动流程，其他值拒绝。该变量不是用户配置参数或消费者发布接口；调用方只把
-冻结 Host、后端地址、HTTPS/TLS 与 middleware 投入干净环境，并不向子进程传真实动态目录。
-这条新增路径及默认路径的回归均按要求暂缓测试，不能据此认定 Incus ingress 已开放。
+计算资源的 HTTP 发布（Incus）不经本 Module：anasd 的发布中介按冻结授权自己渲染路由，写进同一动态目录的
+`compute-http/` 子目录，形状与 `ANAS_TRAEFIK_ROUTE__*` 声明的路由相同，Traefik 侧没有为此增加配置。
+`internal/computeingress/route_template_test.go` 用本 entrypoint 渲染同一条路由与之对照；改动任一边的路由形状
+都须同时改另一边。
 
 - [`local_admin_test.go`](../hook/local_admin_test.go)
 - [`main_test.go`](../hook/main_test.go)

@@ -298,8 +298,9 @@ Core 在新 apply 为每个 compute Resource 生成独立的 32 字节随机 `le
 各出站档位：`internet` 只到公网地址；`internet_lan` 加上局域网（宿主默认路由所在网卡的直连网段加操作者配置的
 附加网段，每次 apply 重新计算）；`internet_lan_host` 再加上宿主本机地址和 Docker 已发布的端口；`modules_only` 只能
 经 Traefik 访问 ANAS Module。Provider 把档位、开关与发布写进租约网桥的 network ACL，两个方向的默认动作都是丢弃。
-「全部租约网段」是 Provider 维护的全局 address set `anas-leases`，出入站都用它排除其他租约；Traefik 容器的当前地址
-在全局 address set `anas-traefik` 里，只由 hostd 写入。两者都要求 Incus 7.0 以上（`network_address_set` API 扩展）。
+其他租约的网段由 Provider 在每次 `ensure` 时写进本租约 ACL 的出入站丢弃规则（不含本租约网段：Incus 的 ACL 也过滤
+同一网桥内实例之间的流量）；`intra_lease` 打开时另放行本租约的实例地址（不含网关）。Traefik 容器的当前地址在全局
+address set `anas-traefik` 里，只由 hostd 写入，要求 Incus 7.0 以上（`network_address_set` API 扩展）。
 
 ## HTTP 发布
 

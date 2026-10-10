@@ -35,6 +35,9 @@ func publishedLease(t *testing.T, ipv6 bool) lease {
 func TestPublishedIngressAdmitsOnlyDeclaredPublications(t *testing.T) {
 	d := newFakeDaemon(t)
 	withTraefikSet(d)
+	other := testLease(t, "container")
+	other.Consumer, other.Sandbox, other.InstancePrefix = "ai_agent", "anas-ai-agent", "anas-agent-"
+	ensureReady(t, d, other)
 	l := publishedLease(t, true)
 	result := ensureReady(t, d, l)
 	acl := d.acls[computeclient.NetworkName(l.Sandbox)]
@@ -42,7 +45,7 @@ func TestPublishedIngressAdmitsOnlyDeclaredPublications(t *testing.T) {
 	slotRules := map[string]aclRule{}
 	for _, r := range acl.Ingress {
 		switch {
-		case r.Action == "drop" && r.Source == "$"+leasesAddressSet:
+		case r.Action == "drop" && r.Description == otherLeasesIngressDescription:
 			leases = true
 		case r.Action == "allow" && r.Source == "$"+traefikAddressSet:
 			traefik = r.Protocol == "tcp" && r.DestinationPort == "7000,8080" && r.Destination == ""

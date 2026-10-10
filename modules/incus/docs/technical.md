@@ -35,7 +35,7 @@ guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI
   `{instance, address, port, label?}`，见下文「HTTP 发布与端口绑定的宿主侧」。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `7.3.0-r2` / `anas.module/v1`.
+> 状态：当前实现；对应 `7.3.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -52,7 +52,7 @@ guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r2` | `incus` | 0 |
+| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r3` | `incus` | 0 |
 <!-- generated:compose-topology:end -->
 
 只有一个 run-only 服务。它没有 `ports`、没有 Traefik label、没有卷、也不挂载宿主 socket——本
@@ -267,24 +267,32 @@ DNS、DHCP 与核心 ICMPv6，回包由 conntrack 放行。规则由冻结的档
 
 | 档位 | 出站规则（来源都限定为租约自己的网段，伪造的子网外来源因此被丢弃） |
 | --- | --- |
-| `internet` | 放行公网地址；丢弃局域网、宿主地址与 `$anas-leases` |
-| `internet_lan` | 放行公网地址与局域网；丢弃宿主地址与 `$anas-leases` |
-| `internet_lan_host` | 放行公网地址、局域网、宿主地址与私有地址段（Docker 已发布端口在 DNAT 后落在这里）；丢弃 `$anas-leases` |
+| `internet` | 放行公网地址；丢弃局域网、宿主地址与其他租约网段 |
+| `internet_lan` | 放行公网地址与局域网；丢弃宿主地址与其他租约网段 |
+| `internet_lan_host` | 放行公网地址、局域网、宿主地址与私有地址段（Docker 已发布端口在 DNAT 后落在这里，本租约网关也在其中）；丢弃其他租约网段 |
 | `modules_only` | 只放行到 `$anas-traefik` 的 Traefik 入口端口 |
 
 `module_access` 给 `internet`、`internet_lan` 加一条到 `$anas-traefik` 入口端口的放行。入站只有 `published` 档有
-规则：先丢弃来自 `$anas-leases` 的连接，再放行 `$anas-traefik` 到 HTTP 发布端口、任意来源到各槽位已绑定的
-guest 端口。Incus 的 drop 先于 allow，所以同租约实例经宿主端口访问自己的槽位也会被挡住；租约内直连由
-`intra_lease` 决定——关闭时 profile 的网卡设 `security.port_isolation=true`，同一网桥的实例之间二层不通
-（`INCUS-R-123`）。局域网是 apply 时 Core 算出的宿主默认路由网卡直连网段加 `lan_extra_subnets`，宿主地址是宿主
-各接口地址，二者经 `ANAS_RESOURCE_NETWORK`、`ANAS_RESOURCE_LAN_SUBNETS`、`ANAS_RESOURCE_HOST_ADDRESSES` 交给
-Provider。
+发布规则：先丢弃来自其他租约网段的连接，再放行 `$anas-traefik` 到 HTTP 发布端口、任意来源到各槽位已绑定的
+guest 端口。
 
-`$anas-leases` 是全局 address set，由每次 `ensure` 改写为全部租约网桥的网段之并；`$anas-traefik` 只由 hostd 的
-同步动作写入，Provider 只按名字引用，不存在时 `ensure` 失败并提示先运行 `incus.configure`。两者都需要 daemon
-提供 `network_address_set` API 扩展（Incus 7.0 起），缺少时 `ensure` 在写入前失败。`inspect.ready` 要求 ACL 规则
-与当前档位、网段、槽位完全一致，`$anas-leases` 覆盖本租约网段；多余规则、禁用或放宽都算漂移，`ensure` 以整体
-PUT 修复。宿主包卸载盘点把任何 network ACL 与 address set 视为 daemon 仍在使用。
+Incus 的网桥 ACL 也过滤**同一网桥内实例之间**的流量（2026-10-08 在 7.0.1 上实测），且 drop 恒先于 allow。因此
+「其他租约网段」只列其他租约、不含本租约：`ensure` 读取守护进程上全部带租约标记的网桥，把除本租约外的网段直接
+写进出站与入站的 drop 规则（`modules_only` 出站只有一条放行，其他租约由默认 drop 挡住，不另写；入站的这条 drop
+只在 `published` 档写）。之后新建的租约要等本租约下次 `ensure` 才进入本租约的列表（Core 只对本次 apply 激活的消费者执行 `ensure`，
+未变化的租约可能长期不更新）；在此之前，新租约自己的
+出站与入站规则已经丢弃本租约，任意两个租约之间至少有一侧拦截（`INCUS-R-136`）。`inspect` 按 ACL 自身列出的其他
+租约网段核对，列表里出现本租约网段算漂移，缺少较新的租约不算。租约内直连由 `intra_lease` 决定：关闭时 profile
+的网卡设 `security.port_isolation=true`，ACL 也不放行；打开时去掉端口隔离，并在两个方向各加一条放行本租约
+实例地址的规则——地址写成本网段去掉网络地址与网关的区间，网关是宿主，`intra_lease` 不放开宿主与实例之间的主动
+连接（`INCUS-R-123`、`R-113`、`R-130`）。同租约实例经宿主端口访问自己的槽位，只有 `intra_lease` 打开时可达。
+局域网是 apply 时 Core 算出的宿主默认路由网卡直连网段加 `lan_extra_subnets`，宿主地址是宿主各接口地址，二者经
+`ANAS_RESOURCE_NETWORK`、`ANAS_RESOURCE_LAN_SUBNETS`、`ANAS_RESOURCE_HOST_ADDRESSES` 交给 Provider。
+
+`$anas-traefik` 只由 hostd 的同步动作写入，Provider 只按名字引用，不存在时 `ensure` 失败并提示先运行
+`incus.configure`；它需要 daemon 提供 `network_address_set` API 扩展（Incus 7.0 起），缺少时 `ensure` 在写入前
+失败。`inspect.ready` 要求 ACL 规则与当前档位、网段、槽位完全一致；多余规则、禁用或放宽都算漂移，`ensure` 以
+整体 PUT 修复。宿主包卸载盘点把任何 network ACL 与 `anas-traefik` 以外的 address set 视为 daemon 仍在使用。
 
 profile 固定名为 `anas-lease`，只有两个设备：
 
@@ -722,7 +730,8 @@ HTTP 发布不经过本 Module 的 Provider operation：Provider 只按冻结的
 启用占位单元，再以单个 nft 事务替换四张端口表并读回，最后停用不再需要的占位。不合格的条目不生效，记成宿主的
 运行问题（`/var/lib/anas-hostd/runtime-issues.json`）。生效的条目写入 `/var/lib/anas/incus-host/ports.json`，开机时
 占位单元随 `sockets.target` 先于 Docker 启动，`--restore-network` 再按它恢复端口表，占位没能起来的绑定不生效并
-记录运行问题（`INCUS-R-161`）。anasd 在启动时与每次部署激活后触发同步；它另外每分钟及在容器启动时只读检查
+记录运行问题（`INCUS-R-161`）。开机时 anasd 触发的同步可能早于 Incus 拉起租约网桥：网桥暂缺时，已经生效且槽位
+地址不变的绑定保留占位与端口表条目，新增或地址改变的绑定仍要等网桥出现。anasd 在启动时与每次部署激活后触发同步；它另外每分钟及在容器启动时只读检查
 已生效的绑定，发现占位丢失、Docker 发布冲突或端口表漂移时写进对应工作区的运行问题，不做修复（`INCUS-R-162`）。
 
 没有 hostd 的宿主上，incus Hook 发布 `INCUS_PORT_BINDING_BLOCKER`（`hostd_missing`、`host_not_configured` 或

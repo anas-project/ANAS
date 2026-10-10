@@ -91,6 +91,8 @@ func TestComputeIngressFreezesTheLeaseAuthorization(t *testing.T) {
 		"dropped decl":     func(r *ResourceRequest) { delete(r.Spec, "publish") },
 		"auth added later": func(r *ResourceRequest) { r.ComputeIngress.Policy.Auth = "forward_auth" },
 		"unsorted ports":   func(r *ResourceRequest) { r.ComputeIngress.Policy.AllowedPorts = []uint16{8080, 80} },
+		"lost owner":       func(r *ResourceRequest) { r.HTTPRequestOwner = "" },
+		"invalid owner":    func(r *ResourceRequest) { r.HTTPRequestOwner = "root" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			copied := *r

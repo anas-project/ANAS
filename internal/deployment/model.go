@@ -239,6 +239,10 @@ type Resource struct {
 	CredentialSecretKey string `yaml:"credential_secret,omitempty" json:"credential_secret,omitempty"`
 	// LeaseSecretKey references the independent compute naming key, not a credential.
 	LeaseSecretKey string `yaml:"lease_secret,omitempty" json:"lease_secret,omitempty"`
+	// HTTPRequestOwner is the uid:gid that owns the lease's HTTP request
+	// directory. A frozen deployment carries it because applying one never
+	// rereads the Module's resource declarations.
+	HTTPRequestOwner string `yaml:"http_request_owner,omitempty" json:"http_request_owner,omitempty"`
 }
 
 type Setting struct {

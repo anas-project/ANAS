@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-23
-updated: 2026-09-30
+updated: 2026-10-10
 ---
 
 # Incus compute Provider Module 集成要求
@@ -218,8 +218,8 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
 5bis. CLI 与 Web 必须走同一条特权通道：能力差异只可能来自动作清单，不得来自入口。
 6. 实例不得依赖公网 IPv6 地址或上游 DHCPv6-PD。出站经受管 bridge NAT；入站由 Traefik 提供 IPv4/IPv6 入口，经租约网桥 ACL 访问
    guest 的内网地址和获批端口，不要求 proxy device 或 network forward，规则见 §7septies。
-7. 实例内 HTTP 服务经 Traefik 发布必须复用既有的 `ANAS_TRAEFIK_ROUTE__*` 文件 provider 路由，
-   不得为此在 Traefik 侧新增机制。
+7. 实例内 HTTP 服务经 Traefik 发布必须走 Traefik 已监视的文件 provider 动态目录，路由与
+   `ANAS_TRAEFIK_ROUTE__*` 声明的路由同形；路由只由中介按冻结授权渲染，不得为此在 Traefik 侧新增能力或配置。
 8. guest 镜像配方必须使用 distrobuilder，不得自造 Dockerfile 方言。
 9. 镜像语义必须是**构建一次、记录摘要、之后不再重建**：apply 时摘要已存在即不动作；配方变更是
    显式版本变更，产出新摘要而不是就地覆盖。每次 apply 重新烘焙会让 fingerprint 钉死失去意义。
@@ -258,7 +258,7 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
    - 不由 anasd 调 Provider 更新：那样 Traefik 每重启一次，anasd 就要在无人操作时拿 Incus 管理证书运行 Provider，
      与 apply 争工作区锁，compute 契约还要为此加一个每个 Provider 都得实现的运行时操作。
 5. **执行**：
-   - Provider 把档位、开关与局域网清单写进租约网桥的 Incus network ACL 和 address set，与来源围栏共用同一份 ACL；
+   - Provider 把档位、开关、局域网网段与其他租约的网段写进租约网桥的 Incus network ACL，与来源围栏共用同一份 ACL；
      Traefik 地址清单只按名字引用；
    - 宿主侧只有一条随 Incus 宿主配置安装的静态转发规则，把租约网桥的转发交给 ACL 决定，不按实例或按租约增删；
    - 租约网桥改用不以 `anas` 开头的专用前缀，因为 anas-helper 能操作所有 `anas*` 接口；
@@ -457,7 +457,7 @@ Docker 式规则的依据见[proxy NAT 实机探测](../reviews/2026-09-29-incus
 | `INCUS-R-051` | Web 管理端不得接受 root 或 sudo 密码；一键提权只能经安装期预置的受限特权单元触发，密码不得进入应用 | 审阅 + 安全测试 |
 | `INCUS-R-052` | 默认隔离档必须是 `incus_container`；不得因宿主缺少 KVM 而自动降级，也不得自动升级为 VM | 单元 + 契约 |
 | `INCUS-R-053` | 实例不得依赖公网 IPv6 或上游 DHCPv6-PD；HTTP 发布必须经 Traefik（公网为 HTTPS）与租约网桥 ACL 到达获批 guest 端口，公网入口同时支持 IPv4 与 IPv6，guest 不必双栈 | 单元 + e2e |
-| `INCUS-R-054` | 实例内 HTTP 服务经 Traefik 发布必须复用既有 `ANAS_TRAEFIK_ROUTE__*` 机制，不得在 Traefik 侧新增能力 | 契约 + e2e |
+| `INCUS-R-054` | 实例内 HTTP 服务经 Traefik 发布必须写入 Traefik 已监视的文件 provider 动态目录，路由与 `ANAS_TRAEFIK_ROUTE__*` 声明的路由同形（`Host` 规则、`https` 入口、TLS、冻结的 middleware）；不得在 Traefik 侧新增能力或配置 | 契约 + e2e |
 | `INCUS-R-055` | guest 镜像必须由 distrobuilder 配方产出，且语义为构建一次记录摘要；不得每次 apply 重新烘焙 | 契约 + e2e |
 | `INCUS-R-056` | `guest_image` 需要 Provider 把 fingerprint 交回 Runner；由 R-066、R-067 取代——镜像改为 `anas:`/`fingerprint:` 命名引用后，引用在 apply 时即确定，无需结果通道（已废弃） | 契约 + 审阅 |
 | `INCUS-R-057` | 一级发行版为 Debian 13、Ubuntu 24.04 LTS 与 Ubuntu 26.04 LTS，其中 26.04 是主要测试环境；其余标记待适配，未适配时相关功能保持关闭而不是失败 | 静态 + e2e |

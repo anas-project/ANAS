@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/computeingress"
+	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/deployment"
 )
 
@@ -167,14 +169,56 @@ func TestHTTPRequestDirectoryIsPrivateToTheConsumer(t *testing.T) {
 	if err := a.prepareComputeHTTPRequestDir(request); err == nil {
 		t.Fatal("a request directory was created without a declared owner")
 	}
-	module := a.reg["forgejo"]
-	module.Resources[0].HTTPRequestOwner = "65532:65532"
-	a.reg["forgejo"] = module
+	request.HTTPRequestOwner = "65532:65532"
 	if err := a.prepareComputeHTTPRequestDir(request); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(computeHTTPRequestDir(a.base, "forgejo", "runners"))
 	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
 		t.Fatalf("request directory = %v, %v", info, err)
+	}
+}
+
+// Applying a frozen deployment rebuilds the Modules without their resource
+// declarations, so the request directory owner has to travel with the frozen
+// resource. Found on the 2026-10-08 lease network host: render accepted the
+// declaration and every apply then failed with "declares no
+// http_request_owner".
+func TestFrozenDeploymentKeepsTheHTTPRequestOwner(t *testing.T) {
+	a := ingressApp(t, map[string]map[string]any{"forgejo": httpIngress("named", "ci", 8080)})
+	a.base = filepath.Join(t.TempDir(), ".anas")
+	a.secrets.path = filepath.Join(a.base, "secrets.yml")
+	a.secrets.dirty = true
+	a.cfg = &config.File{}
+	id := "20261008T010203Z-aaaaaaaa"
+	cfg := filepath.Join(t.TempDir(), "config.yml")
+	if err := os.WriteFile(cfg, []byte("modules: {}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(a.base, "staging", id, "modules", "forgejo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.prepareComputeIngress(id); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := buildDeploymentManifest(a, id, cfg, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeYAMLAtomic(filepath.Join(a.base, "deployments", id, "deployment.yml"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.secrets.Save(); err != nil {
+		t.Fatal(err)
+	}
+	restored, _, _, err := loadDeploymentApp(a.base, id, compose.CLI{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(restored.resourceRequests) != 1 || restored.resourceRequests[0].HTTPRequestOwner != "65532:65532" || len(restored.reg["forgejo"].Resources) != 0 {
+		t.Fatalf("frozen request owner lost: %+v", restored.resourceRequests)
+	}
+	if err := restored.prepareComputeHTTPRequestDir(restored.resourceRequests[0]); err != nil {
+		t.Fatal(err)
 	}
 }

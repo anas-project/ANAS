@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-10-03
+updated: 2026-10-10
 ---
 
 # Incus compute Provider 实施计划
@@ -42,11 +42,11 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
 | M9a：双栈出网验收 | R-044 | 已完成；IPv6 启用/关闭两种租约的真实出网均经各自网桥 masquerade（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；伪造子网外源地址由 Provider 自有网桥 ACL 丢弃，实机上游计数为 0 且漂移可检出、可修复（2026-09-27，[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）；同租约 guest 间 IPv6 冒用不在该围栏范围内 |
 | M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 已完成；三个一级发行版以 Zabbly 7.0.1 各通过 23 项审批/卸载（2026-09-26），未适配的 Debian 14 在同一审批链路保持关闭且不改宿主（2026-09-27），真实 Core 自动投影、撤销后拒绝与移除消费者撤销（2026-09-26）通过；ARM64、真实 Forgejo/AI Agent 业务部署与失败 intent 的运维恢复未作验收 |
-| M10a：租约出站分级与入站默认拒绝 | R-105、R-112—R-127、R-130 | 实施中；2026-10-03 实现完成并有单元测试：出站四档与两个开关写进租约 ACL，`anas-leases` 与 `anas-traefik` 两份 address set，窄静态 FORWARD 规则与开机恢复单元，专用网桥前缀 `lease` 与旧网桥迁移，撤销关闭 ACL 并停止实例，默认拒绝入站（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；实机 e2e 未运行。2026-09-30 的实机验证见[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md)，原 R-101—R-104 废弃、旧实现已删除 |
-| M10b：租约网络视图 | R-128—R-129、R-159 | 实施中；2026-10-03 API `GET /api/v1/workspaces/{ws}/compute/leases` 与只读图形页面已实现，`ensure` 结果交回网桥网段与网关并记入 resource state（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；R-129 的 e2e 未运行 |
-| M11：HTTP 发布与中介 | R-053、R-054、R-062、R-064、R-065、R-070、R-071、R-086—R-088、R-095、R-096、R-137、R-139—R-149 | 实施中；2026-10-03 实现完成并有单元测试：anasd 内的中介每 3 秒全量重算、写 Traefik 动态目录的 `compute-http/` 子目录，请求改为 `{instance, address, port, label?}`，激活时按授权摘要清理路由，去掉启动拦截，共享客户端带实例地址、停止/删除时撤销、janitor 清理（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；尚无内置消费者声明 HTTP 发布，真实 Traefik/guest 的 e2e 未运行；R-063 废弃，见 §15 |
-| M11b：入站档位与租约间隔离 | R-131—R-136 | 实施中；2026-10-03 `network.ingress` 与 `publish.http` 随部署冻结、`none` 拒绝发布声明，Provider 按档位写入站规则并用 `anas-leases` 排除其他租约（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；实机 e2e 未运行 |
-| M11c：端口绑定 | R-138、R-150—R-158、R-160—R-164 | 实施中；2026-10-03 实现完成并有单元测试：`network.slots`/`publish.ports`、槽位固定地址、`auto` 分配与冲突检查、hostd 同步动作 `incus.ports.sync`（nft 端口表与 systemd 端口占位）、开机先占位后恢复、anasd 触发与定期检查、运行问题记录、共享客户端写槽位地址（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；尚无 Module 声明端口绑定，实机 e2e 未运行 |
+| M10a：租约出站分级与入站默认拒绝 | R-105、R-112—R-127、R-130 | 已完成；2026-10-03 实现完成并有单元测试：出站四档与两个开关写进租约 ACL，`anas-leases` 与 `anas-traefik` 两份 address set，窄静态 FORWARD 规则与开机恢复单元，专用网桥前缀 `lease` 与旧网桥迁移，撤销关闭 ACL 并停止实例，默认拒绝入站（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）。2026-10-08 实机 r16 通过 R-113—R-118、R-120、R-122—R-124、R-130 与 R-126 的规则排序（§14.1）；同日按实测把其他租约的网段改为 `ensure` 时直接写进各租约 ACL，删除 `anas-leases` 地址集。2026-10-10 同一工件 native.54 在 Debian 13（docker.io 26.1.5）r26 与 Ubuntu 26.04（docker.io 29.1.3）r27 全部通过，补齐 R-105 管理员规则先后、R-115/R-126 的 docker.io 26 与 R-126 卸载删除（§14.2）。2026-09-30 的实机验证见[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md)，原 R-101—R-104 废弃、旧实现已删除；只覆盖 amd64 与容器档 |
+| M10b：租约网络视图 | R-128—R-129、R-159 | 已完成；2026-10-03 API `GET /api/v1/workspaces/{ws}/compute/leases` 与只读图形页面已实现，`ensure` 结果交回网桥网段与网关并记入 resource state（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 r16 经控制台 API 核对撤销前后的租约视图（R-128、R-159，§14.1）；2026-10-10 r26 在 Debian 13 用无头 Chromium 打开租约网络页，各租约各方向的放行/拒绝与 API 一致、页面只读且只发 GET（R-129，§14.2） |
+| M11：HTTP 发布与中介 | R-053、R-054、R-062、R-064、R-065、R-070、R-071、R-086—R-088、R-095、R-096、R-137、R-139—R-149 | 已完成；2026-10-03 实现完成并有单元测试：anasd 内的中介每 3 秒全量重算、写 Traefik 动态目录的 `compute-http/` 子目录，请求改为 `{instance, address, port, label?}`，激活时按授权摘要清理路由，去掉启动拦截，共享客户端带实例地址、停止/删除时撤销、janitor 清理（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 r16 用实验 Module 经真实 Traefik 发布 guest HTTP，R-137、R-145 与 R-147 的 CLI 路径通过（§14.1）；2026-10-10 native.54 在 r26、r27 通过 R-053 双栈公网 HTTPS 入口、R-087/R-088 绕过客户端的请求文件与动态目录写入、R-095 `forward_auth` 随部署冻结、R-147 控制台路径（§14.2）；R-054 按操作者选择改写为「写入 Traefik 已监视的文件 provider 目录、路由与 `ANAS_TRAEFIK_ROUTE__*` 同形、Traefik 侧不新增能力」，契约测试对照两边路由形状，删除闲置的 `ANAS_TRAEFIK_RENDER_ONLY`；审阅项 R-062、R-070、R-096、R-142、R-143、R-148 对照当前代码与文档核对通过（§14.2）；只覆盖 amd64 与容器档；尚无内置消费者声明 HTTP 发布；R-063 废弃，见 §15 |
+| M11b：入站档位与租约间隔离 | R-131—R-136 | 已完成；2026-10-03 `network.ingress` 与 `publish.http` 随部署冻结、`none` 拒绝发布声明，Provider 按档位写入站规则（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 改为在 ACL 里直接列出其他租约网段；实机 r16 通过 R-133、R-135、R-136（§14.1），R-131、R-132、R-134 为契约与单元验收 |
+| M11c：端口绑定 | R-138、R-150—R-158、R-160—R-164 | 已完成；2026-10-03 实现完成并有单元测试：`network.slots`/`publish.ports`、槽位固定地址、`auto` 分配与冲突检查、hostd 同步动作 `incus.ports.sync`（nft 端口表与 systemd 端口占位）、开机先占位后恢复、anasd 触发与定期检查、运行问题记录、共享客户端写槽位地址（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 实机 r16 用实验 Module 通过 R-138、R-150—R-152、R-157、R-160—R-162 与 R-154 的显式端口部分（§14.1），途中修复开机同步误删绑定的缺陷；2026-10-10 r26、r27 通过 R-154 的 `auto` 跳过被占端口（§14.2）；R-158 由单元测试的篡改与冲突条目（范围外、宿主进程/Docker/其他工作区占用、网关或其他网段、非租约网桥、占位失败）与实机冲突、抢占条目不生效覆盖；只覆盖 amd64 与容器档；尚无内置 Module 声明端口绑定 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
 | M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 已完成；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，容器档真实烘焙/启动/one-job 通过；Core 链路上重复 apply 不重建、显式 prune 只删失败部署的新 revision、回滚从冻结产物恢复丢失镜像、产物丢失时失败且不重建，租约证书可自行导入白名单外镜像（摘要约束只在共享客户端）均有实机证据（2026-09-27，[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)）；VM 档产品镜像烘焙、ARM64 与正式签名分发未覆盖 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 已完成；整体审阅未发现制品下载端点或控制流内联，新增 OpenAPI 媒体类型门禁，见[审阅记录](../reviews/2026-09-26-incus-bulk-data-path-review.md)与[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
@@ -1163,53 +1163,55 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 | R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主以 Incus 7.0.1 各 23 项通过（2026-09-26），加入 ACL 盘点后 Ubuntu 26.04 复验 23/23（2026-09-27）；Core 七阶段（含 prune、清理与撤销）于 host-v43 通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
 | R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；2026-09-27 删包前盘点加入 `network-acls`，Core 清理 ACL 后审批卸载通过；完整降级/失败恢复仍未完成 |
 | R-050 | `test-env/scripts/server-incus-host-action-e2e.py` 与 `server-incus-core-projection-e2e.py` | 回环 daemon、实际控制桥及 Core 自动投影的两个非 root 消费者 | 2026-09-24 | 宿主传输正反例与 Core 自身租约/既存项目隔离通过，业务网关优先级不变；完整 LAN/双栈及实际 Forgejo/AI Agent 部署另验 |
-| R-053 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 公网双栈、受管 guest IPv4 后端 | — | 待执行 |
-| R-054 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | Traefik 发布实例内 HTTP 服务 | — | 待执行 |
+| R-053 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r26 Debian 13、r27 Ubuntu 26.04（§14.2） | 2026-10-10 | 公网命名空间经宿主 IPv4 与 IPv6 地址以 HTTPS 访问 lnlan 的发布，经 Traefik 与租约 ACL 到达只有 IPv4 后端的 guest（每轮 2 项） |
+| R-054 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`http_publication_through_traefik` 等） | r16、r26、r27；契约测试 `internal/computeingress/route_template_test.go` | 2026-10-10 | 需求按操作者选择改写后通过：中介把路由写进 Traefik 已监视的动态目录 `compute-http/`，实机经真实 Traefik 到达 guest；Traefik 侧无相关配置；契约测试用 Traefik entrypoint 渲染同一路由（含与不含 middleware）并比对结构一致，删掉 TLS 的变异被测出 |
 | R-055 | `test-env/scripts/server-incus-runner-image-e2e.py`、`incus-image-artifacts build`；`server-incus-core-projection-e2e.py` | 独立构建 VM 上真实 distrobuilder 烘焙 `policy-loader-r1`（Ubuntu 26.04）与 `trust-r2`（Debian 13）；Core apply 从冻结目录导入 | 2026-09-25 | build/export/重复构建返回 `existing=true` 且 release 不变（[固定策略加载器](../reviews/2026-09-25-forgejo-fixed-policy-loader.md)）；apply 只导入冻结摘要、从不烘焙（2026-09-26 Core 轮）；VM 档产品镜像未烘焙 |
 | R-055 | `test-env/scripts/server-incus-core-projection-e2e.py`（`rollback_restores_lost_image_from_frozen_artifact`、`lost_frozen_artifact_fails_without_rebuild`） | 全新 Ubuntu 26.04 amd64、审批安装的 Incus 7.0.1、真实 Core CLI（host-v44） | 2026-09-27 | 删掉回滚目标的镜像后 `anas rollback` 从上一部署冻结产物导入同一 fingerprint；删掉 daemon 镜像与部署冻结产物后 apply 以 `start_failed` 失败、历史不变、未重建；归档 `0767df9a…94a9`（[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)） |
 | R-057 | `test-env/scripts/server-incus-host-action-e2e.py` | Debian 13 / Ubuntu 24.04 / 26.04 三档 amd64 | 2026-09-26 | 三档同工件以 Incus 7.0.1 各 23 项审批/正常供给卸载通过；其他架构、故障恢复与正式默认部署不由此推导 |
 | R-094 | `test-env/scripts/server-incus-unadapted-e2e.py` | Debian 14 testing（forky）amd64，已安装审批链路 | 2026-09-27 | 预检与安装计划 `disabled`/`distribution_not_adapted`，确认执行只记禁用回执，dpkg/APT/Incus 均未改变（[验收记录](../reviews/2026-09-27-incus-unadapted-distribution.md)） |
 | R-063 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 实例启停与 Traefik 路由增删同步 | — | 待执行 |
-| R-087 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 消费者无法注册本租约命名空间之外的域名 | — | 待执行 |
-| R-088 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 绕过客户端库直写请求文件仍被拒绝 | — | 待执行 |
-| R-095 | 待新增 `test-env/scripts/server-incus-ingress-e2e.sh` | 运行时无法覆盖租约声明的认证方式 | — | 待执行 |
+| R-087 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`request_files_cannot_widen_publication`、`forward_auth_frozen_at_apply`） | r26、r27（§14.2） | 2026-10-10 | 越权端口、其他租约地址、网关、前缀外实例、非法标签与多余字段的请求文件，以及手写路由、符号链接与第二个硬链接均不生效；路由只带渲染方决定的 `https` 入口与冻结的 middleware；uid 65532 不能写 Traefik 动态目录（夹具的 `http_request_owner` 为 `0:0`，非特权身份单独核验） |
+| R-088 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`request_files_cannot_widen_publication`） | r26、r27（§14.2） | 2026-10-10 | 绕过共享客户端直接写入请求目录的越权请求由 anasd 内的中介拒绝并记录原因，已发布路由不变 |
+| R-095 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`forward_auth_frozen_at_apply`、`request_files_cannot_widen_publication`） | r26、r27，合成 `forward_auth` 提供方 `lnauth`（§14.2） | 2026-10-10 | 部署声明 `forward_auth` 后两条路由都带 `lnet-auth@docker`，未带凭据得 401、带凭据到达 guest；要求 `auth: none` 或自带 `middlewares` 的请求不被读取，新请求同样被拦；部署回 `none` 后恢复 |
 | R-072 | `test-env/scripts/server-incus-core-projection-e2e.py`（`image_prune_confirmed_delete`） | 全新 Ubuntu 26.04 amd64、审批安装的 Incus 7.0.1、真实 Core CLI；`lab-r2` 部署激活失败后 stop | 2026-09-27 | 计划只删 `anas-core-one` 的 `lab-r2`，`lab-r1` 以 current/previous 部署保留；确认后删除并逐项核验、读回两 project 只剩 `lab-r1`；归档 `1af11534…b56b`（[prune 验收](../reviews/2026-09-27-incus-image-prune.md)）；多工作区与 VM 档镜像仅单元覆盖 |
 | R-101 | 待接续 `test-env/scripts/server-forgejo-stop-e2e.py` | 真实宿主审批、Core 租约与默认 Docker 下的 guest/Forgejo | — | 待执行；确认事务单元通过不替代产品联合验收 |
 | R-102 | `internal/incusingresshost/forwarding_native_linux_test.go`；真实 guest 场景待接续 | 全新 Ubuntu 26.04 amd64 / 默认 Docker DROP | 2026-09-26 | 内核精确许可、物理 veth 源冒用拒绝再次通过；端点是 namespace，真实租约/跨租约替换待验收 |
 | R-103 | `internal/incusingresshost/forwarding_native_linux_test.go`、失败撤回回归；真实 stop/revoke 待接续 | 新连接拒绝、原已建立 socket 及精确 conntrack 分开核验 | 2026-09-26 | 内核新连接/原连接撤销通过，启用后失败统一补偿回归通过；完整业务停止与租约撤销未关闭 |
 | R-104 | `internal/incusprovision/forwarding_retirement_native_linux_test.go`；业务入口待接续 | 实际安装后端、Incus trust/空实例/网桥，Core stopped 和旧 grant 为夹具 | 2026-09-26 | 原始拒绝、自然空清单、显式/重复退役及墓碑/依赖解除通过；地址/接口变化、崩溃/重启和完整宿主卸载仍待验收 |
 | R-105 | `test-env/scripts/server-incus-forwarding-e2e.py` 与 `internal/incusingresshost/forwarding_native_linux_test.go` | 独立默认 Docker、既有管理员拒绝和原始策略保留 | 2026-09-25 | 原9项临时许可因果实验通过；候选生产执行器完整正反向验收仍待完成 |
+| R-105 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`admin_forward_rules_keep_precedence`、`host_network_rules_removed`） | r26、r27，现行静态规则（§14.2） | 2026-10-10 | 管理员在 FORWARD 首位的拒绝规则先生效，重启恢复单元后仍在首位、Docker 的 FORWARD 策略不变；删除后放行；卸载只删 ANAS 自己的规则（每轮 9 项） |
 | R-106 | `test-env/scripts/server-incus-fence-e2e.py` | 一次性 VM：Ubuntu 26.04 官方 6.0.5、Debian 13 trixie-backports 7.0.1、Ubuntu 26.04 Zabbly 7.5.1 | 2026-09-26 | 三档 16/18/19 项必需检查全部通过：第二工作区与所有者撤销后均拒绝、未标记共享 project 拒绝、额外受限证书使 inspect 未就绪、`default` 拒绝；真实 Core 多工作区部署未验收，见[实机核验](../reviews/2026-09-26-incus-fence-native-validation.md) |
 | R-111 | `test-env/scripts/server-incus-core-projection-e2e.py`（`removed_consumer_lease_is_revoked`） | 全新 Ubuntu 26.04 amd64、审批安装的 Incus 7.0.1、真实 Core CLI apply 移除一个合成消费者 | 2026-09-26 | 证书从信任库消失、project 保留、state 记 confirmed、另一消费者不受影响；归档 `def8edce…e19e`；撤销失败路径为单元层；2026-09-27 host-v43 带来源围栏 ACL 的 Provider 复验通过 |
-| R-113 | 待新增 | `internet` 档：公网可达，局域网、宿主、其他租约、Docker 网络与链路本地地址拒绝 | — | 待实现 |
-| R-114 | 待新增 | `internet_lan` 档：局域网可达，其余拒绝项不变 | — | 待实现 |
-| R-115 | 待新增 | `internet_lan_host` 档：宿主端口与发布端口可达，未发布容器端口仍拒绝；覆盖所支持的 Docker 版本 | — | 待实现 |
-| R-116 | 待新增 | `modules_only` 档：只能经 Traefik 访问 Module | — | 待实现 |
-| R-117 | 待新增 | `module_access` 开关：打开与关闭两种情况 | — | 待实现 |
-| R-118 | 待新增 | Traefik 重建、容器重启、宿主重启与 anasd 重启后，地址清单跟随当前地址 | — | 待实现 |
-| R-120 | 待新增 | 实例启动之后再新建 Docker 网络，它不会变成可访问的局域网 | — | 待实现 |
-| R-122 | 待新增 | 各档都能使用网桥网关的 DNS 与 DHCP | — | 待实现 |
-| R-123 | 待新增 | `intra_lease` 开关：同租约实例互访的打开与关闭 | — | 待实现 |
-| R-124 | 待新增 | 分别经 CLI 与控制台部署撤销租约，新连接被拒、已有连接结束 | — | 待实现 |
-| R-126 | 待新增 | 静态转发规则的安装、卸载与排序，管理员拒绝规则和 Docker 规则先生效 | — | 待实现 |
-| R-129 | 待新增 | 控制台租约网络视图的图形展示，只读 | — | 待实现 |
-| R-130 | 待新增 | 默认拒绝入站：其他容器、局域网与宿主主动连入被拒，实例出站回包、DHCP 与 DNS 正常 | — | 待实现 |
-| R-133 | 待新增 | `published` 档：Traefik 能到 HTTP 发布端口、外部来源能到槽位的端口绑定，其他端口与来源被拒 | — | 待实现 |
-| R-135 | 待新增 | 发布、撤销与档位变化前后，宿主上除静态转发规则、端口绑定规则与 Incus 自己的规则外，防火墙、路由与邻居表不变 | — | 待实现 |
-| R-136 | 待新增 | 两个租约（含同一消费者的两个租约）互相直连被拒；另一租约经宿主地址访问本租约的端口绑定也被拒 | — | 待实现 |
-| R-137 | 待新增 | 访问方开关 `module_access` 时，能否经 Traefik 到达另一租约的 HTTP 发布 | — | 待实现 |
-| R-138 | 待新增 | 两个租约在宿主所有地址上各绑不同端口都生效；与已有入口、Module 端口或宿主进程冲突的端口被拒 | — | 待实现 |
-| R-140 | 待新增 | 撤销或变更一个租约后，另一租约的档位、HTTP 发布与端口绑定不变 | — | 待实现 |
-| R-145 | 待新增 | 中介停机时已发布路由可用、新发布等待；重启后删除孤立路由并补齐缺失路由 | — | 待实现 |
-| R-147 | 待新增 | 分别经 CLI 与控制台部署收紧或撤销授权，路由文件与 ACL 随激活更新，中介停机时同样生效 | — | 待实现 |
-| R-150 | 待新增 | 端口绑定的 TCP 与 UDP 报文原样到达 guest，guest 看到的来源是真实客户端 | — | 待实现 |
+| R-113 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix` 与各存活检查） | r16（§14.1） | 2026-10-08 | `internet` 档（lninet.workers、lnside）公网可达；局域网、宿主地址与 Docker 发布端口、其他租约、Docker 网络与链路本地地址均拒绝（26 项） |
+| R-114 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（同上，`cli_activation_prunes_changed_routes`） | r16（§14.1） | 2026-10-08 | `internet_lan` 档（lnlan 与改档后的 lnside）另可达局域网与附加网段，其余拒绝项不变（22 项） |
+| R-115 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`、`late_docker_network_is_not_lan`） | r16（§14.1）；r26 Debian 13 docker.io 26.1.5、r27（§14.2） | 2026-10-10 | `internet_lan_host` 档（lnhost）宿主端口与 Docker 发布端口可达，未发布容器端口与其他租约拒绝；docker.io 26 不自己拦截未发布端口，由静态规则挡住（每轮 12 项） |
+| R-116 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix` 与各存活检查） | r16（§14.1） | 2026-10-08 | `modules_only` 档（lnmods）只经 Traefik 入口到达 Module，公网、局域网与宿主均拒绝（12 项） |
+| R-117 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | `module_access` 打开（lnlan）经 Traefik 到达 Module、关闭（lninet）拒绝（6 项） |
+| R-118 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`traefik_address_change_and_anasd_start`、`policy_and_traefik_after_restart`） | r16（§14.1） | 2026-10-08 | Traefik 停止后被另一容器占走原地址再启动、anasd 重启与宿主重启后，`anas-traefik` 都跟随当前地址，经 Traefik 的访问恢复；apply 重建 Traefik 未单独测 |
+| R-120 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`late_docker_network_is_not_lan`） | r16（§14.1） | 2026-10-08 | 实例运行后新建的 Docker 网络与容器，`internet_lan` 与 `internet_lan_host` 实例都不能访问（6 项） |
+| R-122 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | 四档实例都能用本租约网关的 DNS，非槽位实例经 DHCP 取得地址（6 项） |
+| R-123 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | `intra_lease` 打开（lnlan）两实例互访可达、关闭（lninet）拒绝（5 项）；打开时同租约经宿主端口访问自己的槽位可达（r16 只记录，此后改为断言） |
+| R-124 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`cli_revocation_ends_connections`、`console_revocation_ends_connections`） | r16（§14.1） | 2026-10-08 | CLI 移除 lninet.side、控制台计划并应用移除 lninet：已建立的连接停止应答，证书 404、ACL 清空、实例停止，管理员重新启动的实例新连接仍被拒 |
+| R-126 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`static_forwarding_rules_after_docker`、`admin_forward_rules_keep_precedence`、`policy_and_traefik_after_restart`、`host_network_rules_removed`） | r16（§14.1）；r26、r27（§14.2） | 2026-10-10 | 部署后与重启后六条 `anas-lease-forward-*` 依次排在 Docker 规则之后（docker.io 26 不写 IPv6 规则时 ip6tables 只核对顺序）；管理员首位规则先生效；审批卸载后规则、端口表、占位与开机恢复单元全部删除 |
+| R-129 | `server-incus-lease-network-e2e.py`（`console_lease_page`）与 `test-env/helpers/console-page-probe` | r26 Debian 13，无头 Chromium 154（§14.2） | 2026-10-10 | 四个租约各方向的放行/拒绝与 API 一致，放行与拒绝的线型、颜色、箭头不同；页面只有刷新按钮、无表单、只发 GET；截图 `99442813…dffdf6` 人工查看无误 |
+| R-130 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix` 与重启后策略） | r16（§14.1） | 2026-10-08 | 局域网、宿主与其他容器主动连入各档实例被拒，出站回包、DHCP 与 DNS 正常（18 项） |
+| R-133 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | lnlan（HTTP 发布与槽位绑定）、lnhost（槽位绑定）：Traefik 到发布端口、外部来源到绑定端口可达，未声明端口与其他来源拒绝（10 项） |
+| R-135 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`http_publication_through_traefik`、两次撤销与授权变更） | r16（§14.1） | 2026-10-08 | HTTP 发布、授权与档位变化、CLI 与控制台撤销前后，宿主 nft 规则集、路由与永久邻居项不变；比较时排除 Incus 自己的表、端口绑定表、Docker 为 Module 网络写的规则与路由及网桥 linkdown 标志 |
+| R-136 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | 不同租约（含 lninet 的两个租约）两族直连全被拒，含先建的 lnhost 到后建的 lnmods（此时只由 lnmods 自己的 ACL 拦截）；另一租约经宿主地址访问本租约的端口绑定被拒（20 项） |
+| R-137 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | 经 Traefik 访问另一租约的 HTTP 发布受访问方档位与 `module_access` 约束（4 项） |
+| R-138 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`、`explicit_port_conflicts_fail_apply`） | r16（§14.1） | 2026-10-08 | 两个租约在宿主各地址上的不同端口都生效；与另一租约端口、宿主进程、Docker 发布冲突的三次 apply 都被拒且活动部署不变 |
+| R-140 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（各存活检查与 `lnetSameACLs`） | r16（§14.1） | 2026-10-08 | 改 lnlan 授权与 lnside 档位、撤销 lnside、撤销 lninet 与重启后，其他租约的档位、HTTP 发布与端口绑定照常（39 项）；其他租约 ACL 去掉“其他租约网段”与宿主地址列表后不变 |
+| R-145 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`mediator_down_routes_stay_then_reconcile`） | r16（§14.1） | 2026-10-08 | anasd 停机时已发布路由可用、新发布不生效；停机期间删一个路由文件、加一个孤立路由，启动后孤立路由删除、缺失路由补齐 |
+| R-147 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`cli_activation_prunes_changed_routes`、`held_connection_and_removed_module_config`、`console_revocation_ends_connections`） | r16（§14.1）；r26、r27（§14.2） | 2026-10-10 | CLI 部署：中介停机时激活即删除授权改变的路由，启动后按新授权重新发布；控制台部署：同一计划把 lnlan 的 HTTP 授权改回 8080，激活后旧路由删除、以新文件名重新发布 |
+| R-150 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`） | r16（§14.1） | 2026-10-08 | TCP 与 UDP 原样到达 guest，guest 看到真实客户端地址（3 项） |
 | R-151 | `test-env/fixtures/incus-lifecycle-lab/proxy-nat-probe.py`（规则原型） | 一次性 Debian 13 VM / Incus 7.0.1，`r12-proxy-nat-probe` 诊断轮 | 2026-09-29 | 手写 `fib daddr type local` 规则：宿主各地址上的端口转到实例，宿主外连与转发流量不受影响；产品实现待验收（[探测记录](../reviews/2026-09-29-incus-proxy-nat-wildcard-probe.md)） |
-| R-152 | 待新增 | 端口绑定随 apply 经 hostd 写入与移除端口表，运行时不变 | — | 待实现 |
-| R-154 | 待新增 | 显式端口已被占用时 apply 失败并出现在运行问题里；`auto` 跳过被占端口 | — | 待实现 |
-| R-157 | 待新增 | 租约启用 IPv6 时，经宿主 IPv6 地址访问端口绑定能到达槽位的固定 IPv6 | — | 待实现 |
-| R-160 | 待新增 | 绑定生效后，宿主进程或 Docker 再绑定同一端口直接失败 | — | 待实现 |
-| R-161 | 待新增 | 宿主重启时端口已被其他进程抢先占用：该绑定不生效并记录运行问题，那个进程照常可用 | — | 待实现 |
-| R-162 | 待新增 | 人为制造冲突、删除占位或改动规则后，anasd 记录运行问题 | — | 待实现 |
+| R-151 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`、`port_binding_holds_and_host_addresses`） | r16（§14.1） | 2026-10-08 | 产品实现：宿主各地址（含绑定后新增的地址）上的端口都转到槽位，回环地址不接管，宿主外连与转发不受影响（8 项） |
+| R-152 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`port_bindings_applied_by_hostd`） | r16（§14.1） | 2026-10-08 | 绑定随 apply 由 hostd 的 `incus.ports.sync` 写入端口表，冲突变体被拒时端口表不变 |
+| R-154 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`explicit_port_conflicts_fail_apply`、`auto_port_skips_taken_ports`） | r16（§14.1）；r26、r27（§14.2） | 2026-10-10 | 显式端口被宿主进程占用时 apply 失败并记入运行问题，之后成功的 apply 关闭该问题；宿主进程占住批准范围内 6/7 的端口时 `auto` 落在空闲端口、可从局域网到达，已有 `auto` 端口不变 |
+| R-157 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`reachability_matrix`、`squatted_binding_left_out_and_recorded`） | r16（§14.1） | 2026-10-08 | 经宿主 IPv6 地址访问绑定到达槽位固定 IPv6，重启后同样（4 项） |
+| R-160 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`port_binding_holds_and_host_addresses`） | r16（§14.1） | 2026-10-08 | 绑定生效后宿主进程与 Docker 发布同端口都失败，TCP 连接与 UDP 报文之后占位仍在 |
+| R-161 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`early_port_squatter_installed`、`squatted_binding_left_out_and_recorded`） | r16（§14.1） | 2026-10-08 | 开机先于占位抢占一个 UDP 绑定端口：该绑定不生效并记运行问题，抢占进程照常应答，其余 TCP/UDP 与 IPv6 绑定恢复；r15 发现开机同步误删绑定，修复后通过 |
+| R-162 | `server-incus-lease-network-e2e.py` 与 `compute_lease_network_native_linux_test.go`（`binding_drift_recorded_by_anasd`） | r16（§14.1） | 2026-10-08 | 人为停掉占位、改动端口表后，anasd 在 Docker 事件触发的检查中记录运行问题；anasd 重启触发同步修复后问题关闭 |
 | R-108 | `test-env/scripts/server-incus-host-action-e2e.py` | 三个一级发行版 amd64，Zabbly `lts-7.0` 固定来源与钉包 | 2026-09-26 | Debian 13、Ubuntu 26.04、24.04 各 23 项审批/供给/卸载通过，实际安装 Incus 7.0.1 且精确删除受管包，见[验收记录](../reviews/2026-09-26-incus-host-action-7.0.1-acceptance.md)；来源不可用时的失败指引与 ARM64 未实测 |
 
 ## 11. 文档同步
@@ -1228,7 +1230,7 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 
 ## 12. 当前阻塞与执行顺序
 
-1. M10a、M10b、M11、M11b、M11c 的代码与单元测试于 2026-10-03 完成（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），剩余是实机 e2e：在一次性宿主上跑出站四档、默认拒绝入站、撤销、HTTP 发布（需要一个声明 `publish.http` 的消费者或实验 Module）、端口绑定（含开机顺序与 IPv6）和租约网络视图，结果登记到 §10。前置的宿主通道同步动作（HOSTACT-R-014、R-015）与[运行问题记录](../requirements/runtime-issues.md)的 CLI 部分已随之实现。命名镜像解析已定案并随 M12 关闭。
+1. M10a、M10b、M11、M11b、M11c 的代码与单元测试于 2026-10-03 完成（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 实机 r16 与 2026-10-10 同一工件在 Debian 13（r26）、Ubuntu 26.04（r27）的两轮通过，R-054 按操作者选择改写并有契约测试，五个里程碑均已关闭（§14.1、§14.2）。仍未覆盖 ARM64 与 VM 档；尚无内置消费者声明 HTTP 发布或端口绑定。命名镜像解析已定案并随 M12 关闭。
 2. M8b staging 构建验证已完成；继续 M10 宿主原生生命周期与 M11/M6 剩余矩阵，不得因此宣称完整入站可用。
 3. 宿主动作通道与统一动作 ABI 的实现仍分别归各自计划，Incus 只接入，不在本计划重复分配其需求。
 4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。独立宿主尚无可用验收证据；容器与 VM 分别跟踪，M2/M4/M5/M9 的真实验收均登记到 §10。
@@ -1331,7 +1333,7 @@ e2e 记录中的相应行保留为历史。
 实现：
 
 - [x] compute Contract 新增 `network.egress`、`network.module_access`、`network.intra_lease`，并随部署冻结（2026-10-03）
-- [x] Provider 把档位、开关与局域网清单写进租约网桥的 ACL 和 address set，Traefik 地址清单只按名字引用；`inspect`、`ensure` 覆盖漂移（2026-10-03）
+- [x] Provider 把档位、开关与局域网清单写进租约网桥的 ACL 和 address set，Traefik 地址清单只按名字引用；`inspect`、`ensure` 覆盖漂移（2026-10-03）。2026-10-08 实测 Incus 网桥 ACL 也过滤同一网桥内的流量，全局 `anas-leases` 含本租约网段，使 `intra_lease` 与经本网关访问宿主失效；按操作者选择改为 `ensure` 时把其他租约的网段直接写进本租约 ACL，`intra_lease` 放行本租约实例地址（不含网关），删除 `anas-leases`
 - [x] Core 在 apply 时计算局域网清单（默认路由所在网卡的直连网段加配置的附加网段）（2026-10-03）
 - [x] Traefik 地址清单由 hostd 的边界内同步动作写入（2026-10-03，`incus.traefik.sync`）（`INCUS-R-118`、`HOSTACT-R-014`/`R-015`）：`incus.configure` 批准一次；apply 启动 Traefik 后、Traefik 容器重启后与 anasd 启动时由 anasd 触发，hostd 自己从 Docker 读取地址
 - [x] `incus.configure` 安装、`incus.uninstall` 删除宿主侧那组固定静态转发规则（窄规则，`INCUS-R-126`；2026-10-03，含开机恢复单元）
@@ -1341,8 +1343,112 @@ e2e 记录中的相应行保留为历史。
 - [x] 删除逐实例许可实现：`internal/incusingresshost/forwarding_*`、`internal/incusprovision/forwarding_*`、转发宿主动作、部署前的转发撤回（2026-09-30，[删除记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md)）
 - [x] 租约网桥默认入站改为拒绝（`INCUS-R-130`，2026-10-03）；产品实现上与 `INCUS-R-122` 一起核验 DHCP、DNS 与出站回包随 e2e
 - [x] Provider 的 `ensure` 结果交回租约网桥的网段与网关，Core 记入 resource state（`INCUS-R-159`，2026-10-03）
-- [x] 控制台租约网络视图：API（`INCUS-R-128`，含入站档位与发布）与只读图形页面（`INCUS-R-129`）（2026-10-03；页面 e2e 未运行）
+- [x] 控制台租约网络视图：API（`INCUS-R-128`，含入站档位与发布）与只读图形页面（`INCUS-R-129`）（2026-10-03；页面 e2e 2026-10-10 r26 通过，§14.2）
 - [x] 同步 compute Contract、`incus` Module 技术文档（中英文）与 Forgejo 设计 §4.3 的出站描述（2026-10-03）
+
+### 14.1 2026-10-08 实机验收（r16）
+
+- **基线**：工作树快照提交 `df502f5c`（tree `f95bfc0a`，父提交 `aa1944a0`，含当时全部未提交改动，不在任何分支），
+  `0.0.0-native.47`，`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -trimpath`；`anas` `44123d81…`、`anasd` `ff3c3358…`、
+  `anas-hostd` `633411d2…`。
+- **环境**：ln.hlong.wang 上的一次性 QEMU VM（Ubuntu 26.04 cloud image，2 vCPU/3 GiB，用户态 NAT，无共享卷与网桥），
+  审批安装的 Zabbly Incus 7.0.1，VM 自己的发行版 docker.io 29.1.3（数据目录在专用测试路径）；真实 Core CLI 与控制台
+  apply、生产 Hook/Provider/anasd/hostd，真实 Traefik 3.7.10 与 lego 镜像构建，Debian trixie 容器档 guest 经共享客户端
+  创建；netns 模拟局域网（198.51.100.0/24、2001:db8:51::/64）与公网（203.0.113.0/24），一个 Docker 容器替代 Module。
+  五个实验租约：lninet.workers/side（`internet`）、lnlan（`internet_lan`、`module_access`、`intra_lease`、HTTP 发布、
+  固定端口绑定）、lnhost（`internet_lan_host`、`auto` TCP/UDP 绑定）、lnmods（`modules_only`）。只覆盖 amd64 与容器档。
+- **结果**：重启前后两阶段 14 个阶段全部通过：审批安装/配置/登记 3 个作业，deploy 10、matrix 4、runtime 8 项 Go 子测试，
+  控制台租约视图两次（R-128 的 API 数据撤销前 4 份、撤销后 3 份，与冻结声明一致）、控制台撤销计划与应用、after_console 2、before_reboot 2、重启后 4 项；连通检查 209 项中 207 项
+  断言全部符合、2 项只记录（R-115 直连容器地址超时；R-123 同租约经宿主端口可达）。QEMU 正常关机、清理通过；ln 宿主
+  10 项基线（容器 24、网络 17、nft、两族路由、卷、命名 netns、Docker 配置与单元）前后一致。全程只在一次性 VM 自己的
+  Docker 里建停容器，未改动 ln 上的 Docker 容器。证据归档 `ce5fe2bf…42a4`，原始日志与 JSON 在 ln
+  `/data/anas-incus-leasenet-20261008.6xdJih/r16-n47-ubuntu2604/reports/`（不入 Git）；逐项结果见 §10。
+- **过程**：2026-10-07—08 共 16 轮（r1—r16）。实机发现并修复的产品缺陷，均有修复前失败的回归测试：
+  1. hostd 计划投影用未规范化的请求，所有 Incus 审批计划被判为执行无法确认（`internal/hostaction/execute.go`）；
+  2. Docker 29 的 `docker events --format {{.ID}}` 以 64 退出，容器启动不再触发同步，改用 `{{.Actor.ID}}`；
+  3. Incus 创建对象返回 201，hostd 同步调用按读请求判失败，`incus.configure` 建 `anas-traefik` 失败；
+  4. 冻结部署丢失 `http_request_owner`，声明 HTTP 发布的消费者 apply 必败；
+  5. `incus.traefik.sync`、`incus.ports.sync` 没有阶段名与结果投影，从未真正执行，失败还会永久卡住宿主动作队列；
+  6. 全局 `anas-leases` 含本租约网段（设计问题，按操作者选择改为 ACL 内直接列出其他租约，见 §14）；
+  7. 上项新代码在 `modules_only` 租约上回读校验必败（该档不写出站 drop 规则）；
+  8. 重启后 anasd 触发的端口同步早于 Incus 拉起租约网桥，把已生效的绑定判为 `lease_bridge_missing` 并移除；现在已生效且
+     槽位地址不变的绑定在网桥暂缺时保留（R-161）。
+  其余失败属于测试夹具：后续变体导入前未重新加锁、写死的 Module 镜像标签、控制台需要工作区 Module 视图、宿主快照把
+  Docker 为 Module 网络写的规则与 Incus 按实例的网卡过滤也算进去、ACL 比较把重新 `ensure` 时更新的其他租约与宿主地址
+  列表当作策略变化。
+- **未覆盖**：R-129 图形页面；R-126 卸载删除与管理员规则先后；R-115/R-126 的 Debian docker.io 26；R-147 控制台路径；
+  R-154 `auto` 跳过被占端口；R-105 在新静态规则上的 e2e；M11 的 R-053（双栈公网 HTTPS 入口）、R-054、R-087、R-088、
+  R-095 e2e；ARM64、VM 档与其他发行版。2026-10-10 除 R-054 待确认外均已补齐，见 §14.2。
+
+### 14.2 2026-10-10 实机验收补全（r26 Debian 13、r27 Ubuntu 26.04）
+
+- **基线**：工作树快照提交 `7081dc1f`（tree `851238a3`，父提交 `c397e92e`，含当时全部未提交改动，不在任何分支），
+  `0.0.0-native.54`，`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -trimpath`；`anas` `7edf306d…`、`anasd` `6965d15d…`、
+  `anas-hostd` `ae342228…`。两轮用同一工件。
+- **环境**：同 §14.1 的一次性 QEMU VM 与拓扑。r26 用 Debian 13 genericcloud，发行版 `docker.io`/`docker-cli`
+  26.1.5+dfsg1-9+deb13u1（不自己拦截未发布端口、默认不写 IPv6 规则）、`docker-compose` 2.26.1、`chromium`
+  154.0.8037.92；r27 用 Ubuntu 26.04，发行版 `docker.io` 29.1.3-0ubuntu4.1、`docker-compose-v2` 2.40.3；Ubuntu 只以 snap 提供 Chromium，页面用例只在 Debian 上运行。
+- **新增用例**（`compute_lease_network_native_linux_test.go` 与 `server-incus-lease-network-e2e.py`）：
+  - `request_files_cannot_widen_publication`（R-087、R-088、R-095）：绕过共享客户端直接在请求目录写入越权端口、
+    其他租约地址、网关、前缀外实例、非法标签、多余字段（`auth`、`middlewares`、`entryPoints`、`domain`、`url`）、
+    手写路由文件、符号链接与第二个硬链接，均不生效、路由不变、anasd 记录拒绝原因；路由只带 `https` 入口；
+    非 root 身份（uid 65532）不能写 Traefik 动态目录及其 `compute-http/` 子目录。夹具消费者的
+    `http_request_owner` 为 `0:0`（测试进程以 root 写请求），因此非特权身份用 uid 65532 单独核验；
+  - `forward_auth_frozen_at_apply`（R-095、R-087）：用合成的 `forward_auth` 提供方 `lnauth`（Hook 输出
+    `lnet-auth@docker`，Compose 标签定义 forwardAuth，网关是探测程序的 `--auth` 模式）把 lnlan 的 HTTP 发布改为
+    `forward_auth` 并部署：两条路由都带该 middleware，未带凭据的请求得到网关的 401、带凭据得到 guest 应答；
+    请求文件要求 `auth: none` 或自带 `middlewares` 不被读取，新标签的合法请求同样被网关拦住；部署回 `none` 后恢复；
+  - `auto_port_skips_taken_ports`（R-154、R-153）：宿主进程占住批准范围内 7 个端口中的 6 个，新增的 `auto` 绑定
+    落在空闲端口并可从局域网到达，已有 `auto` 端口不变；
+  - `admin_forward_rules_keep_precedence`（R-105、R-126）：管理员在 iptables/ip6tables FORWARD 首位插入的拒绝规则
+    先于 ANAS 规则生效，重启恢复单元后仍在首位、ANAS 规则仍排在 Docker 之后、Docker 的 FORWARD 策略不变；删除后放行；
+  - R-053：公网命名空间经宿主 IPv4 与 IPv6 地址访问 lnlan 的 HTTPS 路由，到达只有 IPv4 后端的 guest；
+  - R-147 控制台路径：控制台计划并应用的部署同时把 lnlan 的 HTTP 授权从 8080、8081 改回 8080，激活即删除其路由文件，
+    中介按新授权以新文件名重新发布；
+  - R-129：Debian 上用无头 Chromium（`test-env/helpers/console-page-probe`，DevTools 协议，带驱动持有的会话）打开
+    `#/network`：四个租约各方向的放行/拒绝与 API 一致，放行与拒绝用不同的线型、颜色和箭头，页面只有刷新按钮
+    （单工作区不显示工作区选择）、没有表单、只发 GET；截图人工查看无误；
+  - 第二阶段末尾：CLI 移除全部消费者（撤销 confirmed、路由与端口表清空、端口占位删除），操作者删除撤销保留的项目、
+    网桥与 ACL，控制台审批 `incus.uninstall`，之后宿主无 `anas-lease-forward-*`、无端口表与占位单元、无开机恢复单元，
+    FORWARD 链中不属于 ANAS 的规则不变（Incus 控制网络 `br-anas-ctrl` 随卸载删除，Docker 为它写的规则一并消失），
+    Traefik 仍在运行（R-126、R-105）。
+- **结果**：
+  - r26（Debian 13）：两阶段 15 个阶段全部通过（审批安装/配置/登记、deploy 10、matrix 4、runtime 12、租约视图、
+    租约页面、before_console 2、控制台撤销、after_console 2、撤销后视图、before_reboot 2、after_reboot 4、teardown 3、
+    控制台审批卸载、after_uninstall 2）；连通检查 221 项全部断言通过、无只记录项；页面截图 SHA-256 `99442813…dffdf6`；
+    证据归档 `d22a4291…7869c`。
+  - r27（Ubuntu 26.04）：同样的 14 个阶段（无页面阶段）全部通过；连通检查 221 项全部断言通过、无只记录项；证据归档
+    `e1b960f7…41d9a7`。
+  - 两轮 QEMU 正常关机、VM 清理通过；r26 的 ln 宿主 10 项基线前后一致。r27 收尾时 ln 物理网卡 `enp1s0` 在
+    03:00:14—03:00:36 掉线再恢复（宿主内核与 systemd-networkd 日志），收尾快照恰好缺少 RA 下发的 IPv6 路由，其余 9 项一致；
+    链路恢复后 IPv6 路由与 r27 开始前完全相同。全程只在一次性 VM 自己的 Docker 里建停容器，未改动 ln 上的 Docker 容器。
+    原始日志与 JSON 在 ln `/data/anas-incus-leasenet-20261008.6xdJih/r26-n54-debian13/reports/`、`r27-n54-ubuntu2604/reports/`
+    （不入 Git）；逐项结果见 §10。
+- **过程**：2026-10-09—10 共 11 轮（r17—r27），本轮未发现产品缺陷。失败均属测试夹具或实验环境：`auto` 用例在 hostd 同步前
+  探测；Debian 的 `docker.io` 不含 CLI（`docker-cli` 只是 Recommends）；漂移用例与上一步激活触发的同步竞争、卸载前检查早于
+  激活同步；页面校验误要求工作区选择框；页面加载刷新共享会话会换发 CSRF 令牌，驱动之后需重新取得；卸载后比较把控制网络的
+  Docker 规则算作被改动；VM 内 apt 经 deb.debian.org 停滞、经 mirrors.aliyun.com 的 HTTP/1.1 只有约 150 KB/s，实验脚本改用
+  TUNA、USTC、Debian 官方的镜像列表并分段重试下载。r19、r25 的 ln 基线只差 `anas_bridge` 一个 IPv6 临时地址的轮换（宿主
+  自身行为，非实验泄漏）。
+- **观察（未在本轮处理）**：
+  1. 待验证的竞争：同步动作采用 coalesce 策略，触发时若同名作业已在运行就并入它；若该作业在新部署激活前已读完冻结部署，这次
+     激活的绑定要等下一次触发才生效（R-152；`incus.traefik.sync` 同理，R-118）。仅为代码推断，未实测，已拆为独立任务；
+  2. 控制台任一页面加载都会刷新会话并换发 CSRF 令牌，另一标签页之后的写请求在中央鉴权处得到通用的 `forbidden`，看不到
+     `csrf_mismatch` 的“刷新页面”提示；
+  3. 租约页面的 IPv6 网段在窄列里于 `/64` 中间折行。
+- **R-054 处理**（2026-10-10，操作者选择方案 A）：原文要求复用 `ANAS_TRAEFIK_ROUTE__*` 机制，设计 §5.1.7 写作「用该渲染器」；
+  实现是 anasd 中介用 Go 的 `computeingress.RenderRoute` 生成文件 provider 路由。该环境变量机制只在 Traefik 容器启动时读取一次，
+  无法承载运行时发布；能复用的只有文件 provider 目录与路由形状，安全校验也全在 Go 侧。因此改写需求第 7 条与 R-054（写入 Traefik
+  已监视的文件 provider 目录、路由与 `ANAS_TRAEFIK_ROUTE__*` 同形、Traefik 侧不新增能力或配置）和设计 §5.1.7；删除 Traefik
+  entrypoint 中无人调用的 `ANAS_TRAEFIK_RENDER_ONLY` 模式（脚本恢复为加入该模式前的内容，仍属工作树中尚未发布的 Traefik
+  `3.7.10-r7`，修订号计算器核对一致）；新增 `internal/computeingress/route_template_test.go`，用该 entrypoint 渲染同一路由与
+  中介输出比对。R-054 据 r16、r26、r27 的实机发布与该契约测试判定通过。
+- **审阅项**（2026-10-10 对照当前代码与文档）：R-142 中介是 `cmd/anasd/compute_http.go` 的 goroutine，没有新增服务单元；
+  R-143 中介（`internal/runner/compute_http.go`）不读 Secret、不调用宿主动作，`random` 域名的标签由持有 `lease_secret` 的
+  客户端派生、中介只校验形状；R-148 运行时发布只经请求文件与 `compute-http/` 目录，Core 只在激活时清理授权改变的路由；
+  R-062、R-070 见设计 §5.1.6 与 LAN 预留节（`network_mode: nat | lan`、两协议族围栏同时消失、发布授权不含网络模式）；
+  R-096 见 compute Contract 技术文档 `auth: none` 处的说明。
+- **未覆盖**：ARM64、VM 档与其他发行版。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 
@@ -1362,7 +1468,7 @@ M11b 随 M10a 实施，先做实机验证，再写实现：
 M11b 实现：
 
 - [x] compute Contract 新增 `network.ingress`（`none`、`published`）与 `publish.http`（原 `ingress` 段），随部署冻结；`none` 档拒绝发布声明（2026-10-03）
-- [x] Provider 按档位与发布写 ACL 入站规则；用全部租约网段的地址清单排除其他租约；`inspect`、`ensure` 覆盖漂移（2026-10-03）
+- [x] Provider 按档位与发布写 ACL 入站规则；用全部租约网段的地址清单排除其他租约；`inspect`、`ensure` 覆盖漂移（2026-10-03；2026-10-08 改为直接列出其他租约网段，见 §14）
 - [x] 删除逐发布许可实现：`internal/computeingressruntime`、`internal/incusingresshost`、`internal/incusprovision` 的 `ingress_observation*` 与 `observer_configuration*`、`internal/computeingress` 的规划器、宿主动作 `incus.ingress.observe_http` 与 `incus.ingress.observer(.plan)`、OpenAPI 与 Web 的 `observer` 阶段、`internal/jobexecutor` 的入站排空与工作区围栏（保留领取前的授权复核）、`cmd/anasd` 的相应装配、`cmd/incus-network-prototype` 及其测试脚本与夹具（2026-09-30，同上记录）
 
 M11 实现（等第一个声明 HTTP 发布的消费者）：

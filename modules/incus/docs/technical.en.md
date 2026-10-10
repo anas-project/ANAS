@@ -43,7 +43,7 @@ provisioning design; the deletion list is in the
   see "Host side of HTTP publication and port bindings" below.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.3.0-r2` / `anas.module/v1`.
+> Status: current implementation; based on `7.3.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Module, capability and contract dependencies
@@ -61,7 +61,7 @@ requested isolation tier without exposing low-level devices or privilege setting
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r2` | `incus` | 0 |
+| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r3` | `incus` | 0 |
 <!-- generated:compose-topology:end -->
 
 There is a single run-only service. It has no `ports`, no Traefik label, no volumes, and mounts no host
@@ -329,28 +329,39 @@ replies. The rules come from the frozen tiers:
 
 | Tier | Egress rules (every source is limited to the lease's own subnets, so forged off-subnet sources are dropped) |
 | --- | --- |
-| `internet` | allow public addresses; drop the LAN, host addresses and `$anas-leases` |
-| `internet_lan` | allow public addresses and the LAN; drop host addresses and `$anas-leases` |
-| `internet_lan_host` | allow public addresses, the LAN, host addresses and the private ranges (where Docker's published ports land after DNAT); drop `$anas-leases` |
+| `internet` | allow public addresses; drop the LAN, host addresses and the other leases' subnets |
+| `internet_lan` | allow public addresses and the LAN; drop host addresses and the other leases' subnets |
+| `internet_lan_host` | allow public addresses, the LAN, host addresses and the private ranges (where Docker's published ports land after DNAT, and where the lease's own gateway is); drop the other leases' subnets |
 | `modules_only` | allow only the Traefik entrypoint port on `$anas-traefik` |
 
 `module_access` adds an allow to the `$anas-traefik` entrypoint port for `internet` and `internet_lan`. Only the
-`published` ingress tier has ingress rules: first drop connections from `$anas-leases`, then allow `$anas-traefik`
-to the HTTP publication ports and any source to each slot's bound guest ports. Incus applies drop before allow, so
-an instance reaching its own lease's slot through a host port is blocked too; direct traffic inside a lease is
-`intra_lease`'s decision -- when it is off the profile NIC sets `security.port_isolation=true`, and instances on one
-bridge cannot reach each other at layer 2 (`INCUS-R-123`). The LAN is computed by Core at apply from the host's
-default-route interface subnets plus `lan_extra_subnets`, and host addresses are the host's interface addresses;
-both reach the Provider through `ANAS_RESOURCE_NETWORK`, `ANAS_RESOURCE_LAN_SUBNETS` and
-`ANAS_RESOURCE_HOST_ADDRESSES`.
+`published` ingress tier has publication rules: first drop connections from the other leases' subnets, then allow
+`$anas-traefik` to the HTTP publication ports and any source to each slot's bound guest ports.
 
-`$anas-leases` is a global address set every `ensure` rewrites to the union of all lease bridge subnets;
+Incus bridge ACLs also filter traffic **between instances on the same bridge** (measured on 7.0.1 on 2026-10-08),
+and drop always wins over allow. So "the other leases' subnets" lists the other leases and never this one: `ensure`
+reads every bridge on the daemon that carries the lease marks and writes all subnets except this lease's own
+straight into the egress and ingress drop rules (`modules_only` egress has a single allow and its default drop
+already covers the other leases, so it gets no such rule; the ingress one exists only in the `published` tier). A
+lease created later joins this lease's list at this lease's next `ensure` (Core runs `ensure` only for the consumers
+an apply activates, so an unchanged lease may keep its list for a long time); until then the newer lease's own egress and ingress rules already drop this lease, so every pair of
+leases has at least one side refusing (`INCUS-R-136`). `inspect` checks against the other-lease subnets the ACL
+itself lists: this lease's own subnet in that list is drift, a newer lease missing from it is not. Direct traffic
+inside a lease is `intra_lease`'s decision: when it is off the profile NIC sets `security.port_isolation=true` and
+the ACL allows nothing; when it is on, port isolation is dropped and each direction gets one rule allowing this
+lease's instance addresses -- the subnets without the network address and the gateway, written as address ranges.
+The gateway is the host, so `intra_lease` opens no connection between the host and the instances (`INCUS-R-123`,
+`R-113`, `R-130`). An instance reaches its own lease's slot through a host port only when `intra_lease` is on. The
+LAN is computed by Core at apply from the host's default-route interface subnets plus `lan_extra_subnets`, and host
+addresses are the host's interface addresses; both reach the Provider through `ANAS_RESOURCE_NETWORK`,
+`ANAS_RESOURCE_LAN_SUBNETS` and `ANAS_RESOURCE_HOST_ADDRESSES`.
+
 `$anas-traefik` is written only by hostd's sync action, and the Provider only names it -- when it is missing,
-`ensure` fails and points at `incus.configure`. Both need the daemon's `network_address_set` API extension (Incus
+`ensure` fails and points at `incus.configure`. It needs the daemon's `network_address_set` API extension (Incus
 7.0 and later); without it `ensure` fails before writing. `inspect.ready` requires the ACL rules to match the current
-tiers, subnets and slots exactly and `$anas-leases` to cover this lease's subnets; extra, disabled or widened rules
-are drift that `ensure` repairs with a whole-object PUT. Host package uninstall inventory treats any network ACL or
-address set as the daemon still being in use.
+tiers, subnets and slots exactly; extra, disabled or widened rules are drift that `ensure` repairs with a
+whole-object PUT. Host package uninstall inventory treats any network ACL, and any address set other than
+`anas-traefik`, as the daemon still being in use.
 
 The profile is fixed as `anas-lease` and carries exactly two devices:
 
@@ -879,7 +890,9 @@ reads them back, and only then disables holds no binding needs. An entry that fa
 becomes a host runtime issue (`/var/lib/anas-hostd/runtime-issues.json`). The entries in effect are written to
 `/var/lib/anas/incus-host/ports.json`; at boot the hold units start with `sockets.target`, before Docker, and
 `--restore-network` then restores the maps from that file, leaving out and recording any binding whose hold did not
-come up (`INCUS-R-161`). anasd triggers the sync at start and after every deployment activation; it also checks the
+come up (`INCUS-R-161`). At boot the sync anasd triggers may run before Incus has brought the lease bridges back: while
+a bridge is missing, a binding already in effect with the same slot address keeps its hold and map entries, and a new
+or changed one waits for the bridge. anasd triggers the sync at start and after every deployment activation; it also checks the
 bindings in effect read-only every minute and on container starts, and records a lost hold, a Docker publication
 conflict or drifted maps in the workspace's runtime issues without repairing anything (`INCUS-R-162`).
 

@@ -25,23 +25,27 @@ import (
 //     ingress tier publishes it; replies, DHCP and DNS are allowed by Incus ahead
 //     of the ACL.
 //
-// Traffic between instances on the same bridge is layer 2 and never reaches
-// the ACL; intra_lease is the profile NIC's port isolation instead.
+// The ACL also filters traffic between instances on the same bridge (Incus
+// 7.0.1, observed 2026-10-08): intra_lease is the profile NIC's port isolation
+// plus, when open, rules that allow this lease's own instance addresses in
+// both directions. Other leases are named by their subnets, written into the
+// drop rules at every ensure. A lease created later is not in an older
+// lease's list until that lease is next ensured, but the newer lease's own
+// rules drop the older one in both directions, so every pair stays apart
+// (INCUS-R-136).
 
 const (
 	aclEgressDefault  = "drop"
 	aclIngressDefault = "drop"
 
-	// leasesAddressSet holds every lease bridge's subnets on the daemon. Each
-	// ensure rewrites it, so a lease created later is excluded from every
-	// earlier lease at once, without re-ensuring them.
-	leasesAddressSet = "anas-leases"
 	// traefikAddressSet is written only by hostd from the Traefik containers it
 	// reads from Docker (INCUS-R-118, R-119). The Provider names it, never
 	// writes it.
 	traefikAddressSet = "anas-traefik"
 
-	leasesSetMarker = "compute-lease-subnets"
+	otherLeasesDescription        = "ANAS lease: other leases are never reachable"
+	otherLeasesIngressDescription = "ANAS lease ingress: never from a lease"
+	intraLeaseDescription         = "ANAS lease intra_lease: instances of this lease"
 )
 
 // reservedIPv4 are the ranges an internet destination never falls in:
@@ -90,11 +94,15 @@ type addressSet struct {
 	Config      map[string]string `json:"config"`
 }
 
-// leaseAddressing is what the bridge actually has: its subnets, gateway and
-// the slot addresses reserved on it. ensure reports it back to Core.
+// leaseAddressing is what the bridge actually has: its subnets, the instance
+// address ranges inside them and the slot addresses reserved on it; plus the
+// other leases' subnets ensure found on the daemon. ensure reports the bridge
+// part back to Core.
 type leaseAddressing struct {
 	Subnets []string // masked, IPv4 first
+	Members []string // the subnets without network address and gateway
 	Slots   []slotAddress
+	Others  []string // every other lease bridge's subnets
 }
 
 // leaseSubnets returns the bridge's concrete networks. "auto" is replaced by
@@ -178,7 +186,8 @@ func desiredLeaseACL(l lease, addressing leaseAddressing) networkACL {
 		return []aclRule{r}
 	}
 	public := familyFilter(append(slices.Clone(publicIPv4), publicIPv6...), l.NetworkIPv6)
-	leases := drop([]string{"$" + leasesAddressSet}, "ANAS lease: other leases are never reachable")
+	others := familyFilter(addressing.Others, l.NetworkIPv6)
+	leases := drop(others, otherLeasesDescription)
 
 	var egress []aclRule
 	switch n.Egress {
@@ -199,12 +208,21 @@ func desiredLeaseACL(l lease, addressing leaseAddressing) networkACL {
 	if n.ModuleAccess && (n.Egress == computenet.EgressInternet || n.Egress == computenet.EgressInternetLAN) {
 		egress = append(egress, traefik("ANAS lease module_access: ANAS Modules through Traefik")...)
 	}
-
 	ingress := []aclRule{}
+	if n.IntraLease {
+		// Instance addresses only: the gateway is the host, which neither
+		// direction opens.
+		egress = append(egress, allow(addressing.Members, intraLeaseDescription)...)
+		r := rule("allow", intraLeaseDescription)
+		r.Source = strings.Join(addressing.Members, ",")
+		ingress = append(ingress, r)
+	}
 	if n.Ingress == computenet.IngressPublished {
-		other := rule("drop", "ANAS lease ingress: never from a lease")
-		other.Source = "$" + leasesAddressSet
-		ingress = append(ingress, other)
+		if len(others) > 0 {
+			other := rule("drop", otherLeasesIngressDescription)
+			other.Source = strings.Join(others, ",")
+			ingress = append(ingress, other)
+		}
 		if len(n.HTTPPorts) > 0 {
 			r := rule("allow", "ANAS lease ingress: Traefik to HTTP publication ports")
 			r.Source, r.Protocol, r.DestinationPort = "$"+traefikAddressSet, "tcp", portList(n.HTTPPorts)
@@ -293,6 +311,7 @@ func prefixStrings(prefixes []netip.Prefix) []string {
 func ensureNetworkACL(ctx context.Context, c *client, l lease, addressing leaseAddressing) (string, error) {
 	name := leaseNetworkName(l.Sandbox)
 	desired := desiredLeaseACL(l, addressing)
+	listed := listedOtherLeases(desired)
 	path := "/1.0/network-acls/" + name + "?project=default"
 	var current networkACL
 	err := c.do(ctx, "GET", path, nil, &current)
@@ -321,7 +340,16 @@ func ensureNetworkACL(ctx context.Context, c *client, l lease, addressing leaseA
 	if err := verifyACL(actual, l, addressing); err != nil {
 		return "", err
 	}
+	if !slices.Equal(normalizedSubjects(listedOtherLeases(actual)), normalizedSubjects(listed)) {
+		return "", fmt.Errorf("network ACL %s did not keep the other leases' subnets", name)
+	}
 	return name, nil
+}
+
+func normalizedSubjects(values []string) []string {
+	out := slices.Clone(values)
+	slices.Sort(out)
+	return out
 }
 
 func verifyACLOwner(a networkACL, l lease) error {
@@ -333,9 +361,24 @@ func verifyACLOwner(a networkACL, l lease) error {
 
 // verifyACL requires exactly the desired rules, in any order: a missing rule
 // narrows the lease, an extra or changed one widens it (INCUS-R-125, R-134).
+// The other leases' subnets are the ones the ACL itself lists: a lease
+// created since this one's last ensure is not drift (it drops this one
+// itself), but a list that names this lease's own subnets is.
 func verifyACL(a networkACL, l lease, addressing leaseAddressing) error {
 	if err := verifyACLOwner(a, l); err != nil {
 		return err
+	}
+	addressing.Others = listedOtherLeases(a)
+	for _, other := range addressing.Others {
+		prefix, err := netip.ParsePrefix(other)
+		if err != nil {
+			return fmt.Errorf("network ACL %s names an invalid lease subnet", leaseNetworkName(l.Sandbox))
+		}
+		for _, own := range addressing.Subnets {
+			if prefix.Overlaps(netip.MustParsePrefix(own)) {
+				return fmt.Errorf("network ACL %s drops this lease's own subnet", leaseNetworkName(l.Sandbox))
+			}
+		}
 	}
 	desired := desiredLeaseACL(l, addressing)
 	if !sameRules(a.Egress, desired.Egress) || !sameRules(a.Ingress, desired.Ingress) {
@@ -385,86 +428,48 @@ func bridgeACLConfig(acl string) map[string]string {
 	}
 }
 
-// ensureLeasesAddressSet rewrites the daemon-wide set of lease subnets from
-// every marked lease bridge. Every lease's ACL drops traffic to and from it,
-// so writing the union (not just this lease's subnets) is what keeps a newer
-// lease out of an older one without touching the older ACL.
-func ensureLeasesAddressSet(ctx context.Context, c *client) error {
-	want, err := allLeaseSubnets(ctx, c)
-	if err != nil {
-		return err
-	}
-	path := "/1.0/network-address-sets/" + leasesAddressSet + "?project=default"
-	desired := addressSet{
-		Description: "ANAS compute: every lease bridge subnet",
-		Addresses:   want,
-		Config:      map[string]string{"user.anas.managed": leasesSetMarker},
-	}
-	var current addressSet
-	err = c.do(ctx, "GET", path, nil, &current)
-	switch {
-	case err == nil:
-		if current.Config["user.anas.managed"] != leasesSetMarker {
-			return fmt.Errorf("network address set %s is not managed by ANAS; refusing to modify it", leasesAddressSet)
+// listedOtherLeases reads the other leases' subnets back from the drop rule
+// ensure wrote: the egress one, or, for modules_only, which writes none, the
+// published ingress one. A modules_only lease without published ingress
+// names no other lease; both default drops already cover them.
+func listedOtherLeases(a networkACL) []string {
+	for _, r := range a.Egress {
+		if r.Action == "drop" && r.Description == otherLeasesDescription && r.Source == "" {
+			return splitSubjects(r.Destination)
 		}
-		if err := c.do(ctx, "PUT", path, desired, nil); err != nil {
-			return err
-		}
-	case isNotFound(err):
-		desired.Name = leasesAddressSet
-		if err := c.do(ctx, "POST", "/1.0/network-address-sets?project=default", desired, nil); err != nil {
-			return err
-		}
-	default:
-		return err
 	}
-	return verifyLeasesAddressSet(ctx, c)
-}
-
-// verifyLeasesAddressSet requires the set to cover every current lease
-// subnet. Covering more is harmless: a subnet whose bridge is gone has no
-// guests to protect or to block.
-func verifyLeasesAddressSet(ctx context.Context, c *client) error {
-	covers, err := leasesAddressSetCovers(ctx, c)
-	if err != nil {
-		return err
-	}
-	if !covers {
-		return fmt.Errorf("network address set %s is missing, not managed by ANAS or does not cover every lease subnet", leasesAddressSet)
+	for _, r := range a.Ingress {
+		if r.Action == "drop" && r.Description == otherLeasesIngressDescription && r.Destination == "" {
+			return splitSubjects(r.Source)
+		}
 	}
 	return nil
 }
 
-// leasesAddressSetCovers is the read-only check inspect uses: drift is a
-// false answer, only an unreadable daemon is an error.
-func leasesAddressSetCovers(ctx context.Context, c *client) (bool, error) {
-	want, err := allLeaseSubnets(ctx, c)
-	if err != nil {
-		return false, err
-	}
-	var current addressSet
-	err = c.do(ctx, "GET", "/1.0/network-address-sets/"+leasesAddressSet+"?project=default", nil, &current)
-	if isNotFound(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("read the lease subnet address set: %w", err)
-	}
-	if current.Config["user.anas.managed"] != leasesSetMarker {
-		return false, nil
-	}
-	have := map[string]bool{}
-	for _, address := range current.Addresses {
-		if prefix, err := netip.ParsePrefix(strings.TrimSpace(address)); err == nil {
-			have[prefix.Masked().String()] = true
+func splitSubjects(value string) []string {
+	var out []string
+	for _, part := range strings.Split(value, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
 		}
 	}
-	for _, subnet := range want {
-		if !have[subnet] {
-			return false, nil
+	return out
+}
+
+// otherLeaseSubnets is every lease bridge subnet on the daemon except this
+// lease's own.
+func otherLeaseSubnets(ctx context.Context, c *client, own []string) ([]string, error) {
+	all, err := allLeaseSubnets(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, subnet := range all {
+		if !slices.Contains(own, subnet) {
+			out = append(out, subnet)
 		}
 	}
-	return true, nil
+	return out, nil
 }
 
 func allLeaseSubnets(ctx context.Context, c *client) ([]string, error) {

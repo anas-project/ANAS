@@ -204,6 +204,34 @@ func TestPortSyncHoldsThenForwardsFrozenBindings(t *testing.T) {
 	}
 }
 
+// INCUS-R-161: anasd's start can sync before Incus has brought the lease
+// bridges back after a restart. Bindings already applied keep their holds
+// and rules; a binding whose slot address changed still waits for the bridge.
+func TestPortSyncKeepsAppliedBindingsWhileTheLeaseBridgeIsDown(t *testing.T) {
+	f := newFakePortHost()
+	if _, err := f.host().syncPortBindings(context.Background(), DefaultPortRangeFirst, DefaultPortRangeLast); err != nil {
+		t.Fatal(err)
+	}
+	elements := slices.Clone(f.elements)
+	delete(f.bridges, "lease120067207a")
+	f.calls = nil
+	result, err := f.host().syncPortBindings(context.Background(), DefaultPortRangeFirst, DefaultPortRangeLast)
+	if err != nil || len(result.Bindings) != 2 || len(result.Rejected) != 0 {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if !slices.Equal(f.elements, elements) || strings.Join(f.calls, ";") != "load elements" || !f.holds["tcp/30022"] || !f.holds["udp/30053"] {
+		t.Fatalf("applied bindings were not kept: elements %+v calls %v holds %v", f.elements, f.calls, f.holds)
+	}
+	f.files["/srv/a/.anas/state/resources/forgejo.runners.yml"] = strings.Replace(fixtureLeaseState, "10.101.0.254", "10.101.0.253", 1)
+	result, err = f.host().syncPortBindings(context.Background(), DefaultPortRangeFirst, DefaultPortRangeLast)
+	if err != nil || len(result.Bindings) != 0 || len(result.Rejected) != 2 || result.Rejected[0].Reason != "lease_bridge_missing" {
+		t.Fatalf("changed binding on a missing bridge = %+v, %v", result, err)
+	}
+	if len(f.elements) != 0 || f.holds["tcp/30022"] {
+		t.Fatalf("a changed binding stayed in effect: %+v %v", f.elements, f.holds)
+	}
+}
+
 // INCUS-R-158: an entry that fails a check never takes effect; the others do.
 func TestPortSyncRejectsEntriesThatFailAChecks(t *testing.T) {
 	for name, tc := range map[string]struct {

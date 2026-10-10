@@ -222,6 +222,30 @@ func coreNativeImage(t *testing.T, id, source, executable, tag string) string {
 	return result
 }
 
+// coreNativeComposeImage returns the image a Module's Compose file runs,
+// without the registry, so fixtures follow revision bumps of the Module.
+func coreNativeComposeImage(t *testing.T, moduleDir, repository string) string {
+	t.Helper()
+	compose, err := os.ReadFile(filepath.Join(moduleDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`/(` + regexp.QuoteMeta(repository) + `:[0-9A-Za-z._-]+)\s*$`).FindSubmatch(firstImageLine(compose, repository))
+	if match == nil {
+		t.Fatalf("%s does not run image %s", moduleDir, repository)
+	}
+	return string(match[1])
+}
+
+func firstImageLine(compose []byte, repository string) []byte {
+	for _, line := range bytes.Split(compose, []byte("\n")) {
+		if bytes.Contains(line, []byte("image:")) && bytes.Contains(line, []byte("/"+repository+":")) {
+			return line
+		}
+	}
+	return nil
+}
+
 func coreNativeConsumerManifest(name string) string {
 	return coreNativeConsumerManifestRevision(name, "lab-r1")
 }
@@ -380,7 +404,7 @@ func TestNativeCoreComputeProjection(t *testing.T) {
 		}
 		// These are binary transport fixtures, not a claim about building or
 		// publishing release Dockerfiles. The Provider Compose/Hook are unchanged.
-		images = append(images, coreNativeImage(t, id, "provisioner", "/usr/local/bin/anas-incus-provisioner", registry+"/anas-incus-provisioner:7.3.0-r2"))
+		images = append(images, coreNativeImage(t, id, "provisioner", "/usr/local/bin/anas-incus-provisioner", registry+"/"+coreNativeComposeImage(t, provider, "anas-incus-provisioner")))
 		images = append(images, coreNativeImage(t, id, "consumer", "/usr/local/bin/consumer", registry+"/anas-native-core-consumer:r1"))
 		entry = coreNativeFixtureImage(t, provider, "lab-r1")
 		pin = entry.Fingerprint

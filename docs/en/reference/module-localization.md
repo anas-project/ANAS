@@ -16,7 +16,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [forgejo](#forgejo) | 15.0.7-r2 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r4 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [immich](#immich) | 3.2.4-r1 | container | supported | browser | not_consumed | not_consumed | 88 |
-| [incus](#incus) | 7.3.0-r2 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
+| [incus](#incus) | 7.3.0-r3 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r8 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [llng](#llng) | 2.23.2-r12 | container | supported | browser | not_consumed | not_consumed | 17 |
@@ -28,7 +28,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [postgres](#postgres) | 18.4.0-r4 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [samba_dc](#samba_dc) | 4.23.6-r12 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r6 | container | not_applicable | client | not_applicable | not_applicable | 0 |
-| [traefik](#traefik) | 3.7.10-r6 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [traefik](#traefik) | 3.7.10-r7 | container | fixed | fixed | not_consumed | not_consumed | 1 |
 | [versitygw](#versitygw) | 1.7.0-r3 | container | not_applicable | none | not_consumed | not_consumed | 0 |
 | [vikunja](#vikunja) | 2.4.0-r4 | configured | supported | application | fallback | not_consumed | 32 |
 
@@ -141,7 +141,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## incus
 
-- **Version / 版本：** `7.3.0-r2`; reviewed 2026-09-21
+- **Version / 版本：** `7.3.0-r3`; reviewed 2026-09-21
 - **Timezone / 时区：** `not_applicable` — The provisioner is a one-shot process with no scheduling, retention or timestamp output; the remote Incus daemon keeps its own clock.
 - **Language / 语言：** `not_applicable`, `none` — no user interface; the provisioner emits machine-readable JSON only
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
@@ -266,7 +266,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## traefik
 
-- **Version / 版本：** `3.7.10-r6`; reviewed 2026-08-13
+- **Version / 版本：** `3.7.10-r7`; reviewed 2026-08-13
 - **Timezone / 时区：** `container` — Traefik receives TZ for process and access-log timestamps.
 - **Language / 语言：** `fixed`, `fixed` — Traefik Proxy built-in Dashboard
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`

@@ -734,7 +734,7 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			Provider: request.Provider, Interface: request.Interface,
 			Spec: cloneAnyMap(request.Spec), ComputeImages: request.ComputeImages.Clone(),
 			ComputeIngress: request.ComputeIngress.Clone(), ComputeNetwork: request.ComputeNetwork.Clone(),
-			LeaseSecretKey: request.LeaseSecretKey,
+			LeaseSecretKey: request.LeaseSecretKey, HTTPRequestOwner: request.HTTPRequestOwner,
 		}
 		if request.Contract == "relational_database" {
 			resource.SecretKey = request.SecretKey
@@ -1975,6 +1975,7 @@ func loadDeploymentApp(base, id string, cli compose.CLI) (*app, string, *deploym
 			Spec: resource.Spec, SecretKey: secretKey, Credential: credential, ComputeImages: resource.ComputeImages.Clone(),
 			LeaseSecretKey: resource.LeaseSecretKey, LeaseSecret: leaseSecret,
 			ComputeIngress: resource.ComputeIngress.Clone(), ComputeNetwork: resource.ComputeNetwork.Clone(),
+			HTTPRequestOwner: resource.HTTPRequestOwner,
 		}
 		if err := validateFrozenComputeIngress(request, manifest.ID); err != nil {
 			return nil, "", nil, fmt.Errorf("resource %s.%s: %w", resource.Consumer, resource.ID, err)
