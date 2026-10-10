@@ -1483,7 +1483,12 @@ e2e 记录中的相应行保留为历史。
 - **finance 重试（2026-10-11）**：重置控制台存储并重新登记 owner 后，新构建上不带端口范围的 `incus.configure.plan`
   成功、确认参数写明默认范围；但宿主状态里旧构建留下 `configure.traefik-address-set` 的 failed intent（Incus 201
   缺陷），计划阻断为 `host_effect_recovery_required`，configure 与 uninstall 都不能继续，见宿主通道计划 §15。
-- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；finance 上 failed intent 的恢复方式待操作者决定。
+- **finance 重装（2026-10-11）**：操作者选择拆除后重装。手工删除受管产物并移走宿主状态后，新构建经计划、确认与执行
+  完成 install → configure → enroll，请求都不带端口范围；configure 9 个回执全部 ok（含此前失败的
+  `configure.traefik-address-set`），enroll `connection_ready`，记录的批准范围为 30000–32767（`INCUS-R-153` 实机通过）。
+  重装中发现卸载留下的 `incus-base` 配置文件会被 install 当作外部 daemon（推断产品卸载后重装同样受阻），详见宿主通道
+  计划 §15。
+- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 

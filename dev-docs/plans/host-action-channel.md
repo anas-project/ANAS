@@ -321,5 +321,23 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
     通过）；但计划阻断为 `host_effect_recovery_required`、没有步骤，执行按设计失败。原因是宿主状态里 c397e92e 留下的
     `configure.traefik-address-set` intent 为 `failed`（2026-10-10 12:24 UTC），即 efb3fa7c 修复的 Incus 201 缺陷；
     设计不允许自动恢复或改写 failed intent，`incus.uninstall` 同样被阻断。
+  - finance 重装（2026-10-11，操作者选择「拆除后重装」）：按 `incus.uninstall` 的步骤手工删除 address set、
+    `core.https_address`、`incus.service` 的排序 drop-in、nft 表 `anas_incus_control`、两族 FORWARD 的
+    `anas-lease-forward-*`、Docker 网络 `anas-incus-control`（无容器）与存储池 `anas-btrfs`（无卷），停止 Incus 单元，
+    `dpkg --remove` 删除状态记录的 4 个受管包，把 `/var/lib/anas/incus-host`、`/var/lib/incus` 与 ANAS 私有 APT 目录
+    改名为 `*.reset-20261011T2240`。之后在新构建上经计划、确认与执行完成 install → configure → enroll（工作区 `c`，
+    请求都不带端口范围）：install `installed`；configure `configured`，9 个回执全部 ok，含 `configure.traefik-address-set`
+    与批准默认范围的 `configure.port-binding-range`；enroll `connection_ready`。宿主状态没有未结的 intent，记录的批准
+    范围为 30000–32767。`HOSTACT-R-010`、`R-014` 在 finance 实机通过。
+  - 过程中发现的缺陷（已另开任务，未在本次修复）：
+    1. 失败的写宿主动作把作业标为需要补偿检查，而只有部署执行器会清除这个标记；该工作区此后所有写作业静默排队
+       （finance 上工作区 `a`、`b` 先后被卡住，`a` 里还留着一个无法取消的排队 `incus.install`）；
+    2. 取消非 `incus.status` 的排队宿主动作返回 500 `internal_error`：`publicJobStoreError` 没有映射 `ErrConflict`；
+    3. `dpkg --remove` 留下 `incus-base` 的配置文件（`config-files`），install 据此判定存在外部 daemon 并拒绝
+       （`external_daemon_service_not_modified`）；手工 `dpkg --purge` 这两个 ANAS 安装过的包后才能重装。产品的
+       `incus.uninstall` 也只用 `--remove` 并清除包归属，推断卸载后在同一宿主重装同样会被拒绝，尚未用产品路径验证；
+    4. 主机负载高时（finance 当时 load 17–22、内存换页）anasd 的 TLS 握手超时，CLI 调用失败，一次 `incus.enroll.plan`
+       在 hostd 内失败，重试后通过。
 - **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 与 failed host intent 的受限恢复动作都未实现；
-  finance 上的 Incus 宿主供给需操作者决定恢复方式后才能继续 configure。
+  上面第 1—3 项缺陷待修。
+
