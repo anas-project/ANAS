@@ -990,8 +990,13 @@ type dockerPortSummary struct {
 	} `json:"Ports"`
 }
 
-// dockerContainersPath lists running containers with their published ports.
-const dockerContainersPath = "/v1.44/containers/json"
+// dockerContainersPath lists the running containers that publish a TCP or
+// UDP port. Docker's publish filter matches a container's own port, so the
+// full range selects every container with a host binding and skips the rest;
+// on a loaded host the unfiltered listing outlasted the client's 20 s limit
+// (finance.hlong.wang, 2026-10-11).
+var dockerContainersPath = "/v1.44/containers/json?filters=" +
+	strings.ReplaceAll(`{"publish":["1-65535/tcp","1-65535/udp"]}`, `"`, "%22")
 
 // publishedPorts is every host port a running container publishes, keyed
 // "tcp/8080". Docker without its userland proxy holds no socket for them, so

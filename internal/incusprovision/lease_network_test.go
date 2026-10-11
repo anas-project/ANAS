@@ -171,11 +171,19 @@ func TestDockerContainerReadsAreTheTwoListings(t *testing.T) {
 	if !allowedDockerNetworkRequest(http.MethodGet, traefikContainersPath) {
 		t.Fatal("the Traefik listing is not allowed")
 	}
-	// The plain running-container listing is the port bindings' Docker read.
+	// The port bindings' Docker read lists only containers that publish a
+	// port; the unfiltered listing is not reachable.
+	parsed, err = url.Parse("http://docker" + dockerContainersPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Path != "/v1.44/containers/json" || parsed.Query().Get("filters") != `{"publish":["1-65535/tcp","1-65535/udp"]}` {
+		t.Fatalf("listing = %s ? %s", parsed.Path, parsed.Query().Get("filters"))
+	}
 	if !allowedDockerNetworkRequest(http.MethodGet, dockerContainersPath) || allowedDockerNetworkRequest(http.MethodPost, dockerContainersPath) {
 		t.Fatal("the published-port listing is not a read-only allowed request")
 	}
-	for _, path := range []string{"/v1.44/containers/json?all=1", "/v1.44/containers/abc/json", "/v1.44/containers/abc/kill"} {
+	for _, path := range []string{"/v1.44/containers/json", "/v1.44/containers/json?all=1", "/v1.44/containers/abc/json", "/v1.44/containers/abc/kill"} {
 		if allowedDockerNetworkRequest(http.MethodGet, path) || allowedDockerNetworkRequest(http.MethodPost, path) {
 			t.Fatalf("%s is allowed", path)
 		}

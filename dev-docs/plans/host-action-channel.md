@@ -64,7 +64,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：通道形态、授权与审计 | R-001—R-004 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；完整矩阵与其他动作独立验收 |
+| M0：通道形态、授权与审计 | R-001—R-004、R-018 | 实施中；主要发行版的实际 CLI/HTTPS、共享队列、root 身份/退出及供给闭环已通过 23 项原生门禁；R-018 单元与 finance 实机通过（2026-10-11，§15）；完整矩阵与其他动作独立验收 |
 | M1：入口划分与升级绑定 | R-005、R-006、R-017 | 实施中；同版本打包、CLI/HTTP 与安装器已接线，升级拒绝覆盖活动宿主动作；真实安装/升级/卸载未验收 |
 | M2：长时动作与非 systemd 可移植性 | R-007、R-008 | 实施中；按编译动作预算超时并投影固定阶段事件，非 systemd 启动和实机长时动作待办 |
 | M3：二段确认 | R-009—R-011 | 实施中；真实 root 执行、跨工作区及重启后重放拒绝、五分钟自然过期拒绝旧计划并要求新计划均通过；浏览器页面重新展示与确认组合仍待验收；2026-10-10 修复计划参数规范化与控制台丢失端口范围，2026-10-11 新构建 23 项门禁通过（§15） |
@@ -72,7 +72,7 @@ scope，也未开启 ingress。以下五问是本次需求级动作评审，不�
 | M5：边界内同步动作 | R-014、R-015 | 实施中；2026-10-03 实现 `incus.traefik.sync` 与 `incus.ports.sync`：参数恒为 `{}`，需 `incus.configure` 的批准，hostd 自己读取 Docker 与冻结部署，原子替换并读回，经共享队列与审计，由 anasd 以系统身份触发；单元与拒绝调用方条目的测试通过，实机运行随 Incus M10a/M11c 的 e2e（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)），设计见[宿主通道架构](../../docs/architecture/host-action-channel.md) §15 |
 | M6：身份链简化与调用记录 | R-016 | 实施中；2026-09-30 实现完成：对端只认 root/root，调用记录与 `host.invocation.status` 取代回连 broker 和 systemd 退出观察，见 §14；Linux 原生门禁通过，实机审批门禁在 Ubuntu 26.04 与 Debian 13 上各 23/23 通过；anasd 重启时的结清尚未实现 |
 
-覆盖统计：17 项需求全部有且只有一个里程碑归属。
+覆盖统计：18 项需求全部有且只有一个里程碑归属。
 
 ### 1.1 当前集成核对（2026-09-19）
 
@@ -115,6 +115,7 @@ Linux 专属 peer/文件系统测试须分开记录，交叉编译不等于原�
 | R-004 | `test-env/scripts/server-incus-host-action-e2e.py` | CLI stdin 会话及真实 HTTPS API，共享 job/确认/执行 | 2026-09-23 | 实际链路通过；不声称已操作浏览器 UI 或已验全部动作 |
 | R-011 | `test-env/scripts/server-incus-host-action-e2e.py` | 真实五分钟到期，不改时钟/ledger，旧计划不续签，新计划可执行 | 2026-09-23 | API/CLI 原生通过；浏览器重新展示和勾选的视觉交互仍待验收 |
 | R-016 | `test-env/scripts/server-incus-host-action-e2e.py`（`shared_jobs_and_invocation_records`）与 `test-env/scripts/test-host-action-native.sh` | 全新 Ubuntu 26.04 与 Debian 13 amd64 VM，已安装 root systemd 服务，`0.0.0-native.31`；一次性 Debian 13 VM 里的非 root Linux 原生用例 | 2026-09-30 | 审批门禁 23/23 通过：14 个共享 job 各有一份带终态的 hostd 调用记录且结果一致，另有 14 次激活；控制桥四项直接连 Incus 网关；Debian 13 重试同样 23/23，见 [本轮记录](../reviews/2026-09-30-incus-old-code-removal-and-hostd-simplification.md) §5 |
+| R-018 | 手工核验（安装后的 anasd/hostd 与 owner 会话驱动脚本，未入库） | finance.hlong.wang（Ubuntu 26.04，已安装 root systemd 服务），`0.0.0-native.20261011.2`（master `6dd38a34`） | 2026-10-11 | 通过：换装后第一轮调度清除工作区 `a`、`b` 上两个失败作业的补偿检查，之后在 `a` 上完成卸载与重装；见 §15 |
 | R-003、R-004、R-010、R-011、R-014、R-016 | `test-env/scripts/server-incus-host-action-e2e.py` | ln 一次性 QEMU VM，Ubuntu 26.04 cloud image（`4908fb59…`），VM 内 `docker.io` 29.1.3，已安装 root systemd 服务，`0.0.0-native.20261011.1`（master `d0cb28c3`） | 2026-10-11 | **23/23 通过**（§15）：全部计划请求都不带端口范围，`incus.configure` 确认的是默认范围；14 个共享 job 成功且各有一份调用记录；卸载删除 4 个受管包；证据归档 `8f182de4…6229`；正常关机，宿主 10 项基线一致。实验根 `/data/anas-incus-hostaction-20261011.v3BUw2`（不入 Git） |
 
 ## 5. 文档同步
@@ -342,7 +343,7 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
   1. `HostActionService` 每轮 `advance` 清除 hostd 明确报告失败（failed）的写宿主动作留下的补偿检查，并在 job 上
      记一条警告；结果未知（interrupted）的保留。宿主侧的恢复义务由 hostd 的 intent 承担。测试
      `TestFailedHostActionDoesNotBlockItsWorkspace`、`TestUnknownHostActionOutcomeKeepsCompensationCheck`，前者在去掉
-     修复后失败。现有需求矩阵没有覆盖「失败的宿主动作不得永久阻断工作区」的条目，未新增 ID；
+     修复后失败（`HOSTACT-R-018`，2026-10-11 新增）；
   2. 任何尚未开始的宿主动作都可由 owner 取消（`CancelQueuedPreflight` 改为 `CancelQueued`，审计记实际动作名），
      取消冲突返回 409 `job_conflict`、非 owner 返回 403（`ACTABI-R-001`）。测试 `TestQueuedConfirmedHostActionCanBeCancelled`、
      `TestJobCancelReportsConflictAndDenial`，后者在去掉映射后失败；`cancelConsoleJob` 的路由改动只有一行条件，
@@ -357,11 +358,19 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
      取消为 canceled（202，`ACTABI-R-001`）。取消旧版本冻结的作业返回 403：`CancelQueued` 先核对冻结请求再看状态；
   3. 见 [Incus 计划](incus-module.md) §14.3：产品卸载后在同一宿主重装通过（`INCUS-R-048`）。
   结束时宿主状态无未结 intent，没有带补偿检查、排队或运行中的作业，`anasd`、`anas-hostd.socket`、`incus.service` 均在运行。
-- **观察（环境，未修改代码）**：finance 上 anasd 启动触发的 `incus.ports.sync` 两次失败（失败作业的补偿检查同样被
+- **`incus.ports.sync` 在 finance 失败（已改，2026-10-11）**：anasd 启动触发的端口同步两次失败（失败作业的补偿检查同样被
   第 1 项清除）。逐步诊断（临时编译的 Linux 测试二进制，以 root 只运行同步的读取步骤）显示 Docker 未过滤的
   `/containers/json` 在该机耗时 17—40 秒（主机内存换页，load 17 左右），超过 hostd Docker 客户端 20 秒上限；带标签
   过滤的 Traefik 查询约 1.3 秒，所以 `incus.traefik.sync` 通过。诊断中有一次完整同步在上限内完成，在 hostd 之外
-  执行了一次批准范围内的同步（清空四张空端口表、写入空的 `ports.json`），没有 hostd 审计记录。
+  执行了一次批准范围内的同步（清空四张空端口表、写入空的 `ports.json`），没有 hostd 审计记录。按操作者选择，
+  端口同步改为只列出发布了端口的运行中容器（Docker `publish` 过滤取 `1-65535/tcp`、`1-65535/udp`；该过滤按容器
+  自己的端口匹配，全范围即「有宿主绑定的容器」）。finance 上对照：过滤结果 10 个容器中的 5 个，发布端口集合与未过滤
+  完全相同。测试 `TestDockerContainerReadsAreTheTwoListings` 断言过滤参数且未过滤的列表不可达，改回未过滤路径时失败。
+  finance 换装验证（2026-10-11）：工作树快照提交 `01e9a454`（tree `c3cc6655`，父提交 `46669e59`，不在任何分支），
+  `0.0.0-native.20261011.3`，归档 `50681b3e…`。anasd 启动触发的 `incus.ports.sync` 在 0.95 秒内成功，hostd 自己重写了
+  `ports.json`（无绑定），`incus.traefik.sync` 同时成功（`INCUS-R-158`、`HOSTACT-R-014`）。允许清单已不放行未过滤的列表，
+  所以成功即说明走的是过滤查询。换装时 finance 的 load 已降到 0.85，因此只证明了过滤查询在实机上正确可用，没有复现
+  高负载下的超时，也就没有证明负载下的提速。
 - **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 与 failed host intent 的受限恢复动作都未实现；
-  是否为「失败的宿主动作不得永久阻断工作区」新增验收条目待操作者决定。
+  端口同步过滤查询在高负载下的效果未复现。「失败的宿主动作不得永久阻断工作区」已按操作者选择新增为 `HOSTACT-R-018`。
 

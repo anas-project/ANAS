@@ -726,7 +726,8 @@ HTTP 发布不经过本 Module 的 Provider operation：Provider 只按冻结的
 
 `incus.ports.sync` 不带参数：hostd 读取 `/etc/anas/anasd.yml` 登记的各工作区的活动部署、冻结的
 `compute_network` 与 resource state 记录的槽位地址，逐条校验协议与端口、批准范围、目标在 `lease*` 网桥自己的
-网段内且不是网段/网关/广播地址、端口没有被其他绑定、宿主进程或 Docker 发布占用（`INCUS-R-158`），先为新绑定
+网段内且不是网段/网关/广播地址、端口没有被其他绑定、宿主进程或 Docker 发布占用（`INCUS-R-158`；Docker 只列出发布了
+端口的运行中容器，用 `publish` 过滤取全端口范围，负载高的主机上未过滤的列表会超过 20 秒上限），先为新绑定
 启用占位单元，再以单个 nft 事务替换四张端口表并读回，最后停用不再需要的占位。不合格的条目不生效，记成宿主的
 运行问题（`/var/lib/anas-hostd/runtime-issues.json`）。生效的条目写入 `/var/lib/anas/incus-host/ports.json`，开机时
 占位单元随 `sockets.target` 先于 Docker 启动，`--restore-network` 再按它恢复端口表，占位没能起来的绑定不生效并

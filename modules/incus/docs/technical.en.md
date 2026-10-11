@@ -885,7 +885,8 @@ removed by `incus.uninstall`:
 `/etc/anas/anasd.yml`, the frozen `compute_network` and the slot addresses resource state records, and checks every
 entry -- protocol and ports, the approved range, a target inside the subnet of its own `lease*` bridge that is not
 the network, gateway or broadcast address, and a port no other binding, host process or Docker publication holds
-(`INCUS-R-158`). It enables holds for new bindings first, replaces the four port maps in one nft transaction and
+(`INCUS-R-158`; Docker is asked only for running containers that publish a port, through a `publish` filter over
+the whole port range, because the unfiltered listing outlasted the 20 s limit on a loaded host). It enables holds for new bindings first, replaces the four port maps in one nft transaction and
 reads them back, and only then disables holds no binding needs. An entry that fails a check does not take effect and
 becomes a host runtime issue (`/var/lib/anas-hostd/runtime-issues.json`). The entries in effect are written to
 `/var/lib/anas/incus-host/ports.json`; at boot the hold units start with `sockets.target`, before Docker, and
