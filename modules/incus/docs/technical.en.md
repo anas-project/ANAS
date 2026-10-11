@@ -43,7 +43,7 @@ provisioning design; the deletion list is in the
   see "Host side of HTTP publication and port bindings" below.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `7.3.0-r3` / `anas.module/v1`.
+> Status: current implementation; based on `7.3.0-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Module, capability and contract dependencies
@@ -61,7 +61,7 @@ requested isolation tier without exposing low-level devices or privilege setting
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r3` | `incus` | 0 |
+| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r4` | `incus` | 0 |
 <!-- generated:compose-topology:end -->
 
 There is a single run-only service. It has no `ports`, no Traefik label, no volumes, and mounts no host
@@ -421,6 +421,14 @@ The contract states per-instance limits while an Incus project states project-wi
 | `quota.cpu` | `limits.cpu` | `max_instances × cpu` |
 | `quota.memory_mib` | `limits.memory` | `max_instances × memory_mib` MiB |
 | `quota.disk_gib` | `limits.disk` | containers `max_instances × disk_gib` GiB; VMs `max_instances × (disk_gib GiB + 500 MiB)` |
+| `volumes.total_gib` | `limits.disk` | `total_gib` GiB on top of the row above; also writes `restricted.devices.disk=managed` and `features.storage.volumes=true` |
+
+A lease declaring `volumes` needs a daemon with `restricted.storage-pools.access` (Incus 7.0 LTS and newer);
+otherwise a managed disk could land on any pool of the daemon, so `ensure` fails before writing and `inspect`
+never reports it ready. Volumes live in the execution host's `INCUS_STORAGE_POOL`, not in the ANAS host's
+`DATA_PATH`; the ANAS backup does not cover them and the lease certificate cannot snapshot or back them up.
+Backing them up is the execution host operator's responsibility (INCUS-R-172). The host uninstall lists
+volumes across all projects and refuses to delete the pool while any remains (INCUS-R-171).
 
 The extra 500 MiB on the VM tier is the state filesystem volume Incus attaches to every VM root block volume
 (`size.state`): the daemon adds it to the root size when it totals `limits.disk`. Budgeting only the root made a

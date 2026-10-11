@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-23
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Incus compute Provider Module 集成要求
@@ -178,7 +178,8 @@ Provider 的固定 profile 决定，不成为消费者可传入的低层配置�
    取消实例名前缀或延长一次性实例寿命来变相提供。
 2. 任意命令执行必须是一个独立的、可在配置中看见的开关，且默认关闭；不得由 allowlist 里的通配符
    隐式打开。
-3. 持久卷必须仍由 Provider 拥有：卷落在受管存储池上，消费者不得传入 host 路径或 source。
+3. 持久卷必须仍由 Provider 拥有：卷落在受管存储池上，消费者不得传入 host 路径或 source。持久卷能力本身已
+   拆到 §7octies 先行交付，长驻档直接复用，不另建一套。
 4. 稳定入站地址必须经受管 network 的显式端口/转发声明表达，不得让消费者直接持有宿主端口；端口绑定见 §7septies。
 5. 长驻实例不改变配额语义：它照样占 `limits.instances`，且不得绕开 project 配额。
 6. 本档不得削弱已有边界——受限证书、project 隔离、镜像 fingerprint allowlist 与非特权容器约束
@@ -372,6 +373,37 @@ Docker 式规则的依据见[proxy NAT 实机探测](../reviews/2026-09-29-incus
 - `internet`（全部端口开放）档：NAT 网桥外面没人能路由进来；需要完全对外开放时用 LAN 模式；
 - 按局域网来源设档：NAT 之后来源地址不可靠，见第 1 条；
 - 租约之间对等直连：需要双方声明并维护彼此的地址清单，跨租约访问改走 Traefik 的 HTTP 发布。
+
+## 7octies. 租约持久卷（2026-10-11）
+
+来源：AI Agent 按 `job` 档执行（每个作业一个一次性实例，结束即删），会话、恢复游标与运行日志必须在实例删除后
+保留，且数据留在执行宿主（2026-10-11 操作者定案，见
+[AI Agent 编排设计](../../modules/ai_agent/docs/architecture/orchestration-design.md) §5.7）。原属 §7ter 长驻档的持久卷
+从中拆出先行交付；长驻实例档、任意命令开关与 `image_policy: any` 仍保持预留。
+
+持久卷指租约 project 内的 Incus 自定义存储卷（custom volume）：建在租约已获准的存储池上，作为 disk 设备挂进实例，
+实例删除后卷仍在。规则：
+
+1. **显式声明**：租约在 compute resource 中声明卷的数量上限与总容量，随部署冻结。未声明的租约保持现状：
+   project 继续 `restricted.devices.disk=block`，没有任何卷能力。
+2. **daemon 执行围栏**：声明后 Provider 才把 project 改为 `restricted.devices.disk=managed`（只允许挂受管存储池里的卷，
+   不允许宿主路径），并把卷总容量计入 `limits.disk`；存储池仍由 `restricted.storage-pools.access` 限定。快照与备份
+   仍对消费者关闭。
+3. **命名与挂载**：卷名必须带本租约的实例名前缀；共享客户端只按「存储池 + 卷名」挂载，不接受宿主路径或其他
+   disk 选项；一个卷同一时刻只挂给一台实例（单写者）。
+4. **生命周期**：实例停止、删除、取消、janitor 回收和 controller 重启都不得删除卷；只有消费者显式删除才删除。
+   撤销或移除消费者时卷随 project 保留（沿用 `deletion_policy: retain`），同一消费者以同一 sandbox 重新加入后可
+   继续使用；其他工作区或消费者不能接管。
+5. **数据位置与备份**：卷在执行宿主的 Incus 存储池上，不在 ANAS 宿主 `DATA_PATH`，现有 ANAS 备份不覆盖它。ANAS
+   控制面只保存卷名与元数据。宿主卸载与镜像清理不得删除仍有卷的存储池或卷。
+
+否决的方案：
+
+- 把执行宿主的运行数据同步回 ANAS 宿主 `DATA_PATH`：要处理断网、部分写入、容量与重试，复杂度显著增加；
+- 放开 `restricted.devices.disk=allow` 再用 `restricted.devices.disk.paths` 限定宿主目录：消费者能直接挂宿主路径，
+  围栏从 daemon 退回到路径白名单；
+- 新增 Contract operation 由 Provider 代建卷：卷的增删是作业时操作，和实例一样由消费者在租约边界内直连 daemon，
+  daemon 配额已经足以约束，不需要经 Runner。
 
 ## 8. 验收标准
 
@@ -568,3 +600,11 @@ Docker 式规则的依据见[proxy NAT 实机探测](../reviews/2026-09-29-incus
 | `INCUS-R-162` | anasd 必须定期并在 Docker 事件发生时检查已生效的端口绑定，发现冲突、占位丢失或规则漂移时记录运行问题 | 单元 + e2e |
 | `INCUS-R-163` | 文档必须写明两种发布的差异：HTTP 发布下 guest 看到的来源是租约网桥网关，真实客户端在 `X-Forwarded-For`；端口绑定没有 ANAS 层认证，实例未运行时连接会超时，guest 内部端口被占用 ANAS 看不到 | 文档 + 审阅 |
 | `INCUS-R-164` | 声明了端口绑定而宿主没有可用的 hostd（未以系统服务安装、非 systemd 发行版或开发构建）时，apply 必须失败并说明原因，不得跳过或推迟这条绑定 | 单元 |
+| `INCUS-R-165` | 租约可在 compute resource 中声明持久卷的数量上限与总容量并随部署冻结；未声明的租约 project 必须保持 `restricted.devices.disk=block` | 契约 + 单元 |
+| `INCUS-R-166` | 声明持久卷时 Provider 必须把 project 设为 `restricted.devices.disk=managed` 并把卷总容量计入 `limits.disk`；受限证书直接请求时，宿主路径、其他存储池、其他 project 的卷与超出容量的卷都必须被 daemon 拒绝；快照与备份仍对消费者关闭 | 单元 + e2e |
+| `INCUS-R-167` | 共享客户端只能创建、挂载、卸载和删除带本租约实例名前缀的卷，只按存储池加卷名挂载，不得接受宿主路径或其他 disk 选项 | 单元 |
+| `INCUS-R-168` | 一个卷同一时刻只能挂给一台实例；共享客户端必须拒绝把已挂载的卷再挂给另一台实例 | 单元 |
+| `INCUS-R-169` | 实例停止、删除、取消、janitor 回收与 controller 重启都不得删除卷，卷内数据在新实例挂载后可读写；只有消费者显式删除才能删除卷 | 单元 + e2e |
+| `INCUS-R-170` | 撤销或移除消费者时卷必须随 project 保留；同一消费者以同一 sandbox 重新加入后能继续使用原卷，其他工作区或消费者不能接管 | e2e |
+| `INCUS-R-171` | 宿主卸载与镜像清理不得删除仍有租约卷的存储池或卷，卸载盘点必须把卷视为在用 | 单元 + e2e |
+| `INCUS-R-172` | 文档必须写明卷在执行宿主的 Incus 存储池上、不在 `DATA_PATH`、现有 ANAS 备份不覆盖，以及消费者无法自行快照或备份 | 文档 + 审阅 |

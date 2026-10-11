@@ -11,7 +11,7 @@ import (
 
 const uninstallInstancesURL = "/1.0/instances?recursion=2&all-projects=true"
 const uninstallPoolURL = "/1.0/storage-pools/anas-btrfs"
-const uninstallVolumesURL = uninstallPoolURL + "/volumes?recursion=1"
+const uninstallVolumesURL = uninstallPoolURL + "/volumes?recursion=1&all-projects=true"
 const unusedPoolFixture = `{"name":"anas-btrfs","driver":"btrfs","config":{"user.anas.owner":"incus-host-provision","user.anas.owner_id":"owner"},"used_by":[]}`
 
 type uninstallProtocolFixture struct {
@@ -102,6 +102,11 @@ func TestUninstallProtocolRejectsRetainedResourcesAndIncompleteEvidence(t *testi
 		}},
 		{"custom volume", func(f *uninstallProtocolFixture) {
 			f.metadata[uninstallVolumesURL] = `[{"name":"persistent-data","type":"custom"}]`
+		}},
+		// INCUS-R-171: a compute lease's persistent volume lives in its own
+		// project and still blocks removing the pool.
+		{"lease persistent volume", func(f *uninstallProtocolFixture) {
+			f.metadata[uninstallVolumesURL] = `[{"name":"anas-ag-sessions","type":"custom","project":"anas-ai-agent"}]`
 		}},
 		{"volume 404 is not empty", func(f *uninstallProtocolFixture) { delete(f.metadata, uninstallVolumesURL) }},
 		{"null volume inventory", func(f *uninstallProtocolFixture) { f.metadata[uninstallVolumesURL] = `null` }},

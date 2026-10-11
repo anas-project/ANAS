@@ -178,6 +178,9 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MAX_INSTANCES
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CPU
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
+# Only when volumes is declared:
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__VOLUME_COUNT
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__VOLUME_GIB
 # Only when publish.http is declared:
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_REQUEST_DIR
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_POLICY
@@ -333,6 +336,32 @@ This is a naming key for domain derivation, not request authentication or publis
 It is excluded from credential rotation and `--all`; a module cannot declare it as a rotatable credential.
 The dedicated key rotation command remains unimplemented; HTTP publication is described below. File backup/restore regression tests are not real Incus or HTTP ingress
 acceptance.
+
+## Persistent volumes
+
+A lease may declare `volumes: {max_count, total_gib}`, frozen with the deployment. A persistent volume
+is an Incus custom volume in the lease project: deleting an instance, cancelling a job, janitor
+reclaim and revoking the lease never delete it; only the consumer's `DeleteVolume` does. A lease
+without the declaration has no volume capability and cannot attach any disk besides its root disk.
+
+- **Enforced by the daemon**: with volumes declared, the Provider sets the project to
+  `restricted.devices.disk=managed` (only volumes of a managed storage pool, never a host path) and
+  `features.storage.volumes=true` (volumes stay in this project), and adds `total_gib` to
+  `limits.disk`. `restricted.storage-pools.access` limits the pool to the lease's pool, so declaring
+  volumes needs Incus 7.0 LTS or newer; on a daemon without that key `ensure` fails before writing.
+- **Enforced by the shared client**: `CreateVolume`, `ListVolumes` and `DeleteVolume` handle only
+  volumes carrying the lease's instance prefix, and `max_count` is checked only there (Incus has no
+  per-project volume count). `InstanceSpec.Volumes` names a volume and an absolute guest path, never a
+  pool, a host path or another disk option, and cannot cover system directories such as `/etc`,
+  `/usr` or `/proc`. A volume is attached to one instance at a time: checked before attaching and
+  re-read after; two concurrent attaches of one volume both withdraw and fail.
+- **Data location and backup**: volumes live in the execution host's Incus storage pool, not in the
+  ANAS host's `DATA_PATH`, and the existing ANAS backup does not cover them. The lease certificate
+  cannot snapshot or back up (`restricted.snapshots` and `restricted.backups` stay `block`); backing
+  them up is the execution host operator's responsibility.
+- **Revocation and uninstall**: revoking or removing the consumer keeps the volumes with the project;
+  the same consumer re-added with the same sandbox uses them again. Host uninstall refuses to delete
+  the storage pool while any project still has a volume on it.
 
 ## Lease network
 

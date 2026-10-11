@@ -17,14 +17,16 @@ class LifecycleLabOwner(unittest.TestCase):
 
     def test_every_stage_runs_its_own_harness(self):
         lab = {'instance_id': 'anas-incus-lifecycle-abc123'}
-        container, vm, network = (owner.harness(lab, stage) for stage in owner.STAGES)
+        container, volumes, vm, network = (owner.harness(lab, stage) for stage in owner.STAGES)
         self.assertIn('--interface container', container)
+        self.assertIn('--interface volumes', volumes)
+        self.assertNotIn('--vm-base-disk', volumes)
         self.assertNotIn('--vm-base-disk', container)
         self.assertIn('--interface vm', vm)
         self.assertIn('--vm-base-disk', vm)
         self.assertIn('server-incus-network-e2e.py', network)
         self.assertNotIn('--interface', network)
-        for command in (container, vm, network):
+        for command in (container, volumes, vm, network):
             self.assertIn('anas-incus-lifecycle-abc123', command)
             self.assertTrue(command.startswith('sudo -n timeout'))
 

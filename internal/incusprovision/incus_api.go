@@ -354,6 +354,8 @@ func (c *incusUnixClient) listNetworkCIDRs(ctx context.Context) ([]string, error
 
 func (c *incusUnixClient) listStoragePoolVolumes(ctx context.Context, name string) ([]incusStorageVolume, error) {
 	var out []incusStorageVolume
-	err := c.do(ctx, "GET", "/1.0/storage-pools/"+url.PathEscape(name)+"/volumes?recursion=1", nil, &out)
+	// all-projects: a compute lease keeps its persistent volumes in its own
+	// project, which a default-project listing would not show (INCUS-R-171).
+	err := c.do(ctx, "GET", "/1.0/storage-pools/"+url.PathEscape(name)+"/volumes?recursion=1&all-projects=true", nil, &out)
 	return out, err
 }

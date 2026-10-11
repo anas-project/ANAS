@@ -3,7 +3,7 @@
 This page records the current implementation, security boundaries, and verification entry points for `postgres`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `18.4.0-r4` / `anas.module/v1`.
+> Status: current implementation; based on `18.4.0-r5` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Required modules, capabilities, and contracts
@@ -18,9 +18,9 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_postgres` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4` | `postgres` | 1 |
+| `anas_postgres` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r5` | `postgres` | 1 |
 | `anas_postgres_adminer` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-adminer:5.5.0` | `postgres, traefik` | 0 |
-| `anas_postgres_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4` | `postgres` | 1 |
+| `anas_postgres_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r5` | `postgres` | 1 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract

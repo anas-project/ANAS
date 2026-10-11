@@ -69,9 +69,22 @@ class LifecycleHarnessSafety(unittest.TestCase):
         self.assertNotIn('TestNativeIncusContainerLeaseLifecycle/nested-virtualization-fence', container)
         self.assertIn('TestNativeIncusContainerLeaseLifecycle/'+overrides+'privileged', container)
         self.assertIn('TestNativeIncusVMLeaseLifecycle/typical-job-wall-time', vm)
+        volumes = lab.required_lifecycle_tests('volumes')
+        self.assertTrue(all(name.startswith('TestNativeIncusLeaseVolumes') for name in volumes))
+        self.assertIn('TestNativeIncusLeaseVolumes/revoke-and-rejoin', volumes)
+        self.assertIn('TestNativeIncusLeaseVolumes/daemon-volume-fence/other-pool', volumes)
         # A container-tier event stream can never satisfy the VM gate.
         events = [{'Action': 'pass', 'Test': name} for name in container] + [{'Action': 'pass'}]
         self.assertFalse(lab.lifecycle_results_passed(events, 0, 'vm'))
+
+    def test_provider_confirmation_accepts_the_ensure_network_report(self):
+        flags = {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}
+        network = {'bridge': 'lease0123456789', 'ipv4_subnet': '10.1.2.0/24', 'ipv4_gateway': '10.1.2.1'}
+        self.assertTrue(lab.provider_confirmed(dict(flags), 'inspect'))
+        self.assertTrue(lab.provider_confirmed({**flags, 'network': network}, 'ensure'))
+        self.assertFalse(lab.provider_confirmed(dict(flags), 'ensure'))
+        self.assertFalse(lab.provider_confirmed({**flags, 'network': network}, 'inspect'))
+        self.assertFalse(lab.provider_confirmed({**flags, 'ready': False, 'network': network}, 'ensure'))
 
     def test_metrics_keep_only_bounded_timing_records(self):
         events = [{'Output': 'x typical_job tier=incus_vm ready_ms=31000 exec_ms=420 reclaim_ms=3000 wall_ms=34420\n'},

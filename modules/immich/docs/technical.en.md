@@ -4,7 +4,7 @@ See the [README](../README.en.md) for operation. This page documents implemented
 acceptance open where no evidence exists.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.2.4-r1` / `anas.module/v1`.
+> Status: current implementation; based on `3.2.4-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -12,7 +12,7 @@ acceptance open where no evidence exists.
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_immich` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r1` | `db, traefik, immich` | 3 |
+| `anas_immich` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r2` | `db, traefik, immich` | 3 |
 | `anas_immich_machine_learning` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-machine-learning:3.2.4` | `immich` | 1 |
 | `anas_immich_valkey` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-valkey:9.1.1` | `immich` | 1 |
 <!-- generated:compose-topology:end -->

@@ -18,15 +18,20 @@ import (
 var instanceNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 type lease struct {
-	Consumer          string
-	Sandbox           string
-	StoragePool       string
-	NetworkIPv6       bool
-	InstancePrefix    string
-	MaxInstances      int
-	CPU               int
-	MemoryMiB         int
-	DiskGiB           int
+	Consumer       string
+	Sandbox        string
+	StoragePool    string
+	NetworkIPv6    bool
+	InstancePrefix string
+	MaxInstances   int
+	CPU            int
+	MemoryMiB      int
+	DiskGiB        int
+	// VolumeCount and VolumeGiB are zero for a lease without persistent
+	// volumes. The count is enforced by the shared client only; Incus has no
+	// per-project volume count, but the daemon enforces the capacity.
+	VolumeCount       int
+	VolumeGiB         int
 	ImageAllowlist    []string
 	ImageArchitecture string
 	ImageSupplyFile   string
@@ -214,6 +219,14 @@ func projectConfig(l lease) map[string]string {
 		"restricted.devices.usb":          "block",
 		"restricted.snapshots":            "block",
 	}
+	if l.VolumeGiB > 0 {
+		// managed admits a disk device only when it names a volume of a
+		// storage pool the project may use; a host path stays refused
+		// (INCUS-R-166). Volumes must live in this project, never fall
+		// through to the default project's volume namespace.
+		config["restricted.devices.disk"] = "managed"
+		config["features.storage.volumes"] = "true"
+	}
 	// The tier is a property of the project, not of the consumer's create
 	// call. A zero count for the other instance type makes the daemon refuse
 	// it, so a compromised consumer cannot trade the VM tier's own kernel for
@@ -315,6 +328,14 @@ func foreignProjectCertificates(ctx context.Context, c *client, l lease) ([]stri
 	return foreign, nil
 }
 
+// volumePoolFenced reports whether the daemon can keep this lease's volumes on
+// its own pool. With restricted.devices.disk=managed but without
+// restricted.storage-pools.access, a volume could be created on any pool of
+// the daemon, so a lease that declares volumes needs the key (INCUS-R-166).
+func volumePoolFenced(l lease) bool {
+	return l.VolumeGiB == 0 || l.Daemon.StoragePoolAccess
+}
+
 // quotaEnforced checks exact requested project limits, not merely nonempty
 // strings. Storage admission is separate; neither check proves live enforcement.
 func quotaEnforced(config map[string]string, l lease) bool {
@@ -328,6 +349,9 @@ func quotaEnforced(config map[string]string, l lease) bool {
 }
 
 func projectFenceEnforced(config map[string]string, l lease) bool {
+	if !volumePoolFenced(l) {
+		return false
+	}
 	for key, value := range projectConfig(l) {
 		if config[key] != value {
 			return false
@@ -549,9 +573,9 @@ const vmStateVolumeSize = "500MiB"
 // projectDiskLimit is max_instances times what one instance may occupy.
 func projectDiskLimit(l lease) string {
 	if l.Isolation == "vm" {
-		return fmt.Sprintf("%dMiB", l.MaxInstances*(l.DiskGiB*1024+500))
+		return fmt.Sprintf("%dMiB", l.MaxInstances*(l.DiskGiB*1024+500)+l.VolumeGiB*1024)
 	}
-	return fmt.Sprintf("%dGiB", l.MaxInstances*l.DiskGiB)
+	return fmt.Sprintf("%dGiB", l.MaxInstances*l.DiskGiB+l.VolumeGiB)
 }
 
 func desiredLeaseProfile(l lease, bridge string, slots []slotAddress) profile {
@@ -650,6 +674,9 @@ func ensureLease(ctx context.Context, c *client, l lease) (ensureResult, error) 
 		return ensureResult{}, err
 	}
 	// Refuse before changing projects, networks, profiles or certificate trust.
+	if !volumePoolFenced(l) {
+		return ensureResult{}, fmt.Errorf("incus daemon cannot restrict a project to one storage pool (projects_restricted_storage_pool_access); persistent volumes need Incus 7.0 LTS or newer")
+	}
 	supported, err := readQuotaPool(ctx, c, l)
 	if err != nil {
 		return ensureResult{}, err

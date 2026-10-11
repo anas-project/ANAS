@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: netbird
 version: 0.76.1
-revision: 5
+revision: 6
 app_version: 0.76.1
 abi:
   supports:

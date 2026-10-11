@@ -19,7 +19,7 @@ build-only staging 分别实构并比较最终二进制。镜像可编译不代�
 验收依据见[需求矩阵](../dev-docs/requirements/ai-agent.md)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `0.1.0-r2` / `anas.module/v1`.
+> 状态：当前实现；对应 `0.1.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -31,7 +31,7 @@ Docker socket 或宿主服务权限。数据库连接仍独立，`traefik` 网�
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2` | `db, traefik, compute-control` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r3` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 只有一个常驻服务。它 `read_only`、`cap_drop: ALL`、`no-new-privileges`、以 `65532` 运行，

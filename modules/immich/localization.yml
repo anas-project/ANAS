@@ -1,7 +1,7 @@
 api_version: anas.module-localization/v1
 module: immich
 module_version: 3.2.4
-module_revision: 1
+module_revision: 2
 reviewed_at: 2026-10-03
 timezone:
   status: container

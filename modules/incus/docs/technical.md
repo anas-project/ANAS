@@ -35,7 +35,7 @@ guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI
   `{instance, address, port, label?}`，见下文「HTTP 发布与端口绑定的宿主侧」。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `7.3.0-r3` / `anas.module/v1`.
+> 状态：当前实现；对应 `7.3.0-r4` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## 依赖的 Module、Capability 与 Contract
@@ -52,7 +52,7 @@ guest 烘焙使用独立的 `CHINESE_BUILD_SPEEDUP`：发布脚本经 recipe CLI
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r3` | `incus` | 0 |
+| `anas_incus_provision` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-incus-provisioner:7.3.0-r4` | `incus` | 0 |
 <!-- generated:compose-topology:end -->
 
 只有一个 run-only 服务。它没有 `ports`、没有 Traefik label、没有卷、也不挂载宿主 socket——本
@@ -344,6 +344,12 @@ Contract 说的是每实例上限，Incus project 说的是项目总量，`proje
 | `quota.cpu` | `limits.cpu` | `max_instances × cpu` |
 | `quota.memory_mib` | `limits.memory` | `max_instances × memory_mib` MiB |
 | `quota.disk_gib` | `limits.disk` | 容器档 `max_instances × disk_gib` GiB；VM 档 `max_instances × (disk_gib GiB + 500 MiB)` |
+| `volumes.total_gib` | `limits.disk` | 在上一行之上再加 `total_gib` GiB；同时写 `restricted.devices.disk=managed` 与 `features.storage.volumes=true` |
+
+声明了 `volumes` 的租约要求 daemon 支持 `restricted.storage-pools.access`（Incus 7.0 LTS 起），否则受管磁盘
+可以落到 daemon 的任意存储池，`ensure` 在写入前失败、`inspect` 不报告就绪。卷在执行宿主的 `INCUS_STORAGE_POOL`
+上，不在 ANAS 宿主的 `DATA_PATH`，ANAS 备份不覆盖，租约证书也不能快照或备份；卷的备份由执行宿主的运维负责
+（INCUS-R-172）。宿主卸载的卷盘点按全部 project 列出，池上有任何卷时拒绝删除该池（INCUS-R-171）。
 
 VM 档多出的 500 MiB 是 Incus 给每个 VM 根块卷附带的状态文件系统卷（`size.state`）：daemon 统计
 `limits.disk` 时把它加在根盘大小上。只按根盘预算时，用满单实例磁盘配额的 VM 永远建不出来

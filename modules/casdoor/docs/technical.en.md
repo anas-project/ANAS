@@ -3,7 +3,7 @@
 This document records the protocol contract, security boundaries, and verification points for maintainers.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `3.143.0-r11` / `anas.module/v1`.
+> Status: current implementation; based on `3.143.0-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -11,8 +11,8 @@ This document records the protocol contract, security boundaries, and verificati
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `traefik, db, casdoor` | 5 |
-| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r11` | `casdoor` | 3 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract

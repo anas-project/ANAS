@@ -37,7 +37,17 @@ TIERS = {
     'vm': {'interface': 'incus_vm', 'test': 'TestNativeIncusVMLeaseLifecycle',
            'pool_gib': 22, 'go_timeout': '17m', 'timeout': 1080,
            'overrides': ('pci', 'raw-qemu'), 'extra': ('nested-virtualization-fence',)},
+    # Persistent volumes (INCUS-R-166, R-169--R-171) on the container tier:
+    # lease a declares volumes, lease b does not.
+    'volumes': {'interface': 'incus_container', 'isolation': 'container', 'test': 'TestNativeIncusLeaseVolumes',
+                'pool_gib': 12, 'go_timeout': '8m', 'timeout': 570},
 }
+VOLUME_TESTS = ('client-refuses-undeclared-lease', 'daemon-volume-fence', 'data-survives-instance',
+                'revoke-and-rejoin', 'uninstall-inventory-sees-lease-volume')
+VOLUME_FENCE = ('over-capacity', 'other-pool', 'volume-snapshot', 'volume-export', 'host-path-disk', 'undeclared-lease-disk')
+# A second pool the volume lease is not allowed to use.
+OTHER_POOL = 'anas-lifecycle-other'
+LEASE_VOLUMES = {'count': 2, 'gib': 2}
 VM_BUILD = 'anas-vmfixture-build'
 VM_BASE_ALIAS = 'anas-vmfixture-base'
 LAB_INSTANCES = ('anas-native-job', 'anas-native-overquota', 'anas-native-timed', 'anas-native-unlisted')
@@ -46,6 +56,9 @@ UNLISTED_DESCRIPTION = 'ANAS lifecycle fixture outside the lease allowlist, not 
 
 def required_lifecycle_tests(tier='container'):
     parent = TIERS[tier]['test']
+    if tier == 'volumes':
+        return {parent, *(parent+'/'+name for name in VOLUME_TESTS),
+                *(parent+'/daemon-volume-fence/'+name for name in VOLUME_FENCE)}
     overrides = ('cpu', 'memory', 'disk', 'host-disk', 'other-project-network', 'proxy', 'gpu', 'usb') + TIERS[tier]['overrides']
     return {parent, *(parent+'/'+name for name in (
         'same-name-project-isolation', 'daemon-instance-quota',
@@ -82,6 +95,17 @@ def require_vm(identity):
             or Path('/sys/class/dmi/id/sys_vendor').read_text().strip() != 'QEMU'
             or Path('/var/run/docker.sock').exists() or Path('/var/lib/docker').exists()):
         raise RuntimeError('exact disposable QEMU cloud identity without Docker is required')
+
+
+def provider_confirmed(result, operation):
+    """The four readiness flags; ensure also reports the lease network (INCUS-R-159)."""
+    flags = {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}
+    if operation == 'ensure':
+        network = result.get('network')
+        if not isinstance(network, dict) or not network.get('bridge') or not network.get('ipv4_subnet'):
+            return False
+        result = {key: value for key, value in result.items() if key != 'network'}
+    return result == flags
 
 
 def call(args, env=None, timeout=90, data=None, check=True):
@@ -210,6 +234,7 @@ def prepare_rotation_fixture(provider, environments):
 def main(args):
     require_vm(args.vm_id)
     tier = TIERS[args.interface]
+    isolation = tier.get('isolation', args.interface)
     if args.interface == 'vm' and not Path('/dev/kvm').exists():
         raise RuntimeError('the VM tier needs nested KVM inside the disposable lab VM')
     for name in ('provider', 'tests', 'guest_binary', 'test2json'):
@@ -244,6 +269,8 @@ def main(args):
     pin=None
     try:
         cli('storage','create',POOL,'btrfs','size=%dGiB' % tier['pool_gib'])
+        if args.interface == 'volumes':
+            cli('storage','create',OTHER_POOL,'btrfs','size=2GiB')
         if args.interface == 'vm':
             image,pin=build_vm_fixture_image(cli,Path(args.vm_base_metadata),Path(args.vm_base_disk),Path(args.guest_binary))
         else:
@@ -282,19 +309,24 @@ def main(args):
                           'ANAS_RESOURCE_SANDBOX':project,'ANAS_RESOURCE_INSTANCE_PREFIX':'anas-native-',
                           'ANAS_RESOURCE_IMAGE_ARCHITECTURE':'amd64','ANAS_RESOURCE_MAX_INSTANCES':'1',
                           'ANAS_RESOURCE_CPU':'1','ANAS_RESOURCE_MEMORY_MIB':'512','ANAS_RESOURCE_DISK_GIB':'4','ANAS_RESOURCE_IMAGE_ALLOWLIST':pin}
+            volumes = args.interface == 'volumes' and project == PROJECTS[0]
+            if volumes:
+                provider_env.update({'ANAS_RESOURCE_VOLUME_COUNT':str(LEASE_VOLUMES['count']),
+                                     'ANAS_RESOURCE_VOLUME_GIB':str(LEASE_VOLUMES['gib'])})
             provider_environments.append(provider_env.copy())
             for operation in ('ensure','ensure','inspect'):
-                result=call([args.provider,operation,'--isolation',args.interface],provider_env,check=False)
+                result=call([args.provider,operation,'--isolation',isolation],provider_env,check=False)
                 if result.returncode:
                     (report/(project+'-'+operation+'-failure.txt')).write_bytes(result.stderr)
                     raise RuntimeError('real Provider '+operation+' failed; private diagnostic retained')
-                if json.loads(result.stdout) != {'exists':True,'ready':True,'restricted':True,'quota_enforced':True}:
+                if not provider_confirmed(json.loads(result.stdout), operation):
                     raise RuntimeError('Provider did not confirm complete lease')
             emit('provider_ensure_repeat_inspect',project=project)
             leases.append({'Interface':tier['interface'],'Endpoint':'https://127.0.0.1:8443','Sandbox':project,
                            'InstancePrefix':'anas-native-','Profile':'anas-lease','ServerCertFingerprint':hashlib.sha256(server_der).hexdigest(),
                            'ServerCertB64':base64.b64encode(server).decode(),'ClientCertB64':encode(ROOT/(name+'.crt')),
-                           'ClientKeyB64':encode(ROOT/(name+'.key')),'ImageAllowlist':[pin],'MaxInstances':1,'CPU':1,'MemoryMiB':512,'DiskGiB':4})
+                           'ClientKeyB64':encode(ROOT/(name+'.key')),'ImageAllowlist':[pin],'MaxInstances':1,'CPU':1,'MemoryMiB':512,'DiskGiB':4,
+                           'VolumeCount':LEASE_VOLUMES['count'] if volumes else 0,'VolumeGiB':LEASE_VOLUMES['gib'] if volumes else 0})
         (ROOT/'leases.json').write_text(json.dumps(leases))
         prepare_rotation_fixture(args.provider, provider_environments)
         package='github.com/anas-project/ANAS/internal/computeclient'
@@ -348,6 +380,12 @@ def main(args):
                 cli('delete',instance['name'],'--project',project,'--force')
             for certificate in json.loads(cli('config','trust','list','--format=json').stdout):
                 if certificate.get('projects')==[project]: cli('config','trust','remove',certificate['fingerprint'])
+            for pool in (POOL, OTHER_POOL):
+                if cli('storage','show',pool,check=False).returncode: continue
+                for volume in json.loads(cli('storage','volume','list',pool,'--project',project,'--format=json').stdout):
+                    if volume.get('type')!='custom': continue
+                    if not volume['name'].startswith('anas-native-'): raise RuntimeError('unexpected lab volume; refusing cleanup')
+                    cli('storage','volume','delete',pool,volume['name'],'--project',project)
             for item in json.loads(cli('image','list','--project',project,'--format=json').stdout):
                 if item['fingerprint']!=pin and not unlisted_image(item): raise RuntimeError('unexpected image; refusing cleanup')
                 cli('image','delete',item['fingerprint'],'--project',project)
@@ -356,10 +394,12 @@ def main(args):
                     if item['name']!='anas-lease': raise RuntimeError('unexpected profile; refusing cleanup')
                     cli('profile','delete',item['name'],'--project',project)
             cli('project','delete',project)
-            bridge='anas'+hashlib.sha256(project.encode()).hexdigest()[:10]
-            if cli('network','show',bridge,check=False).returncode==0: cli('network','delete',bridge)
-            # The lease source fence ACL shares the bridge name; free it after the bridge.
-            if cli('network','acl','show',bridge,check=False).returncode==0: cli('network','acl','delete',bridge)
+            # Lease bridges are named lease<digest> since 2026-10, anas<digest> before.
+            for prefix in ('lease','anas'):
+                bridge=prefix+hashlib.sha256(project.encode()).hexdigest()[:10]
+                if cli('network','show',bridge,check=False).returncode==0: cli('network','delete',bridge)
+                # The lease source fence ACL shares the bridge name; free it after the bridge.
+                if cli('network','acl','show',bridge,check=False).returncode==0: cli('network','acl','delete',bridge)
         # The VM fixture build leaves only fixed names in the default project.
         for instance in json.loads(cli('list','--project','default','--format=json').stdout):
             if instance['name']!=VM_BUILD: raise RuntimeError('unexpected default-project instance; refusing cleanup')
@@ -368,7 +408,8 @@ def main(args):
             if not {a.get('name') for a in item.get('aliases') or []} & {VM_BASE_ALIAS,'anas-vmfixture'}:
                 raise RuntimeError('unexpected default-project image; refusing cleanup')
             cli('image','delete',item['fingerprint'],timeout=120)
-        if cli('storage','show',POOL,check=False).returncode==0: cli('storage','delete',POOL)
+        for pool in (POOL, OTHER_POOL):
+            if cli('storage','show',pool,check=False).returncode==0: cli('storage','delete',pool)
         if (PROVIDER_ROOT/'provider').exists():
             (PROVIDER_ROOT/'provider').unlink()
         if PROVIDER_ROOT.exists():

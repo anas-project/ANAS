@@ -8,7 +8,7 @@ services:
         FORGEJO_REGISTRY: ${FORGEJO_REGISTRY:-codeberg.org}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-docker.io}
         FORGEJO_VERSION: 15.0.7
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r3
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}
@@ -105,7 +105,7 @@ services:
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
         GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3
     command: ["preflight"]
     restart: "no"
     environment:
@@ -167,7 +167,7 @@ services:
         DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
         GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3
     restart: on-failure:5
     # The process gives its pending guest/registration cleanup two minutes
     # on SIGTERM; Docker's ten-second default would kill that compensation.

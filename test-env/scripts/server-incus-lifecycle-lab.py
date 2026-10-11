@@ -9,10 +9,10 @@ The script lives in an experiment root next to incus_vm_cleanup.py and an
 named round directory are created or removed. QEMU runs as the unprivileged
 lab user through setpriv with user-mode NAT and a loopback SSH forward; no TAP,
 bridge, business Docker socket, block device or shared volume is attached. One
-lab VM runs at a time. Inside it the lifecycle harness runs twice against the
-same fresh Incus daemon -- the container tier first, then the VM tier on nested
-KVM, so both timing baselines come from one environment -- followed by the
-dual-stack egress harness.
+lab VM runs at a time. Inside it the lifecycle harness runs three times against
+the same fresh Incus daemon -- the container tier first, then persistent volumes
+on the container tier, then the VM tier on nested KVM, so both timing baselines
+come from one environment -- followed by the dual-stack egress harness.
 
 The physical host is only read (Docker inventory, services, nft and routes)
 before and after, and the two snapshots must match.
@@ -27,7 +27,7 @@ BASE_ROOT = Path(__file__).resolve().parent
 ROUND = re.compile(r'r[1-9][0-9]?-[a-z0-9.-]{3,40}')
 INPUTS = ('server-incus-lifecycle-e2e.py', 'server-incus-network-e2e.py', 'provider', 'computeclient.test', 'anas-fixture',
           'test2json', 'vm-incus.tar.xz', 'vm-disk.qcow2', 'ct-incus.tar.xz', 'ct-root.tar.xz', 'install-common.sh')
-STAGES = ('container', 'vm', 'network')
+STAGES = ('container', 'volumes', 'vm', 'network')
 VM_FILES = ('lab.qcow2', 'guest-key', 'guest-key.pub', 'known_hosts', 'seed.iso', 'meta-data', 'network-config', 'user-data')
 QEMU_UID, QEMU_GID = 1000, 108
 GUEST_INPUTS = '/opt/anas-lifecycle-inputs'

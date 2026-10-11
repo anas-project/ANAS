@@ -9,7 +9,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `immich` |
-| 版本 / revision | `3.2.4-r1` |
+| 版本 / revision | `3.2.4-r2` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -95,7 +95,7 @@ ML 关闭后照片/视频上传仍保留，依赖 ML 的搜索/识别功能关�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`3.2.4-r1`（reviewed 2026-10-03）
+- Module version / 版本：`3.2.4-r2`（reviewed 2026-10-03）
 - Timezone / 时区：`container` — The server and ML container receive ANAS TZ; media timestamps remain owned by Immich metadata.
 - Language scope / 语言范围：Immich Web UI
 - Selection / 选择方式：`browser`

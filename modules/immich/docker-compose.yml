@@ -6,7 +6,7 @@ services:
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r1
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r2
     restart: unless-stopped
     dns: ["${LOCAL_DNS_SERVER}"]
     env_file: [.env]

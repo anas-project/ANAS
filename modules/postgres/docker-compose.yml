@@ -1,7 +1,7 @@
 services:
   anas_postgres:
     container_name: ${CONTAINER_PREFIX}postgres
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r5
     restart: unless-stopped
     env_file:
       - .env
@@ -16,7 +16,7 @@ services:
       - postgres
 
   anas_postgres_provision:
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r5
     restart: "no"
     env_file:
       - .env
