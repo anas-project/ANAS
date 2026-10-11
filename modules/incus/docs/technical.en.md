@@ -949,6 +949,9 @@ The declarative host recipes explicitly include `dnsmasq-base`, so `--no-install
 omit the Incus bridge runtime dependency. The first Ubuntu 26.04 / Incus 6.0.5 run could not create
 its bridge; supplying that dependency allowed the real Provider's repeated two-lease ensure/inspect
 and the shared client's container lifecycle to pass. Preinstalled helpers are not adopted or removed.
+Uninstall removes the packages ANAS installed with `dpkg --remove` and records them in
+`removed_packages`; a later install on the same host treats their leftover configuration files as
+ANAS's own, not as an external daemon.
 
 `test-env/scripts/server-incus-lifecycle-e2e.py` accepts only a disposable QEMU VM with an exact
 cloud-init identity, no Docker and initially empty Incus inventory. Real btrfs volumes, restricted

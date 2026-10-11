@@ -86,10 +86,12 @@ func (s *HostActionService) Ready() <-chan struct{} {
 	return s.ready
 }
 
-// CancelQueuedPreflight is explicit, authorized cancellation only. Running
-// preflight has no cooperative-cancel channel; never report it as cancelled
+// CancelQueued is explicit, authorized cancellation of a host action that has
+// not started. A confirmed apply cancelled here never reaches hostd's claim,
+// and its confirmation was consumed when the job was created. Running host
+// actions have no cooperative-cancel channel; never report one as cancelled
 // merely because an HTTP client or subscriber disconnected.
-func (s *HostActionService) CancelQueuedPreflight(ctx context.Context, actor, jobID string) (consolejobs.Job, error) {
+func (s *HostActionService) CancelQueued(ctx context.Context, actor, jobID string) (consolejobs.Job, error) {
 	if s == nil || ctx == nil {
 		return consolejobs.Job{}, hostaction.ErrUnavailable
 	}
@@ -108,7 +110,7 @@ func (s *HostActionService) CancelQueuedPreflight(ctx context.Context, actor, jo
 			return hostaction.ErrDenied
 		}
 		_, err := s.options.Journal.AppendContext(ctx, audit.Event{Type: "host_job_transition", Actor: actor, WorkspaceID: job.WorkspaceID, Outcome: string(i.Next.Status),
-			Details: map[string]any{"operation": "cancel_queued", "action": "incus.status", "job_id": job.ID, "invocation_id": job.Action.InvocationID}})
+			Details: map[string]any{"operation": "cancel_queued", "action": job.Action.Name, "job_id": job.ID, "invocation_id": job.Action.InvocationID}})
 		if err != nil {
 			return hostaction.ErrAudit
 		}
@@ -584,6 +586,34 @@ func (s *HostActionService) Run(owner context.Context) (result error) {
 	}
 }
 
+// settleFailedHostActions clears the workspace compensation check of host
+// actions that hostd reported as failed. The check exists for deployment
+// state, which a host action does not touch; hostd records every host effect
+// as an intent before making it and keeps a failed one until it is recovered,
+// so the next plan reports host_effect_recovery_required. Without this, one
+// failed incus.configure left every later write in its workspace queued for
+// good (finance.hlong.wang, 2026-10-11). Unknown outcomes (interrupted) keep
+// their check.
+func (s *HostActionService) settleFailedHostActions(ctx context.Context, jobs []consolejobs.Job) error {
+	for _, job := range jobs {
+		if job.Action == nil || !job.Mutating || job.Status != consolejobs.StatusFailed || !job.NeedsCompensationCheck {
+			continue
+		}
+		if _, ok := hostaction.LookupAction(job.Action.Name); !ok {
+			continue
+		}
+		_, err := s.options.Store.AcknowledgeCompensation(ctx, job.ID,
+			"host action failed; hostd keeps its effect intents and blocks later plans until they are recovered")
+		if ctx.Err() != nil {
+			return nil
+		}
+		if err != nil && !errors.Is(err, consolejobs.ErrConflict) && !errors.Is(err, consolejobs.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 	jobs, err := s.options.Store.List(ctx)
 	if err != nil {
@@ -591,6 +621,9 @@ func (s *HostActionService) advance(ctx context.Context) (bool, error) {
 			return false, nil
 		}
 		return false, hostaction.ErrUnavailable
+	}
+	if err := s.settleFailedHostActions(ctx, jobs); err != nil {
+		return false, err
 	}
 	for _, j := range jobs {
 		if j.Action != nil && (consolejobs.ActionContainmentLost(j) || (j.Error != nil && j.Error.Code == "daemon_restarted") || (j.Status == consolejobs.StatusRunning)) {

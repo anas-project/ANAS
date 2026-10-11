@@ -396,8 +396,9 @@ progress/warning 通过既有 store 持久化，精确计数不折成 job 的整
 result/error 先暂存内存；实际 reader 读到 EOF、进程适配器收割并提供退出证据后，Finish 才提交。
 成功后仍有额外数据、强杀、缺终态、投影/写入失败或退出不符，均以稳定 `execution_unconfirmed`
 unknown 事件替代暂存终态。守护进程重启在同一 execution lease 下补 `daemon_restarted` unknown。
-失败/未知的 mutating 动作保留 compensation 阻断；排队取消则在 jobs.lock 下与启动竞争，只有确实
-尚未执行时才能直接提交 cancelled。
+失败/未知的 mutating 动作保留 compensation 阻断；宿主动作例外：hostd 明确报告失败的，由宿主通道清除
+（宿主效果的恢复义务由 hostd 的 intent 承担，见[宿主特权动作通道](host-action-channel.md) §13），结果
+未知的仍保留。排队取消则在 jobs.lock 下与启动竞争，只有确实尚未执行时才能直接提交 cancelled。
 
 recorder 不启动、发送信号或收割进程。受监督适配器仍须使用 daemon 所有的 context、有限 I/O 和
 清理超时，在 Next 失败后停止/排空并收割子进程，再用独立的有限清理 context 写终态；不能把浏览器

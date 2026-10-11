@@ -1488,7 +1488,12 @@ e2e 记录中的相应行保留为历史。
   `configure.traefik-address-set`），enroll `connection_ready`，记录的批准范围为 30000–32767（`INCUS-R-153` 实机通过）。
   重装中发现卸载留下的 `incus-base` 配置文件会被 install 当作外部 daemon（推断产品卸载后重装同样受阻），详见宿主通道
   计划 §15。
-- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）。
+- **卸载后重装（2026-10-11 修复，`INCUS-R-048`）**：产品的 `incus.uninstall` 同样用 `dpkg --remove` 并清除包归属，
+  已用单元测试证实同一宿主「安装 → 卸载 → 安装」第二次安装被判为外部 daemon。现在卸载把删掉的包记入
+  `removed_packages`，重装时只剩配置文件、且在记录里的包仍算 ANAS 自己的，安装成功后重新记入归属；不在记录里的
+  保留配置仍被拒绝。测试 `TestReinstallAfterUninstallOwnsRetainedPackageConfiguration`（三份配方各两轮，修复前第二轮
+  被拒）与 `TestRetainedDaemonConfigurationOfUnknownOriginIsNotAdopted`，未上实机。
+- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；卸载后重装尚未在一次性 VM 上实测。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 

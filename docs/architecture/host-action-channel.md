@@ -649,6 +649,14 @@ CLI 使用受验证 HTTPS 控制台会话和同一队列，不自行持有第二
 30000–32767），确认摘要按它计算。执行时 CLI、HTTP 与控制台都原样送回这份参数，不按调用方当初的输入重建；
 任何字段的增删都会改变摘要而被拒绝。
 
+尚未开始的宿主动作都可以由 owner 显式取消（不只预检）：已确认的 apply 在排队时取消，不会到达 hostd 的
+Claim，它的确认在创建 job 时已消费，不能再用；已开始的动作仍没有协作取消。取消一个状态不允许的 job
+返回 409 `job_conflict`，非 owner 取消宿主动作返回 403。hostd 明确报告失败（`incus_host_action_failed`）
+的写动作，由 `HostActionService` 清除它在工作区留下的补偿检查：该检查保护的是部署状态，宿主动作不改动它；
+宿主侧每个效果先记为 intent，失败的 intent 一直保留到恢复，期间后续计划报告 `host_effect_recovery_required`。
+结果未知（interrupted）的动作仍保留补偿检查。此前一次失败的 `incus.configure` 会让该工作区此后所有写作业
+（包括部署）静默排队（2026-10-11 finance 实测）。
+
 长动作预算来自编译期清单，未认证读入仍单独限时。公开进度只包含固定阶段名，不复制包管理器
 stdout/stderr。`anas-hostd` 必须有包管理、账户创建、网络配置所需的真实 root 权限；单元保留
 `NoNewPrivileges`、`ProtectSystem` 和 `ProtectHome`，显式开放 `/etc`、`/usr`、`/var`、`/run`

@@ -158,3 +158,73 @@ func TestAggregatePackageOwnershipCannotAuthorizeDaemonAdoption(t *testing.T) {
 		})
 	}
 }
+
+// Uninstall removes owned packages with dpkg --remove, which keeps their
+// configuration files. Those leftovers are ANAS's own, so a later install on
+// the same host must own the packages again instead of calling the retained
+// daemon configuration foreign (found on finance.hlong.wang, 2026-10-11).
+func TestReinstallAfterUninstallOwnsRetainedPackageConfiguration(t *testing.T) {
+	rows, err := incushost.Recipes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		t.Run(row.ID, func(t *testing.T) {
+			ctx := context.Background()
+			store, rt := &memoryStore{}, newFakeRuntime(t)
+			rt.obs.Preflight.Recipe = &row
+			rt.obs.ExistingPackages, rt.obs.InstalledPackages = []string{}, []string{}
+			backend := newBackendForTest(store, rt)
+			want := slices.Sorted(slices.Values(row.Packages))
+			for round := 1; round <= 2; round++ {
+				plan, err := backend.Plan(ctx, Request{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				out, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall))
+				if err != nil || out.Disposition != "installed" || store.state.Ownership.ExternalDaemonPreserved ||
+					!slices.Equal(store.state.Ownership.ManagedPackages, want) || len(store.state.Ownership.RemovedPackages) != 0 {
+					t.Fatalf("install round %d: result=%s error=%v ownership=%+v", round, out.Disposition, err, store.state.Ownership)
+				}
+				plan, err = backend.Plan(ctx, Request{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := backend.Uninstall(ctx, Request{}, bind(plan, PhaseUninstall)); err != nil {
+					t.Fatalf("uninstall round %d: %v", round, err)
+				}
+				if len(rt.obs.InstalledPackages) != 0 || !slices.Equal(rt.obs.ExistingPackages, want) ||
+					!slices.Equal(store.state.Ownership.RemovedPackages, want) || len(store.state.Ownership.ManagedPackages) != 0 {
+					t.Fatalf("uninstall round %d did not record its retained packages: %+v", round, store.state.Ownership)
+				}
+			}
+		})
+	}
+}
+
+// Retained configuration ANAS has no removal record for is still foreign.
+func TestRetainedDaemonConfigurationOfUnknownOriginIsNotAdopted(t *testing.T) {
+	rows, err := incushost.Recipes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		t.Run(row.ID, func(t *testing.T) {
+			ctx := context.Background()
+			store, rt := &memoryStore{}, newFakeRuntime(t)
+			rt.obs.Preflight.Recipe = &row
+			rt.obs.ExistingPackages, rt.obs.InstalledPackages = []string{daemonPackage(row)}, []string{}
+			// A removal record for other packages does not cover the daemon.
+			store.state.Ownership.RemovedPackages = slices.DeleteFunc(slices.Clone(row.Packages), func(name string) bool { return name == daemonPackage(row) })
+			backend := newBackendForTest(store, rt)
+			plan, err := backend.Plan(ctx, Request{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := backend.Install(ctx, Request{}, bind(plan, PhaseInstall))
+			if !errors.Is(err, ErrBlocked) || out.Disposition != "blocked" || !store.state.Ownership.ExternalDaemonPreserved || len(rt.calls) != 0 {
+				t.Fatalf("retained configuration of unknown origin was adopted: result=%s error=%v effects=%v", out.Disposition, err, rt.calls)
+			}
+		})
+	}
+}

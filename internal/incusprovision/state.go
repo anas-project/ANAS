@@ -33,6 +33,10 @@ type Ownership struct {
 	ID                      string   `json:"id,omitempty"`
 	PackagesInstalledByANAS bool     `json:"packages_installed_by_anas,omitempty"`
 	ManagedPackages         []string `json:"managed_packages,omitempty"`
+	// RemovedPackages are packages ANAS installed and later removed. dpkg
+	// --remove keeps their configuration files; those leftovers are ANAS's
+	// own and do not make a reinstall look like an external daemon.
+	RemovedPackages         []string `json:"removed_packages,omitempty"`
 	IncusServiceByANAS      bool     `json:"incus_service_by_anas,omitempty"`
 	ExternalDaemonPreserved bool     `json:"external_daemon_preserved,omitempty"`
 	StoragePool             string   `json:"storage_pool,omitempty"`
@@ -131,6 +135,7 @@ type PublicOwnership struct {
 	ID                      string   `json:"id,omitempty"`
 	PackagesInstalledByANAS bool     `json:"packages_installed_by_anas,omitempty"`
 	ManagedPackages         []string `json:"managed_packages,omitempty"`
+	RemovedPackages         []string `json:"removed_packages,omitempty"`
 	IncusServiceByANAS      bool     `json:"incus_service_by_anas,omitempty"`
 	ExternalDaemonPreserved bool     `json:"external_daemon_preserved,omitempty"`
 	StoragePool             string   `json:"storage_pool,omitempty"`
@@ -286,6 +291,7 @@ func (s State) Public() PublicState {
 			ID:                      s.Ownership.ID,
 			PackagesInstalledByANAS: s.Ownership.PackagesInstalledByANAS,
 			ManagedPackages:         slices.Clone(s.Ownership.ManagedPackages),
+			RemovedPackages:         slices.Clone(s.Ownership.RemovedPackages),
 			IncusServiceByANAS:      s.Ownership.IncusServiceByANAS,
 			ExternalDaemonPreserved: s.Ownership.ExternalDaemonPreserved,
 			StoragePool:             s.Ownership.StoragePool,

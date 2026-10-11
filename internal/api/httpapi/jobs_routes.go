@@ -17,6 +17,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/deploymentaudit"
+	"github.com/anas-project/ANAS/internal/hostaction"
 )
 
 const (
@@ -717,6 +718,10 @@ func publicJobStoreError(err error) (int, string, string) {
 		return http.StatusNotFound, "job_not_found", "job was not found"
 	case errors.Is(err, consolejobs.ErrInvalid):
 		return http.StatusBadRequest, "invalid_job_id", "job ID is invalid"
+	case errors.Is(err, consolejobs.ErrConflict):
+		return http.StatusConflict, "job_conflict", "job state does not permit this operation"
+	case errors.Is(err, hostaction.ErrDenied):
+		return http.StatusForbidden, "forbidden", "request is not permitted"
 	case errors.Is(err, consolejobs.ErrUnavailable):
 		return http.StatusServiceUnavailable, "jobs_unavailable", "job history is unavailable"
 	default:

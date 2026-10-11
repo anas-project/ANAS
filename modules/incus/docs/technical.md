@@ -776,7 +776,8 @@ developing 状态，也不开放生产 ingress。确认 token、产品入口迁�
 宿主声明式安装表显式包含 `dnsmasq-base`，避免 `--no-install-recommends` 跳过 Incus 的
 网桥运行依赖。真实 Ubuntu 26.04 / Incus 6.0.5 首轮因此未能创建网桥，补齐依赖后实际
 Provider 的双租约重复 ensure/inspect 和共享客户端容器生命周期通过。已有包不自动归
-ANAS 所有，卸载仍保留安装前存在的 helper。
+ANAS 所有，卸载仍保留安装前存在的 helper。卸载用 `dpkg --remove` 删除 ANAS 安装的包并记入
+`removed_packages`；同一宿主再次安装时，这些包只剩的配置文件仍算 ANAS 自己的，不会被当成外部 daemon。
 
 新增 `test-env/scripts/server-incus-lifecycle-e2e.py` 只允许具备精确 cloud-init 身份的可销毁
 QEMU VM，要求无 Docker、初始 Incus 库存为空。使用真实 btrfs、受限证书和同名前缀的两份

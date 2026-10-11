@@ -29,7 +29,7 @@ type daemonHostActions interface {
 	IssueConfirmation(context.Context, string, string, string, string) (hostconfirmation.IssueResult, error)
 	InvokeConfirmed(context.Context, string, string, string, string, json.RawMessage, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error)
 	InvokeImagePruneConfirmed(context.Context, string, string, string, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error)
-	CancelQueuedPreflight(context.Context, string, string) (consolejobs.Job, error)
+	CancelQueued(context.Context, string, string) (consolejobs.Job, error)
 	InvokeSync(context.Context, string, string) (consolejobs.CreateResult, error)
 }
 
@@ -145,12 +145,12 @@ func cancelConsoleJob(ctx context.Context, id string, store *consolejobs.Store, 
 	if job.Action == nil {
 		return legacy(ctx, id)
 	}
-	if job.Action.Name != "incus.status" || host == nil {
+	if _, ok := hostaction.LookupAction(job.Action.Name); !ok || host == nil {
 		return consolejobs.Job{}, consolejobs.ErrConflict
 	}
 	principal, ok := httpapi.PrincipalFromContext(ctx)
 	if !ok || principal.Role != "owner" || principal.ID == "" {
 		return consolejobs.Job{}, hostaction.ErrDenied
 	}
-	return host.CancelQueuedPreflight(ctx, principal.ID, id)
+	return host.CancelQueued(ctx, principal.ID, id)
 }

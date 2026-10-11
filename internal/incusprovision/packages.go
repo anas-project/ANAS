@@ -20,8 +20,17 @@ func daemonPackage(recipe incushost.Recipe) string {
 
 func unownedDaemonPackage(obs Observation, ownership Ownership, recipe incushost.Recipe) bool {
 	name := daemonPackage(recipe)
-	return slices.Contains(obs.ExistingPackages, name) &&
+	return slices.Contains(preexistingPackages(obs, ownership), name) &&
 		(!ownership.PackagesInstalledByANAS || !slices.Contains(ownership.ManagedPackages, name))
+}
+
+// preexistingPackages are the observed packages that are not ANAS's own
+// leftovers. A package ANAS installed and then removed keeps only its
+// configuration files; once it is installed again by anyone, it is foreign.
+func preexistingPackages(obs Observation, ownership Ownership) []string {
+	return slices.DeleteFunc(slices.Clone(obs.ExistingPackages), func(name string) bool {
+		return slices.Contains(ownership.RemovedPackages, name) && !slices.Contains(obs.InstalledPackages, name)
+	})
 }
 
 func externalDaemonObserved(obs Observation, ownership Ownership, recipe incushost.Recipe) bool {

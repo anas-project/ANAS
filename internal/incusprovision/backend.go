@@ -353,7 +353,7 @@ func (b *Backend) applyInstall(ctx context.Context, request Request, plan Plan, 
 	}
 	if !obs.PackageInstalled {
 		requested := missingPackages(plan.Preflight.Recipe.Packages, obs.InstalledPackages)
-		newlyOwned := missingPackages(plan.Preflight.Recipe.Packages, obs.ExistingPackages)
+		newlyOwned := missingPackages(plan.Preflight.Recipe.Packages, preexistingPackages(obs, state.Ownership))
 		intent, err := b.beginEffect(ctx, state, PhaseInstall, plan.Digest, "install.packages")
 		if err != nil {
 			return ApplyResult{Disposition: "partial"}, err
@@ -372,6 +372,9 @@ func (b *Backend) applyInstall(ctx context.Context, request Request, plan Plan, 
 		state.Ownership.ManagedPackages = append(state.Ownership.ManagedPackages, newlyOwned...)
 		slices.Sort(state.Ownership.ManagedPackages)
 		state.Ownership.ManagedPackages = slices.Compact(state.Ownership.ManagedPackages)
+		state.Ownership.RemovedPackages = slices.DeleteFunc(state.Ownership.RemovedPackages, func(name string) bool {
+			return slices.Contains(state.Ownership.ManagedPackages, name)
+		})
 		if err := b.finishEffect(state, intent, "ok", "packages installed"); err != nil {
 			return ApplyResult{Disposition: "partial"}, err
 		}
@@ -974,6 +977,9 @@ func (b *Backend) applyUninstall(ctx context.Context, request Request, plan Plan
 			return ApplyResult{Disposition: "partial"}, errors.Join(ErrExternalEffects, readErr, saveErr)
 		}
 		state.Ownership.PackagesInstalledByANAS = false
+		state.Ownership.RemovedPackages = append(state.Ownership.RemovedPackages, state.Ownership.ManagedPackages...)
+		slices.Sort(state.Ownership.RemovedPackages)
+		state.Ownership.RemovedPackages = slices.Compact(state.Ownership.RemovedPackages)
 		state.Ownership.ManagedPackages = nil
 		state.Ownership.IncusServiceByANAS = false
 		if err := b.finishEffect(state, intent, "ok", "packages removed"); err != nil {

@@ -329,7 +329,7 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
     请求都不带端口范围）：install `installed`；configure `configured`，9 个回执全部 ok，含 `configure.traefik-address-set`
     与批准默认范围的 `configure.port-binding-range`；enroll `connection_ready`。宿主状态没有未结的 intent，记录的批准
     范围为 30000–32767。`HOSTACT-R-010`、`R-014` 在 finance 实机通过。
-  - 过程中发现的缺陷（已另开任务，未在本次修复）：
+  - 过程中发现的缺陷（第 1—3 项已于 2026-10-11 修复，见下方「缺陷修复」）：
     1. 失败的写宿主动作把作业标为需要补偿检查，而只有部署执行器会清除这个标记；该工作区此后所有写作业静默排队
        （finance 上工作区 `a`、`b` 先后被卡住，`a` 里还留着一个无法取消的排队 `incus.install`）；
     2. 取消非 `incus.status` 的排队宿主动作返回 500 `internal_error`：`publicJobStoreError` 没有映射 `ErrConflict`；
@@ -338,6 +338,18 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
        `incus.uninstall` 也只用 `--remove` 并清除包归属，推断卸载后在同一宿主重装同样会被拒绝，尚未用产品路径验证；
     4. 主机负载高时（finance 当时 load 17–22、内存换页）anasd 的 TLS 握手超时，CLI 调用失败，一次 `incus.enroll.plan`
        在 hostd 内失败，重试后通过。
+- **缺陷修复（2026-10-11，本机单元，未上实机）**：
+  1. `HostActionService` 每轮 `advance` 清除 hostd 明确报告失败（failed）的写宿主动作留下的补偿检查，并在 job 上
+     记一条警告；结果未知（interrupted）的保留。宿主侧的恢复义务由 hostd 的 intent 承担。测试
+     `TestFailedHostActionDoesNotBlockItsWorkspace`、`TestUnknownHostActionOutcomeKeepsCompensationCheck`，前者在去掉
+     修复后失败。现有需求矩阵没有覆盖「失败的宿主动作不得永久阻断工作区」的条目，未新增 ID；
+  2. 任何尚未开始的宿主动作都可由 owner 取消（`CancelQueuedPreflight` 改为 `CancelQueued`，审计记实际动作名），
+     取消冲突返回 409 `job_conflict`、非 owner 返回 403（`ACTABI-R-001`）。测试 `TestQueuedConfirmedHostActionCanBeCancelled`、
+     `TestJobCancelReportsConflictAndDenial`，后者在去掉映射后失败；`cancelConsoleJob` 的路由改动只有一行条件，
+     没有单独的 cmd 层测试；
+  3. 见 [Incus 计划](incus-module.md) §14.3（`INCUS-R-048`）。
+  `go vet ./...`、`GOOS=linux go vet` 与 incusprovision、jobexecutor、httpapi、consolejobs、hostaction、`cmd/anasd`、
+  `cmd/anas-hostd` 的测试通过。finance 上已有的卡住状态需要换上新构建后由 `advance` 自动清除，尚未部署验证。
 - **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 与 failed host intent 的受限恢复动作都未实现；
-  上面第 1—3 项缺陷待修。
+  三项修复待在实机上验证（finance 换新构建，或在一次性 VM 中复现卸载后重装）。
 

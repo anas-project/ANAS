@@ -47,7 +47,7 @@ func (*daemonHostFixture) InvokeConfirmed(context.Context, string, string, strin
 func (*daemonHostFixture) InvokeImagePruneConfirmed(context.Context, string, string, string, hostconfirmation.RawToken, string) (consolejobs.CreateResult, error) {
 	return consolejobs.CreateResult{}, nil
 }
-func (*daemonHostFixture) CancelQueuedPreflight(context.Context, string, string) (consolejobs.Job, error) {
+func (*daemonHostFixture) CancelQueued(context.Context, string, string) (consolejobs.Job, error) {
 	return consolejobs.Job{}, nil
 }
 func (*daemonHostFixture) InvokeSync(context.Context, string, string) (consolejobs.CreateResult, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/anas-project/ANAS/internal/consoleauth"
 	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/deploymentaudit"
+	"github.com/anas-project/ANAS/internal/hostaction"
 )
 
 type fakeJobQueryStore struct {
@@ -208,6 +210,45 @@ func TestJobCancelDelegatesOnlyAfterObjectAuthorization(t *testing.T) {
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusAccepted || calls != 1 || response.Header().Get("Location") != "/api/v1/jobs/job-cancel" {
 		t.Fatalf("cancel = %d calls=%d location=%q body=%s", response.Code, calls, response.Header().Get("Location"), response.Body.String())
+	}
+}
+
+// A cancel the job state does not permit is a conflict, and a host action
+// cancel by a non-owner is forbidden; neither is an internal error. Both used
+// to surface as 500 (finance.hlong.wang, 2026-10-11).
+func TestJobCancelReportsConflictAndDenial(t *testing.T) {
+	registry, _ := testRegistry(t, "main")
+	principal := mustTransactionPrincipal(t, consolejobs.PrincipalBootstrap, "txn-cancel")
+	job := consolejobs.Job{
+		ID: "job-cancel", Kind: deploymentaudit.ActionApply, WorkspaceID: "main", CreatedBy: principal,
+		CreatedAt: time.Now().UTC(), Status: consolejobs.StatusQueued, Revision: 1,
+	}
+	for _, tc := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{consolejobs.ErrConflict, http.StatusConflict, "job_conflict"},
+		{fmt.Errorf("%w: job is already terminal", consolejobs.ErrConflict), http.StatusConflict, "job_conflict"},
+		{hostaction.ErrDenied, http.StatusForbidden, "forbidden"},
+	} {
+		store := &fakeJobQueryStore{jobs: []consolejobs.Job{job}}
+		handler := newJobTestHandler(t, registry, store, StateBootstrap, Principal{
+			ID: principal, Role: "bootstrap", Source: "bootstrap", TransactionID: "txn-cancel",
+		}, JobQueryOptions{Cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, tc.err }})
+		request := httptest.NewRequest(http.MethodPost, "https://nas.example/api/v1/jobs/job-cancel/cancel", strings.NewReader(`{}`))
+		request.TLS = &tls.ConnectionState{}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Origin", "https://nas.example")
+		request.Header.Set(csrfHeaderName, "csrf-token")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		var problem struct {
+			Code string `json:"code"`
+		}
+		if response.Code != tc.status || json.Unmarshal(response.Body.Bytes(), &problem) != nil || problem.Code != tc.code {
+			t.Fatalf("cancel error %v = %d %s", tc.err, response.Code, response.Body.String())
+		}
 	}
 }
 

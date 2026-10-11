@@ -448,6 +448,12 @@ profile、外部池/网络/证书和保留镜像均先阻止整个卸载，须�
 也不够。配置、登记及显式包删除沿用此判据，删除读回还要求所拥有的 daemon 已停止。
 未列入并确认归属的依赖不以 `autoremove` 或强制删除处理。
 
+删除用 `dpkg --remove`，包的配置文件会留下（`config-files` 状态）。卸载因此把删掉的包记入宿主状态的
+`removed_packages`：之后在同一宿主重装时，只剩配置文件、且在这份记录里的包仍算 ANAS 自己的，重新安装后
+重新记入归属；不在记录里的保留配置，或已被别人重新装上的包，仍按外部 daemon 处理。此前卸载会清掉包归属，
+同一宿主重装时 `incus-base` 的残留配置被当作外部 daemon，install 以 `external_daemon_service_not_modified`
+拒绝（2026-10-11 finance 实测，`INCUS-R-048`）。
+
 预检不是跨 API 原子锁；实际删除前仍重新检查池引用/卷和网络端点，删除后要求确切缺席读回。
 root Docker 客户端仅允许固定控制网络的 inspect/create 及按不可变 ID 删除，不允许
 connect、disconnect、prune 或任何容器操作。原生夹具增加“保留卷拒绝卸载且连接仍可用”
