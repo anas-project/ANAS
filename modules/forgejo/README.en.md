@@ -8,7 +8,7 @@ Self-hosted Git collaboration with HTTP/SSH Git, code review, issues, wiki, Git 
 | Item | Value |
 | --- | --- |
 | Module | `forgejo` |
-| Version / revision | `15.0.7-r2` |
+| Version / revision | `15.0.7-r3` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |

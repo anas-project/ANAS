@@ -44,6 +44,10 @@ type InstanceSpec struct {
 	CPU        int
 	MemoryMiB  int
 	DiskGiB    int
+	// Volumes are this lease's persistent volumes to attach before the
+	// instance starts. Each names a volume and a guest path, never a pool,
+	// a host path or any other disk option (INCUS-R-167).
+	Volumes []VolumeMount
 }
 
 type runner interface {
@@ -143,7 +147,7 @@ func (c *Client) Validate(spec InstanceSpec) error {
 	if spec.DiskGiB < 4 || spec.DiskGiB > c.lease.DiskGiB {
 		return fmt.Errorf("compute disk limit exceeds this lease's quota")
 	}
-	return nil
+	return c.validateMounts(spec.Volumes)
 }
 
 func (c *Client) Create(ctx context.Context, spec InstanceSpec) error {
@@ -186,6 +190,14 @@ func (c *Client) Create(ctx context.Context, spec InstanceSpec) error {
 	}
 	if _, err := c.run.Run(ctx, nil, args...); err != nil {
 		return fmt.Errorf("create managed instance: %w", err)
+	}
+	// An instance whose volumes failed to attach stays stopped; the caller's
+	// teardown deletes it like any other failed create, and the volumes
+	// survive that delete.
+	for _, mount := range spec.Volumes {
+		if err := c.attachVolume(ctx, spec.ID, mount); err != nil {
+			return err
+		}
 	}
 	return nil
 }

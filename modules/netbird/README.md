@@ -13,7 +13,7 @@ Casdoor r10 暂不接受 Netbird 注册：固定 0.76.1 把 OIDC sub 原值用�
 | 项目 | 值 |
 | --- | --- |
 | Module | `netbird` |
-| 版本 / revision | `0.76.1-r5` |
+| 版本 / revision | `0.76.1-r6` |
 | 状态 | `developing` |
 | 类别 | `network` |
 | 运行时 | `compose` |
@@ -144,7 +144,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.76.1-r5`（reviewed 2026-08-13）
+- Module version / 版本：`0.76.1-r6`（reviewed 2026-08-13）
 - Timezone / 时区：`partial` — Dashboard, signal, and management receive the module environment; the relay service does not currently receive TZ.
 - Language scope / 语言范围：NetBird Dashboard v2.90.9
 - Selection / 选择方式：`fixed`

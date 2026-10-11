@@ -16,7 +16,7 @@ services:
         GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
     # Pinned to the module revision. `latest` would let the orchestrator change
     # under an unchanged deployment, which is exactly what AGENT-R-001 forbids.
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r3
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}

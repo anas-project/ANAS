@@ -157,7 +157,7 @@ Rootless engine 还依赖 guest 内 UID 1002 的真实 systemd 用户会话：�
 [Forgejo 设计](/architecture/forgejo-module-design#_4-3-单作业执行实例)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `15.0.7-r2` / `anas.module/v1`.
+> 状态：当前实现；对应 `15.0.7-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -170,9 +170,9 @@ Compose 2.33.1+。这是连接配置，不是 mTLS、隔离或 one-job 实机验
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r2` | `actions-control, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 2 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 1 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r3` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 2 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 1 |
 <!-- generated:compose-topology:end -->
 
 Web/API 仅在 Traefik network 暴露 `3000/tcp`；内置 SSH server 的容器端口 `2222/tcp` 直接发布为

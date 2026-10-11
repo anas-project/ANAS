@@ -9,7 +9,7 @@ webhooks, and CalDAV.
 | Item | Value |
 | --- | --- |
 | Module | `vikunja` |
-| Version / revision | `2.4.0-r4` |
+| Version / revision | `2.4.0-r5` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |

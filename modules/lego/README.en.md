@@ -8,7 +8,7 @@ Certificate issuance and renewal through ACME DNS-01 or the internal CA.
 | Item | Value |
 | --- | --- |
 | Module | `lego` |
-| Version / revision | `5.3.1-r5` |
+| Version / revision | `5.3.1-r6` |
 | Status | `release` |
 | Category | `certificate` |
 | Runtime | `compose` |

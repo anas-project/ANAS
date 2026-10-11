@@ -11,7 +11,7 @@ IAM provider for OIDC and SAML with users and groups synchronized from Samba AD.
 | Item | Value |
 | --- | --- |
 | Module | `authentik` |
-| Version / revision | `2026.5.6-r15` |
+| Version / revision | `2026.5.6-r16` |
 | Status | `deprecated` |
 | Category | `identity` |
 | Runtime | `compose` |

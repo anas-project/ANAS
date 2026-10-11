@@ -2,7 +2,7 @@ api_version: anas.module/v1
 kind: Module
 name: versitygw
 version: 1.7.0
-revision: 3
+revision: 4
 app_version: 1.7.0
 abi:
   supports:

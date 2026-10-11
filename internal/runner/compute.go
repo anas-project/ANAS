@@ -35,6 +35,10 @@ type computeQuota struct {
 	CPU          int
 	MemoryMiB    int
 	DiskGiB      int
+	// VolumeCount and VolumeGiB are zero when the lease declares no
+	// persistent volumes (INCUS-R-165).
+	VolumeCount int
+	VolumeGiB   int
 }
 
 func computeResourcePrefix(consumer, id string) string {
@@ -134,7 +138,7 @@ func computeServerFingerprint(serverCertB64 string) (string, error) {
 func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota, []string, error) {
 	for field := range spec {
 		switch field {
-		case "sandbox", "instance_prefix", "quota", "image_allowlist", "image_policy", "credential", "deletion_policy", "network", "publish":
+		case "sandbox", "instance_prefix", "quota", "image_allowlist", "image_policy", "credential", "deletion_policy", "network", "publish", "volumes":
 		default:
 			return computeQuota{}, nil, fmt.Errorf("resource %s.%s contains an unsupported compute spec field", consumer, id)
 		}
@@ -176,6 +180,32 @@ func validateComputeSpec(consumer, id string, spec map[string]any) (computeQuota
 				consumer, id, field.key, field.min, field.max)
 		}
 		*field.target = value
+	}
+	if raw, declared := spec["volumes"]; declared {
+		volumes, ok := raw.(map[string]any)
+		if !ok {
+			return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute volumes must be an object", consumer, id)
+		}
+		for field := range volumes {
+			if field != "max_count" && field != "total_gib" {
+				return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute volumes contains an unsupported field", consumer, id)
+			}
+		}
+		for _, field := range []struct {
+			key      string
+			target   *int
+			min, max int
+		}{
+			{"max_count", &quota.VolumeCount, 1, 64},
+			{"total_gib", &quota.VolumeGiB, 1, 8192},
+		} {
+			value, ok := intFromAny(volumes[field.key])
+			if !ok || value < field.min || value > field.max {
+				return computeQuota{}, nil, fmt.Errorf("resource %s.%s compute volumes.%s must be an integer between %d and %d",
+					consumer, id, field.key, field.min, field.max)
+			}
+			*field.target = value
+		}
 	}
 	// image_policy is a reserved opening. The field exists so a future release
 	// can widen this without inventing new vocabulary, but "any" is refused

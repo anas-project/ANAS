@@ -17,7 +17,7 @@ IAM provider for OIDC and SAML with directory users imported from Samba AD over 
 | Item | Value |
 | --- | --- |
 | Module | `casdoor` |
-| Version / revision | `3.143.0-r11` |
+| Version / revision | `3.143.0-r12` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |

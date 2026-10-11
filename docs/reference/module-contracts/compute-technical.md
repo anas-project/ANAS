@@ -149,6 +149,9 @@ ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MAX_INSTANCES
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__CPU
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__MEMORY_MIB
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__DISK_GIB
+# 只在声明了 volumes 时：
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__VOLUME_COUNT
+ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__VOLUME_GIB
 # 只在声明了 publish.http 时：
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_REQUEST_DIR
 ANAS_COMPUTE_RESOURCE__<MODULE>__<RESOURCE_ID>__HTTP_POLICY
@@ -283,6 +286,25 @@ Core 在新 apply 为每个 compute Resource 生成独立的 32 字节随机 `le
 它是域名派生的命名密钥，不认证请求、不授予发布权限；不进入凭据轮换或 `--all`，模块也不能
 把它声明成可轮换凭据。专属密钥轮换命令尚未实现；HTTP 发布见下文。
 文件备份恢复回归通过不代表真实 Incus 宿主或 HTTP 入站验收通过。
+
+## 持久卷
+
+租约可以声明 `volumes: {max_count, total_gib}`，随部署冻结。持久卷是租约 project 里的 Incus 自定义卷：
+删除实例、取消作业、janitor 回收和撤销租约都不删它，只有消费者调用 `DeleteVolume` 才删除。未声明的
+租约没有任何卷能力，除根盘外不能挂其他磁盘。
+
+- **daemon 执行**：声明后 Provider 把 project 设为 `restricted.devices.disk=managed`（只能挂受管存储池里的卷，
+  不能挂宿主路径）、`features.storage.volumes=true`（卷留在本 project），并把 `total_gib` 加进 `limits.disk`。
+  存储池由 `restricted.storage-pools.access` 限定为租约的池，所以声明卷需要 Incus 7.0 LTS 或更新版本；
+  daemon 不支持该键时 `ensure` 在写入前失败。
+- **共享客户端执行**：`CreateVolume`、`ListVolumes`、`DeleteVolume` 只处理带本租约实例名前缀的卷，`max_count`
+  只在这里检查（Incus 没有按 project 限制卷数量）。`InstanceSpec.Volumes` 只写卷名和 guest 内的绝对路径，
+  不接受存储池、宿主路径或其他 disk 选项，也不能盖住 `/etc`、`/usr`、`/proc` 等系统目录。一个卷同一时刻
+  只挂给一台实例：挂载前检查、挂载后复核，并发挂到同一卷时双方都撤回并报错。
+- **数据位置与备份**：卷在执行宿主的 Incus 存储池上，不在 ANAS 宿主的 `DATA_PATH`，现有 ANAS 备份不覆盖它。
+  租约证书不能快照或备份（`restricted.snapshots`、`restricted.backups` 仍为 `block`），备份由执行宿主的运维负责。
+- **撤销与卸载**：撤销或移除消费者时卷随 project 保留；同一消费者以同一 sandbox 重新加入后可继续使用。
+  宿主卸载在存储池上还有任何 project 的卷时拒绝删除该池。
 
 ## 租约网络
 

@@ -13,7 +13,7 @@ Casdoor r10 rejects Netbird registration: pinned 0.76.1 projects OIDC sub into o
 | Item | Value |
 | --- | --- |
 | Module | `netbird` |
-| Version / revision | `0.76.1-r5` |
+| Version / revision | `0.76.1-r6` |
 | Status | `developing` |
 | Category | `network` |
 | Runtime | `compose` |

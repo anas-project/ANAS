@@ -9,7 +9,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `forgejo` |
-| 版本 / revision | `15.0.7-r2` |
+| 版本 / revision | `15.0.7-r3` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -206,7 +206,7 @@ Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`15.0.7-r2`（reviewed 2026-08-22）
+- Module version / 版本：`15.0.7-r3`（reviewed 2026-08-22）
 - Timezone / 时区：`configured` — Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
 - Language scope / 语言范围：Forgejo Web UI
 - Selection / 选择方式：`application`

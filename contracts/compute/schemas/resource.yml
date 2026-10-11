@@ -24,6 +24,17 @@ properties:
       cpu: {type: integer, minimum: 1, maximum: 64}
       memory_mib: {type: integer, minimum: 512, maximum: 262144}
       disk_gib: {type: integer, minimum: 4, maximum: 2048}
+  # Persistent volumes (INCUS-R-165--R-172): custom volumes in the lease
+  # project that outlive instances. Omission grants none and keeps every disk
+  # device other than the root disk blocked. total_gib is added to the
+  # project's disk limit; the daemon enforces it.
+  volumes:
+    type: object
+    additional_properties: false
+    required: [max_count, total_gib]
+    properties:
+      max_count: {type: integer, minimum: 1, maximum: 64}
+      total_gib: {type: integer, minimum: 1, maximum: 8192}
   # Reserved opening, not yet implemented. "pinned" (the default) means the
   # allowlist below is the complete set of images this lease may boot. "any"
   # is refused today: it would empty the one constraint in this contract the

@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `postgres` |
-| 版本 / revision | `18.4.0-r4` |
+| 版本 / revision | `18.4.0-r5` |
 | 状态 | `developing` |
 | 类别 | `database` |
 | 运行时 | `compose` |
@@ -124,7 +124,7 @@ Immich 业务验收。`postgres.password` 仍未接入通用凭据轮换库存�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`18.4.0-r4`（reviewed 2026-10-03）
+- Module version / 版本：`18.4.0-r5`（reviewed 2026-10-03）
 - Timezone / 时区：`container` — PostgreSQL and optional Adminer receive TZ; database timezone remains an independent SQL setting.
 - Language scope / 语言范围：optional Adminer 5.5.0 Web UI; PostgreSQL itself has no UI language
 - Selection / 选择方式：`browser`

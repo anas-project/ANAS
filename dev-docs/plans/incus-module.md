@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Incus compute Provider 实施计划
@@ -50,9 +50,10 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
 | M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 已完成；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，容器档真实烘焙/启动/one-job 通过；Core 链路上重复 apply 不重建、显式 prune 只删失败部署的新 revision、回滚从冻结产物恢复丢失镜像、产物丢失时失败且不重建，租约证书可自行导入白名单外镜像（摘要约束只在共享客户端）均有实机证据（2026-09-27，[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)）；VM 档产品镜像烘焙、ARM64 与正式签名分发未覆盖 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 已完成；整体审阅未发现制品下载端点或控制流内联，新增 OpenAPI 媒体类型门禁，见[审阅记录](../reviews/2026-09-26-incus-bulk-data-path-review.md)与[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
+| M15：租约持久卷 | R-165—R-172 | 已完成；2026-10-11 从 M8 拆出，供 AI Agent `job` 档保存会话与运行数据，数据留在执行宿主，备份按操作者决定交给执行宿主运维；同日代码与单元测试完成，ln 一次性实验 VM（Debian 13 / Incus 7.0.1）实机通过 R-166、R-169—R-171（§8.10）；只覆盖 amd64 与容器档，VM 档未跑；尚无内置消费者声明卷 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
 
-覆盖统计：133 项需求全部有且只有一个里程碑归属（另有 31 项已废弃）。
+覆盖统计：141 项需求全部有且只有一个里程碑归属（另有 31 项已废弃）。
 
 ### 当前接续状态（2026-09-27）
 
@@ -777,6 +778,9 @@ source/staging 六次 `--no-cache` 构建。实际 Compose 解析、缺少 share
 先补生命周期、持久卷归属、删除/恢复和独立命令开关设计，再安排 R-041/R-042 的真实验收。
 R-046 只在未来启用 `any` 时验收，不把它作为本轮阻塞。
 
+2026-10-11：持久卷从本阶段拆出为 M15 先行交付（§8.10）；R-041 中持久卷的部分届时直接复用 M15，本阶段剩余的是
+长驻 interface/lifecycle、任意命令开关、稳定入站的长驻用法与 `image_policy: any`。
+
 ### 8.4 M9：IPv6 与默认隔离档
 
 现有实现已提供 IPv6 姿态、bridge NAT、默认容器档及拒绝 `any` 的行为。
@@ -1130,6 +1134,61 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 仅在首批发行版通过后排期。逐个核验上游来源、架构与服务差异，补声明表和真实安装测试；涉及
 第三方源按既有要求取得同意。未适配时继续保持自动安装关闭，不把候选清单当作已支持列表。
 
+### 8.10 M15：租约持久卷
+
+依据需求 §7octies（R-165—R-172）。复杂度评估为**中**：Contract resource schema 加一个可选字段，Provider 多写一个
+restricted 键并调整 `limits.disk`，共享客户端加卷的增删挂卸与前缀校验，宿主卸载盘点已有卷检查（R-048 的保留卷
+拒绝）需要核对覆盖租约卷；不新增服务、不跨主机同步、不新增 Contract operation。
+
+- [x] `contracts/compute/schemas/resource.yml` 增加可选的 `volumes: {max_count 1—64, total_gib 1—8192}`；Runner 校验、
+  resource state 记录、Provider 与消费者投影（`VOLUME_COUNT`/`VOLUME_GIB`，未声明时消费者不收到）及双语 Contract 文档（R-165）；
+- [x] Provider：声明时写 `restricted.devices.disk=managed` 与 `features.storage.volumes=true`，`limits.disk` 加上卷总容量，
+  未声明时保持 `block`；daemon 不支持 `restricted.storage-pools.access`（Incus 6.0）时 `ensure` 写入前失败、`inspect`
+  不报告就绪；就绪核验沿用 `projectFenceEnforced` 逐键比对（R-165、R-166）；
+- [x] 共享客户端 `CreateVolume`/`ListVolumes`/`DeleteVolume` 与 `InstanceSpec.Volumes`：前缀、数量与容量校验，挂载只收卷名与
+  guest 绝对路径（拒绝系统目录与选项注入），挂载前检查、挂载后复核单写者，并发抢挂双方撤回；实例删除不删卷，删除已挂载卷被拒（R-167—R-169）；
+- [x] 宿主卸载的卷盘点改为 `all-projects=true`，租约 project 的卷阻止删池；镜像 prune 只删镜像，经核对不触及卷（R-171）；
+- [x] Incus 与 compute Contract 技术文档写明数据位置、备份由执行宿主运维负责、不能自行快照或备份（R-172）；
+- [x] 实机（容器档）：受限证书直接请求的围栏反例、实例删除后新实例续读、撤销后重新加入沿用原卷、带卷宿主拒绝卸载（R-166、R-169—R-171）；VM 档可用同一 `volumes` 阶段补跑，本轮未跑。
+
+卷的备份：2026-10-11 操作者确认交给执行宿主的运维，ANAS 不提供卷导出或备份动作。
+
+2026-10-11 本机结果（macOS，工作树未提交）：`go test ./modules/incus/provisioner ./internal/computeclient ./internal/incusprovision`
+通过；`internal/runner` 新增卷用例通过，该包另有 3 个既有用例因需要 Linux 文件系统在 macOS 失败，与本改动无关。
+新增用例：`TestProjectConfigOpensManagedDisksOnlyForDeclaredVolumes`、`TestVolumesNeedStoragePoolRestriction`、
+`TestEnsureAppliesVolumeFence`、`TestLeaseFromEnvReadsOptionalVolumes`（Provider）；`TestCreateVolumeStaysInsideTheLeaseQuota`、
+`TestLeaseWithoutVolumesRefusesEveryVolumeOperation`、`TestVolumeMountsAreClosed`、`TestVolumeHasOneWriter`、
+`TestInstanceDeleteLeavesVolumes`、`TestLeaseFromEnvReadsOptionalVolumeQuota`（共享客户端）；
+`TestValidateComputeSpecReadsOptionalVolumes`、`TestComputeVolumeQuotaReachesProviderAndConsumer`（Runner）；
+卸载协议用例新增「lease persistent volume」。
+
+2026-10-11 实机验收（ln，一次性 QEMU 实验 VM `anas-incus-lifecycle-*`，Debian 13 genericcloud / Zabbly Incus 7.0.1 / btrfs，
+不涉及 finance 与 ln 的业务 Docker）：
+
+- **环境与工件**：实验根 `ln:/data/anas-incus-lifecycle-20261011.9IGgs9`；源码基线 `1d7e72a9` 加未提交工作树（相关路径 diff
+  摘要 `018276de…77ec`，见 `inputs/source.json`）；`provider` `4f32162f…129f`、`incusprovision.test` `dab41b07…7247`、最终
+  `computeclient.test` `209a48c0…aa7e`。生命周期实验脚本新增 `volumes` 阶段（`TestNativeIncusLeaseVolumes`，租约 a 声明 2 个卷 /
+  2 GiB，租约 b 不声明）。
+- **轮次**：r1（完整轮）在 container 阶段失败——实验脚本仍按 2026-09 的形状要求 `ensure` 只回 4 个键，而 10-03 起 `ensure`
+  还交回租约网络（R-159）；已改实验脚本与轮换子测试的判据，没有改产品。r2 为保留 VM 的诊断轮，逐阶段手动执行：container
+  23/23、`volumes` 12/12（第一次因测试把 project 的镜像卷算进自定义卷而失败，只改测试筛选）、vm 21/21 均通过；network 阶段
+  失败，原因是该脚本仍检查 2026-09-27 的来源围栏 ACL 设计，已被 M10a 取代，与本里程碑无关，未计入、已另行登记。证据包
+  `r2-m15-hold/reports/manual-evidence.tgz`（`f7966fe8…4951`）与 `reports/manual-*.log`；保留诊断轮按设计不出总判定，
+  结论以各阶段日志为准。前后宿主基线（Docker 容器/网络/卷、nft、路由、netns）一致，结束时无 QEMU 残留。
+- **结果（按需求 ID）**：
+  - `INCUS-R-166` 通过：租约证书直接请求时，超容量卷、其他存储池的卷、卷快照、卷导出、宿主路径 disk、未声明卷的租约挂载
+    受管卷，全部被 daemon 拒绝，且未留下卷或导出文件。
+  - `INCUS-R-169` 通过：写入卷后删除实例，卷仍在且未挂载；已挂载时 `DeleteVolume` 被拒；新实例挂同一卷读回相同数据；
+    最后显式删除卷成功。
+  - `INCUS-R-170` 通过：真实 Provider `revoke` 后租约证书读不到卷，管理员视图里卷仍在租约 project；用另一租约证书对同一
+    sandbox `ensure` 被拒；原租约 `ensure` 重新加入后，新客户端挂原卷读回相同数据。
+  - `INCUS-R-171` 通过：`all-projects` 卷清单能看到租约 project 的卷、默认 project 清单看不到；产品卸载的存储池检查
+    `checkStoragePoolUnused` 对真实 daemon（`TestNativeUninstallKeepsPoolWithLeaseVolume`，在诊断轮内单独执行）在租约
+    project 有卷时返回阻止，删卷后放行。完整的 `incus.uninstall` 宿主动作没有带卷执行；镜像 prune 只删镜像，经代码核对不触及卷。
+  - `INCUS-R-165`、`R-167`、`R-168`、`R-172` 为契约、单元与文档验收，见上。
+- **未覆盖**：VM 档卷、ARM64、ZFS；`volumes` 阶段与卸载检查尚未在一次非诊断完整轮里连续跑过（完整轮还受 network 阶段过时
+  所阻）。
+
 ## 9. CI 门禁
 
 以下记录于 2026-09-10，基线为 `f7642c5` 加本轮未提交工作树；逐项结果见表，不代表已提交版本的 CI 结果。
@@ -1174,6 +1233,10 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 | R-027 | `test-env/scripts/server-forgejo-onejob-e2e.py` | 默认容器档真实 Forgejo 15.0.7 + `lab-r11` 不可变镜像 | 2026-09-22 | 正常、显式失败、SIGTERM、SIGKILL 恢复与未授权仓库五场景通过（M5a），见[闭环记录](../reviews/2026-09-22-incus-onejob-closeout.md)；VM/ARM64 未覆盖 |
 | R-041 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档持久卷与入站（第三阶段） | — | 待执行 |
 | R-042 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档下既有边界不被削弱 | — | 待执行 |
+| R-166 | `test-env/scripts/server-incus-lifecycle-e2e.py --interface volumes` | ln 一次性 VM，Debian 13 / Incus 7.0.1 / btrfs，容器档 | 2026-10-11 | 通过：超容量、其他池、快照、导出、宿主路径、未声明租约挂卷均被 daemon 拒绝（§8.10） |
+| R-169 | 同上 | 同上 | 2026-10-11 | 通过：删实例后卷保留，新实例读回原数据，已挂载卷拒删 |
+| R-170 | 同上 | 同上 | 2026-10-11 | 通过：撤销后证书失效、卷保留，他人证书接管被拒，原租约重新加入读回原数据 |
+| R-171 | 同上，另 `TestNativeUninstallKeepsPoolWithLeaseVolume` | 同上 | 2026-10-11 | 通过：全 project 清单可见租约卷；卸载池检查有卷时阻止、删卷后放行；完整卸载动作未带卷执行 |
 | R-044 | `test-env/scripts/server-incus-network-e2e.py` | 同一 Debian 13 / Incus 7.0.1 实验 VM，上游为独立 netns 与文档地址段 | 2026-09-26 | IPv6 启用租约两族流量都 masquerade 为实验 VM 上游地址，IPv6 关闭租约无全局 IPv6 且 IPv4 masquerade |
 | R-044 | 同上，伪造源与故意漂移反例 | 同上，Provider 自有网桥 ACL（r10） | 2026-09-27 | 两租约伪造两族源地址上游计数 0，IPv6 租约伪造 IPv6 到达实验 VM 4 个报文；allow-all 漂移泄漏 4 个、`inspect` 未就绪、`ensure` 修复后增量 0；归档 `c45232f8…f305`（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)） |
 | R-044 | 同上，按 M10a 租约网络模型更新的脚本 | Debian 13 / Incus 7.0.1 一次性 VM，`r1-net-m10a`，Provider 来自 `1d7e72a9` | 2026-10-11 | 两族 masquerade、两租约伪造源上游计数 0（IPv6 租约到达实验 VM 4 个）、漂移泄漏 4 个后 `inspect` 未就绪、`ensure` 修复；归档 `942277ea…111d`（§8.4） |
@@ -1252,6 +1315,7 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 3. 宿主动作通道与统一动作 ABI 的实现仍分别归各自计划，Incus 只接入，不在本计划重复分配其需求。
 4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。独立宿主尚无可用验收证据；容器与 VM 分别跟踪，M2/M4/M5/M9 的真实验收均登记到 §10。
 5. M8 长驻档和 M14 后续发行版保持预留。完成文档整理不表示这些阶段已实施。
+6. M15 租约持久卷是 AI Agent M4（执行面）的前置；按 §8.10 先做容器档。
 
 2026-09-10 文档整理仅核对代码与契约、修正进度表达；本轮没有执行真实 Incus、Docker 镜像构建或
 one-job 验收。旧清单中的共享构建决策和客户端提取阻塞已经移除。

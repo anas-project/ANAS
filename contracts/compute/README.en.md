@@ -29,7 +29,7 @@ Provisions a fenced isolation sandbox lease at apply time (project, quota, image
 | `schemas/http-publication-request.yml` | `object` | `instance`, `address`, `port` | `address`, `instance`, `label`, `port` |
 | `schemas/inspect-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
 | `schemas/inspect-result.yml` | `object` | `exists`, `ready`, `restricted`, `quota_enforced` | `exists`, `quota_enforced`, `ready`, `restricted` |
-| `schemas/resource.yml` | `object` | `sandbox`, `instance_prefix`, `quota`, `image_allowlist`, `credential`, `deletion_policy` | `credential`, `deletion_policy`, `image_allowlist`, `image_policy`, `instance_prefix`, `network`, `publish`, `quota`, `sandbox` |
+| `schemas/resource.yml` | `object` | `sandbox`, `instance_prefix`, `quota`, `image_allowlist`, `credential`, `deletion_policy` | `credential`, `deletion_policy`, `image_allowlist`, `image_policy`, `instance_prefix`, `network`, `publish`, `quota`, `sandbox`, `volumes` |
 | `schemas/revoke-request.yml` | `object` | `consumer`, `resource_id`, `provider`, `interface`, `spec` | `consumer`, `interface`, `provider`, `resource_id`, `spec` |
 | `schemas/revoke-result.yml` | `object` | `revoked` | `revoked` |
 | `schemas/sandbox-result.yml` | `object` | `endpoint`, `sandbox`, `instance_prefix`, `profile`, `server_certificate_fingerprint`, `client_certificate_secret`, `lease_secret`, `quota` | `client_certificate_secret`, `endpoint`, `instance_prefix`, `lease_secret`, `network`, `profile`, `quota`, `sandbox`, `server_certificate_fingerprint` |

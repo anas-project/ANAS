@@ -147,6 +147,9 @@ func leaseFromEnv(isolation string) (lease, error) {
 	if l.DiskGiB, err = intEnv("ANAS_RESOURCE_DISK_GIB", 4, 2048); err != nil {
 		return lease{}, err
 	}
+	if l.VolumeCount, l.VolumeGiB, err = volumesFromEnv(); err != nil {
+		return lease{}, err
+	}
 	// A pinned fingerprint list is the whole point: a tag or an alias would let
 	// whatever the remote publishes today become what this lease boots.
 	for _, raw := range strings.Split(os.Getenv("ANAS_RESOURCE_IMAGE_ALLOWLIST"), ",") {
@@ -241,6 +244,24 @@ func mergePrefixes(a, b []netip.Prefix) []netip.Prefix {
 		return x.Bits() - y.Bits()
 	})
 	return slices.Compact(out)
+}
+
+// volumesFromEnv reads the optional persistent-volume declaration. Both
+// values are absent or empty for a lease that declares none, or both set.
+func volumesFromEnv() (int, int, error) {
+	count, size := strings.TrimSpace(os.Getenv("ANAS_RESOURCE_VOLUME_COUNT")), strings.TrimSpace(os.Getenv("ANAS_RESOURCE_VOLUME_GIB"))
+	if (count == "" || count == "0") && (size == "" || size == "0") {
+		return 0, 0, nil
+	}
+	n, err := intEnv("ANAS_RESOURCE_VOLUME_COUNT", 1, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+	gib, err := intEnv("ANAS_RESOURCE_VOLUME_GIB", 1, 8192)
+	if err != nil {
+		return 0, 0, err
+	}
+	return n, gib, nil
 }
 
 func intEnv(key string, min, max int) (int, error) {

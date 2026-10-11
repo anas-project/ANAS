@@ -3,7 +3,7 @@
 用户操作见[README](../README.md)。本页描述已落地代码；真实主机未验收的结论保持开放。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `3.2.4-r1` / `anas.module/v1`.
+> 状态：当前实现；对应 `3.2.4-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -11,7 +11,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_immich` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r1` | `db, traefik, immich` | 3 |
+| `anas_immich` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-immich:3.2.4-r2` | `db, traefik, immich` | 3 |
 | `anas_immich_machine_learning` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-machine-learning:3.2.4` | `immich` | 1 |
 | `anas_immich_valkey` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-immich-valkey:9.1.1` | `immich` | 1 |
 <!-- generated:compose-topology:end -->

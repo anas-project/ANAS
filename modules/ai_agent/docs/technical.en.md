@@ -22,7 +22,7 @@ operation are in the [English README](../README.en.md); the acceptance criteria 
 [requirement matrix](../dev-docs/requirements/ai-agent.md).
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `0.1.0-r2` / `anas.module/v1`.
+> Status: current implementation; based on `0.1.0-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -35,7 +35,7 @@ Native control-bridge connectivity, certificate isolation and job lifecycle acce
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r2` | `db, traefik, compute-control` | 2 |
+| `anas_ai_agent` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-ai-agent:0.1.0-r3` | `db, traefik, compute-control` | 2 |
 <!-- generated:compose-topology:end -->
 
 One long-lived service. It is `read_only`, `cap_drop: ALL`, `no-new-privileges`, runs as `65532`, and

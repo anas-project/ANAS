@@ -8,7 +8,7 @@ Online document editing backend for Nextcloud.
 | Item | Value |
 | --- | --- |
 | Module | `collabora` |
-| Version / revision | `26.4.2-r6` |
+| Version / revision | `26.4.2-r7` |
 | Status | `release` |
 | Category | `app` |
 | Runtime | `compose` |

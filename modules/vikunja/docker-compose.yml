@@ -14,7 +14,7 @@ services:
         GO_BUILDER_REGISTRY: ${GO_BUILDER_REGISTRY:-${DOCKER_HUB_REGISTRY:-docker.io}}
         GHCR_REGISTRY: ${GHCR_REGISTRY:-ghcr.io}
         VIKUNJA_VERSION: 2.4.0
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r4
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-vikunja:2.4.0-r5
     restart: unless-stopped
     dns:
       - ${LOCAL_DNS_SERVER}

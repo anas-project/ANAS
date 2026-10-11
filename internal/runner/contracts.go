@@ -826,6 +826,10 @@ func (a *app) publishModuleResources(consumer string) error {
 				resourcePrefix + "MEMORY_MIB":              strconv.Itoa(quota.MemoryMiB),
 				resourcePrefix + "DISK_GIB":                strconv.Itoa(quota.DiskGiB),
 			}
+			if quota.VolumeCount > 0 {
+				values[resourcePrefix+"VOLUME_COUNT"] = strconv.Itoa(quota.VolumeCount)
+				values[resourcePrefix+"VOLUME_GIB"] = strconv.Itoa(quota.VolumeGiB)
+			}
 			if controlNetwork != "" {
 				values[resourcePrefix+"CONTROL_NETWORK_NAME"] = controlNetwork
 			}

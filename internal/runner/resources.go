@@ -43,6 +43,8 @@ type resourceActual struct {
 	CPU                          int    `yaml:"cpu,omitempty"`
 	MemoryMiB                    int    `yaml:"memory_mib,omitempty"`
 	DiskGiB                      int    `yaml:"disk_gib,omitempty"`
+	VolumeCount                  int    `yaml:"volume_count,omitempty"`
+	VolumeGiB                    int    `yaml:"volume_gib,omitempty"`
 	// ComputeNetwork is the lease bridge the Provider reported from ensure.
 	ComputeNetwork *computeNetworkState `yaml:"lease_network,omitempty"`
 }
@@ -191,6 +193,8 @@ func projectComputeProviderEnv(env map[string]string, request ResourceRequest) e
 	env["ANAS_RESOURCE_CPU"] = strconv.Itoa(quota.CPU)
 	env["ANAS_RESOURCE_MEMORY_MIB"] = strconv.Itoa(quota.MemoryMiB)
 	env["ANAS_RESOURCE_DISK_GIB"] = strconv.Itoa(quota.DiskGiB)
+	env["ANAS_RESOURCE_VOLUME_COUNT"] = strconv.Itoa(quota.VolumeCount)
+	env["ANAS_RESOURCE_VOLUME_GIB"] = strconv.Itoa(quota.VolumeGiB)
 	env["ANAS_RESOURCE_IMAGE_ALLOWLIST"] = strings.Join(allowlist, ",")
 	env["ANAS_RESOURCE_IMAGE_ARCHITECTURE"] = request.ComputeImages.Images[0].Target.Architecture
 	env["ANAS_RESOURCE_CLIENT_CERT"] = base64.StdEncoding.EncodeToString([]byte(certPEM))
@@ -272,6 +276,7 @@ func (a *app) saveResourceReady(request ResourceRequest, providerEnv map[string]
 			ServerCertificateFingerprint: fingerprint, ClientCertificateSecret: request.SecretKey,
 			LeaseSecret:  request.LeaseSecretKey,
 			MaxInstances: quota.MaxInstances, CPU: quota.CPU, MemoryMiB: quota.MemoryMiB, DiskGiB: quota.DiskGiB,
+			VolumeCount: quota.VolumeCount, VolumeGiB: quota.VolumeGiB,
 			ComputeNetwork: network,
 		}
 		if strings.TrimSpace(state.Actual.Endpoint) == "" {

@@ -87,6 +87,10 @@ type Lease struct {
 	CPU                   int
 	MemoryMiB             int
 	DiskGiB               int
+	// VolumeCount and VolumeGiB bound the lease's persistent volumes; both
+	// are zero when the lease declares none (INCUS-R-165).
+	VolumeCount int
+	VolumeGiB   int
 }
 
 // LeaseFromEnv reads the lease the runner published for one resource of one
@@ -139,6 +143,16 @@ func leaseFrom(lookup func(string) string, module, resourceID string) (Lease, er
 	} {
 		if *field.target, err = strconv.Atoi(get(field.name)); err != nil || *field.target < 1 {
 			return Lease{}, fmt.Errorf("compute lease %s is not a positive integer", strings.ToLower(field.name))
+		}
+	}
+	// Persistent volumes are optional: a lease without them publishes
+	// neither value.
+	if count, size := get("VOLUME_COUNT"), get("VOLUME_GIB"); count != "" || size != "" {
+		if l.VolumeCount, err = strconv.Atoi(count); err != nil {
+			return Lease{}, fmt.Errorf("compute lease volume_count is not an integer")
+		}
+		if l.VolumeGiB, err = strconv.Atoi(size); err != nil {
+			return Lease{}, fmt.Errorf("compute lease volume_gib is not an integer")
 		}
 	}
 	if err := l.Validate(); err != nil {
@@ -201,6 +215,9 @@ func (l Lease) Validate() error {
 	}
 	if l.MaxInstances < 1 || l.MaxInstances > 256 || l.CPU < 1 || l.CPU > 64 || l.MemoryMiB < 512 || l.MemoryMiB > 262144 || l.DiskGiB < 4 || l.DiskGiB > 2048 {
 		return fmt.Errorf("compute lease quota is outside the contract limits")
+	}
+	if !(l.VolumeCount == 0 && l.VolumeGiB == 0) && (l.VolumeCount < 1 || l.VolumeCount > 64 || l.VolumeGiB < 1 || l.VolumeGiB > 8192) {
+		return fmt.Errorf("compute lease volume quota is outside the contract limits")
 	}
 	return nil
 }

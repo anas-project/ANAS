@@ -145,8 +145,24 @@ func verifyNativeManagementRotation(t *testing.T, ctx context.Context, clients [
 		if err != nil {
 			return err
 		}
-		var ready map[string]bool
-		if json.Unmarshal(body, &ready) != nil || len(ready) != 4 || !ready["exists"] || !ready["ready"] || !ready["restricted"] || !ready["quota_enforced"] {
+		// ensure also reports the lease network (INCUS-R-159); only the
+		// four readiness flags are compared here.
+		var ready map[string]json.RawMessage
+		flags := map[string]bool{}
+		if json.Unmarshal(body, &ready) == nil {
+			for key, raw := range ready {
+				var value bool
+				if key == "network" && operation == "ensure" {
+					continue
+				}
+				if json.Unmarshal(raw, &value) == nil {
+					flags[key] = value
+				} else {
+					flags[key+"!"] = false
+				}
+			}
+		}
+		if len(flags) != 4 || !flags["exists"] || !flags["ready"] || !flags["restricted"] || !flags["quota_enforced"] {
 			return errors.New("Provider did not confirm the complete lease after rotation")
 		}
 		return nil

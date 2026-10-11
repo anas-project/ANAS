@@ -177,7 +177,7 @@ guest kernel-operation set. Project-level host-device/raw/privileged restriction
 workloads still use VMs. See the [Chinese design](/architecture/forgejo-module-design), section 4.3.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `15.0.7-r2` / `anas.module/v1`.
+> Status: current implementation; based on `15.0.7-r3` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -191,9 +191,9 @@ This topology declaration is not native mTLS, isolation or one-job acceptance ev
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r2` | `actions-control, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 2 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r2` | `actions-control, compute-control` | 1 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r3` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 2 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 1 |
 <!-- generated:compose-topology:end -->
 
 Web/API port 3000 is reachable only through Traefik. Built-in SSH container port 2222 is published directly as

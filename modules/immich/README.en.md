@@ -10,7 +10,7 @@ recovery remain acceptance gates.
 | Item | Value |
 | --- | --- |
 | Module | `immich` |
-| Version / revision | `3.2.4-r1` |
+| Version / revision | `3.2.4-r2` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |

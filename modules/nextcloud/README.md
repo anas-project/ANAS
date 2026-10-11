@@ -10,7 +10,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `nextcloud` |
-| 版本 / revision | `34.0.2-r11` |
+| 版本 / revision | `34.0.2-r12` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -210,7 +210,7 @@ anas status -w /srv/anas
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`34.0.2-r11`（reviewed 2026-08-21）
+- Module version / 版本：`34.0.2-r12`（reviewed 2026-08-21）
 - Timezone / 时区：`partial` — Main, cron, push, Imaginary, and Talk services receive TZ; Redis has no localization behavior.
 - Language scope / 语言范围：Nextcloud Web UI
 - Selection / 选择方式：`browser`
