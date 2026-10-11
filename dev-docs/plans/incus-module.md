@@ -1186,8 +1186,8 @@ restricted 键并调整 `limits.disk`，共享客户端加卷的增删挂卸与�
     `checkStoragePoolUnused` 对真实 daemon（`TestNativeUninstallKeepsPoolWithLeaseVolume`，在诊断轮内单独执行）在租约
     project 有卷时返回阻止，删卷后放行。完整的 `incus.uninstall` 宿主动作没有带卷执行；镜像 prune 只删镜像，经代码核对不触及卷。
   - `INCUS-R-165`、`R-167`、`R-168`、`R-172` 为契约、单元与文档验收，见上。
-- **未覆盖**：VM 档卷、ARM64、ZFS；`volumes` 阶段与卸载检查尚未在一次非诊断完整轮里连续跑过（完整轮还受 network 阶段过时
-  所阻）。
+- **未覆盖**：VM 档卷、ARM64、ZFS；`volumes` 阶段与卸载检查尚未在一次非诊断完整轮里连续跑过。network 阶段的过时脚本
+  已于 2026-10-11 更新并单独实机通过（§8.4），完整轮不再受它阻挡，待用新脚本重跑。
 
 ## 9. CI 门禁
 
