@@ -1492,8 +1492,11 @@ e2e 记录中的相应行保留为历史。
   已用单元测试证实同一宿主「安装 → 卸载 → 安装」第二次安装被判为外部 daemon。现在卸载把删掉的包记入
   `removed_packages`，重装时只剩配置文件、且在记录里的包仍算 ANAS 自己的，安装成功后重新记入归属；不在记录里的
   保留配置仍被拒绝。测试 `TestReinstallAfterUninstallOwnsRetainedPackageConfiguration`（三份配方各两轮，修复前第二轮
-  被拒）与 `TestRetainedDaemonConfigurationOfUnknownOriginIsNotAdopted`，未上实机。
-- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）；卸载后重装尚未在一次性 VM 上实测。
+  被拒）与 `TestRetainedDaemonConfigurationOfUnknownOriginIsNotAdopted`。2026-10-11 在 finance 实机验证
+  （`0.0.0-native.20261011.2`）：产品 `incus.uninstall` 12 个回执全部 ok，`incus-base`、`dnsmasq-base` 留在
+  `config-files`，状态记录 `removed_packages` 为四个包；随后 install `installed`、configure `configured`、enroll
+  `connection_ready`，四个包重新记为 ANAS 所有，`removed_packages` 清空，没有外部 daemon 标记。
+- **未执行**：浏览器页面的 Incus 审批仍未实机操作（宿主通道 M3）。
 
 ## 15. M11/M11b/M11c：租约入站（2026-09-28 重排，2026-09-29 定稿）
 

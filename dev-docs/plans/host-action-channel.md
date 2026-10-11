@@ -350,6 +350,18 @@ anasd 却记为 `execution_containment_lost`，之后宿主队列被持久化拦
   3. 见 [Incus 计划](incus-module.md) §14.3（`INCUS-R-048`）。
   `go vet ./...`、`GOOS=linux go vet` 与 incusprovision、jobexecutor、httpapi、consolejobs、hostaction、`cmd/anasd`、
   `cmd/anas-hostd` 的测试通过。finance 上已有的卡住状态需要换上新构建后由 `advance` 自动清除，尚未部署验证。
+- **finance 实机验证（2026-10-11，master `6dd38a34`，`0.0.0-native.20261011.2`，归档 `cac81fcf…`）**：
+  1. 换装后第一轮 `advance` 即清除工作区 `a`、`b` 上两个失败作业的补偿检查并记警告；`a` 里旧版本冻结的排队
+     `incus.install` 因版本不符以 `action_not_started` 结束，未执行。之后在 `a` 上完成卸载与重装，证明工作区已解除阻断；
+  2. 取消当前版本的已结束作业返回 409 `job_conflict`；卸载执行期间在工作区 `b` 排队的 `incus.install.plan` 由 queued
+     取消为 canceled（202，`ACTABI-R-001`）。取消旧版本冻结的作业返回 403：`CancelQueued` 先核对冻结请求再看状态；
+  3. 见 [Incus 计划](incus-module.md) §14.3：产品卸载后在同一宿主重装通过（`INCUS-R-048`）。
+  结束时宿主状态无未结 intent，没有带补偿检查、排队或运行中的作业，`anasd`、`anas-hostd.socket`、`incus.service` 均在运行。
+- **观察（环境，未修改代码）**：finance 上 anasd 启动触发的 `incus.ports.sync` 两次失败（失败作业的补偿检查同样被
+  第 1 项清除）。逐步诊断（临时编译的 Linux 测试二进制，以 root 只运行同步的读取步骤）显示 Docker 未过滤的
+  `/containers/json` 在该机耗时 17—40 秒（主机内存换页，load 17 左右），超过 hostd Docker 客户端 20 秒上限；带标签
+  过滤的 Traefik 查询约 1.3 秒，所以 `incus.traefik.sync` 通过。诊断中有一次完整同步在上限内完成，在 hostd 之外
+  执行了一次批准范围内的同步（清空四张空端口表、写入空的 `ports.json`），没有 hostd 审计记录。
 - **待办**：浏览器页面审批仍未实机验收（M3）；`execution_containment_lost` 与 failed host intent 的受限恢复动作都未实现；
-  三项修复待在实机上验证（finance 换新构建，或在一次性 VM 中复现卸载后重装）。
+  是否为「失败的宿主动作不得永久阻断工作区」新增验收条目待操作者决定。
 
