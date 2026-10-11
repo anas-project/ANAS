@@ -20,6 +20,57 @@ class NetworkHarness(unittest.TestCase):
         self.assertFalse(lab.masquerade_verdict([record, record], 'p-v6', 6, lab.HOST_V6, []))
         self.assertFalse(lab.masquerade_verdict([dict(record, family=4)], 'p-v6', 6, lab.HOST_V6, []))
 
+    def test_bridge_names_follow_computeclient(self):
+        # computeclient.NetworkName / LegacyNetworkName for "anas-network-v6".
+        digest = lab.hashlib.sha256(b'anas-network-v6').hexdigest()[:10]
+        self.assertEqual(lab.lease_bridge('anas-network-v6'), 'lease' + digest)
+        self.assertEqual(lab.legacy_bridge('anas-network-v6'), 'anas' + digest)
+        for project in lab.LEASES:
+            self.assertLessEqual(len(lab.lease_bridge(project)), 15)
+            self.assertFalse(lab.lease_bridge(project).startswith('anas'))
+
+    def test_ensure_must_report_the_lease_network(self):
+        flags = {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}
+        v4 = {'bridge': 'lease0123456789', 'ipv4_subnet': '10.1.2.0/24', 'ipv4_gateway': '10.1.2.1'}
+        v6 = dict(v4, ipv6_subnet='fd42:1::/64', ipv6_gateway='fd42:1::1')
+        self.assertEqual(lab.provider_confirmed({**flags, 'network': v4}, 'ensure', 'lease0123456789', False), ['10.1.2.0/24'])
+        self.assertEqual(lab.provider_confirmed({**flags, 'network': v6}, 'ensure', 'lease0123456789', True),
+                         ['10.1.2.0/24', 'fd42:1::/64'])
+        self.assertEqual(lab.provider_confirmed(dict(flags), 'inspect', 'lease0123456789', True), [])
+        for result, ipv6 in (({**flags}, False),                                   # no network report
+                             ({**flags, 'network': v6}, False),                   # IPv6 on a disabled lease
+                             ({**flags, 'network': v4}, True),                    # IPv6 missing
+                             ({**flags, 'network': dict(v4, bridge='anas0123456789')}, False),
+                             ({**flags, 'ready': False, 'network': v4}, False),
+                             ({**flags, 'network': v4, 'extra': 1}, False)):
+            self.assertIsNone(lab.provider_confirmed(result, 'ensure', 'lease0123456789', ipv6))
+        self.assertIsNone(lab.provider_confirmed({**flags, 'network': v4}, 'inspect', 'lease0123456789', False))
+
+    def lease_acl(self):
+        config = {'security.acls': 'lease0123456789', 'security.acls.default.egress.action': 'drop',
+                  'security.acls.default.ingress.action': 'drop', 'ipv4.address': '10.1.2.1/24', 'ipv6.address': 'fd42:1::1/64'}
+        acl = {'egress': [{'action': 'allow', 'source': 'fd42:1::/64,10.1.2.0/24', 'destination': '1.0.0.0/8,2000::/3', 'state': 'enabled'},
+                          {'action': 'drop', 'destination': '10.9.9.0/24', 'state': 'enabled'}],
+               'ingress': []}
+        return config, acl
+
+    def test_lease_acl_sources_every_allow_from_the_bridge_subnets(self):
+        subnets = ['10.1.2.0/24', 'fd42:1::/64']
+        config, acl = self.lease_acl()
+        self.assertTrue(lab.lease_acl_verdict(config, acl, 'lease0123456789', subnets))
+        # The 2026-09-27 design allowed ingress by default; M10a drops it.
+        for key, value in (('security.acls', 'other'), ('security.acls.default.egress.action', 'allow'),
+                           ('security.acls.default.ingress.action', 'allow'), ('ipv4.address', '10.1.3.1/24')):
+            self.assertFalse(lab.lease_acl_verdict(dict(config, **{key: value}), acl, 'lease0123456789', subnets), key)
+        unsourced = {'action': 'allow', 'destination': '2000::/3', 'state': 'enabled'}
+        self.assertFalse(lab.lease_acl_verdict(config, dict(acl, egress=acl['egress'] + [unsourced]), 'lease0123456789', subnets))
+        narrowed = dict(acl['egress'][0], source='10.1.2.0/24')
+        self.assertFalse(lab.lease_acl_verdict(config, dict(acl, egress=[narrowed]), 'lease0123456789', subnets))
+        self.assertFalse(lab.lease_acl_verdict(config, dict(acl, egress=acl['egress'][1:]), 'lease0123456789', subnets))
+        # A disabled rule allows nothing.
+        self.assertTrue(lab.lease_acl_verdict(config, dict(acl, egress=acl['egress'] + [dict(unsourced, state='disabled')]),
+                                              'lease0123456789', subnets))
+
     def test_upstream_uses_documentation_prefixes_only(self):
         for address in (lab.HOST_V4, lab.UPSTREAM_V4):
             self.assertTrue(address.startswith('198.51.100.'))

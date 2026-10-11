@@ -16,18 +16,23 @@ must never reach upstream. With IPv6 disabled the bridge carries no IPv6 at
 all and only IPv4 leaves, also masqueraded. The guest has exactly one
 interface besides loopback, and its default routes point at the bridge.
 
-Source fence: each guest then forges an off-subnet source on both families
-(a static neighbour entry sends the packet straight to the bridge). The
-masquerade rule only rewrites the bridge's own subnets, so such a packet would
-reach upstream unrewritten; nftables counters in the upstream namespace must
-stay at zero. In the IPv6 lease the forged IPv6 packet must be seen reaching
-the lab VM's routing stack -- so only the lease ACL can have stopped it --
-and one deliberate drift (an extra allow-all rule) must let it through,
-make the Provider report the lease not ready, and be repaired by ensure.
+Forged sources: each lease takes the default egress tier (`internet`,
+INCUS-R-112). Its Provider-owned lease ACL drops by default in both
+directions and every egress allow rule names only the bridge's own subnets as
+source (INCUS-R-112--R-127), so a guest forging an off-subnet source matches
+nothing. Each guest then forges such a source on both families (a static
+neighbour entry sends the packet straight to the bridge). The masquerade rule
+only rewrites the bridge's own subnets, so such a packet would reach upstream
+unrewritten; nftables counters in the upstream namespace must stay at zero. In
+the IPv6 lease the forged IPv6 packet must be seen reaching the lab VM's
+routing stack -- so only the lease ACL can have stopped it -- and one
+deliberate drift (an extra allow-all rule) must let it through, make the
+Provider report the lease not ready, and be repaired by ensure (INCUS-R-125).
 """
 import argparse
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -74,6 +79,50 @@ def require_vm(identity):
             or Path('/sys/class/dmi/id/sys_vendor').read_text().strip() != 'QEMU'
             or Path('/var/run/docker.sock').exists() or Path('/var/lib/docker').exists()):
         raise RuntimeError('exact disposable QEMU cloud identity without Docker is required')
+
+
+def lease_bridge(project):
+    """computeclient.NetworkName: lease bridges are "lease"+digest since 2026-10 (INCUS-R-127)."""
+    return 'lease' + hashlib.sha256(project.encode()).hexdigest()[:10]
+
+
+def legacy_bridge(project):
+    """computeclient.LegacyNetworkName, only removed by cleanup."""
+    return 'anas' + hashlib.sha256(project.encode()).hexdigest()[:10]
+
+
+def provider_confirmed(result, operation, bridge, ipv6):
+    """The four readiness flags; ensure also reports the lease network
+    (INCUS-R-159). Returns the bridge subnets, IPv4 first, or None."""
+    flags = {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}
+    if operation != 'ensure':
+        return [] if result == flags else None
+    network = result.get('network')
+    if {key: value for key, value in result.items() if key != 'network'} != flags or not isinstance(network, dict):
+        return None
+    if network.get('bridge') != bridge or not network.get('ipv4_subnet') or bool(network.get('ipv6_subnet')) != ipv6:
+        return None
+    return [network['ipv4_subnet']] + ([network['ipv6_subnet']] if ipv6 else [])
+
+
+def subjects(value):
+    return sorted(part.strip() for part in (value or '').split(',') if part.strip())
+
+
+def lease_acl_verdict(config, acl, bridge, subnets):
+    """The bridge carries its own lease ACL, dropping by default both ways, and
+    every enabled egress allow rule is sourced from the bridge subnets alone:
+    the part of the egress tier that refuses a forged source."""
+    attached = (config.get('security.acls') == bridge and config.get('security.acls.default.egress.action') == 'drop'
+                and config.get('security.acls.default.ingress.action') == 'drop')
+    for family, subnet in zip(('ipv4', 'ipv6'), subnets):
+        try:
+            if ipaddress.ip_interface(config.get(family + '.address', '')).network != ipaddress.ip_network(subnet):
+                return False
+        except ValueError:
+            return False
+    allows = [r for r in acl.get('egress') or [] if r.get('action') == 'allow' and r.get('state') == 'enabled']
+    return attached and bool(allows) and all(subjects(r.get('source')) == sorted(subnets) for r in allows)
 
 
 def call(args, env=None, timeout=90, data=None, check=True):
@@ -145,7 +194,7 @@ def read_counters(listing):
 
 def spoof_verdict(host, upstream, sources, ipv6):
     """No forged source may reach upstream; in the IPv6 lease the forged IPv6
-    packet must have reached the lab VM, so the fence is what stopped it."""
+    packet must have reached the lab VM, so the lease ACL is what stopped it."""
     if any(upstream[address] for address in sources):
         return False
     return host[sources[1]] > 0 if ipv6 else True
@@ -251,9 +300,10 @@ def main(args):
             if result.returncode:
                 (report/(project+'-ensure-failure.txt')).write_bytes(result.stderr)
                 raise RuntimeError('real Provider ensure failed; private diagnostic retained')
-            if json.loads(result.stdout) != {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}:
+            bridge = lease_bridge(project)
+            subnets = provider_confirmed(json.loads(result.stdout), 'ensure', bridge, ipv6)
+            if subnets is None:
                 raise RuntimeError('Provider did not confirm complete lease')
-            bridge = 'anas' + hashlib.sha256(project.encode()).hexdigest()[:10]
             network = json.loads(cli('query', '/1.0/networks/' + bridge).stdout)
             config = network['config']
             if config.get('ipv4.nat') != 'true' or config.get('ipv4.address') in (None, '', 'none'):
@@ -262,9 +312,9 @@ def main(args):
                 raise RuntimeError('IPv6-enabled lease bridge does not masquerade IPv6')
             if not ipv6 and config.get('ipv6.address') != 'none':
                 raise RuntimeError('IPv6-disabled lease bridge must set ipv6.address=none explicitly')
-            if (config.get('security.acls') != bridge or config.get('security.acls.default.egress.action') != 'drop'
-                    or config.get('security.acls.default.ingress.action') != 'allow'):
-                raise RuntimeError('lease bridge does not carry its source fence ACL')
+            acl = json.loads(cli('query', '/1.0/network-acls/' + bridge).stdout)
+            if not lease_acl_verdict(config, acl, bridge, subnets):
+                raise RuntimeError('lease ACL does not restrict egress to the bridge subnets')
             # The lease profile supplies the only NIC; the admin creates the
             # guest only because the upstream image has no fixture entrypoint.
             cli('init', pin, INSTANCE, '--project', project, '--profile', 'anas-lease', '--device', 'root,size=4GiB',
@@ -344,8 +394,8 @@ def main(args):
             fence = {'host': {a: host[a] for a in (spoof4, spoof6)}, 'upstream': {a: upstream[a] for a in (spoof4, spoof6)}}
             if not spoof_verdict(host, upstream, (spoof4, spoof6), ipv6):
                 (report/(project+'-spoof.json')).write_text(json.dumps(fence))
-                raise RuntimeError('a forged source was not stopped by the lease source fence')
-            results[project]['source_fence'] = fence
+                raise RuntimeError('a forged source was not stopped by the lease ACL')
+            results[project]['forged_sources'] = fence
             if ipv6:
                 # One deliberate drift proves the counters can see a leak and
                 # that the Provider notices and repairs it.
@@ -358,11 +408,11 @@ def main(args):
                 drift = {'inspect_ready': inspected.get('ready'), 'leaked_upstream': leaked[spoof6] - upstream[spoof6],
                          'ensure_rc': repaired.returncode, 'repaired_ready': reinspected.get('ready'),
                          'after_repair_upstream': after[spoof6] - leaked[spoof6]}
-                results[project]['source_fence_drift'] = drift
+                results[project]['lease_acl_drift'] = drift
                 if not drift_verdict(drift):
                     (report/(project+'-drift.json')).write_text(json.dumps(drift))
-                    raise RuntimeError('source fence drift was not observable, detected and repaired')
-            emit('lease_source_fence', project=project, ipv6_enabled=ipv6,
+                    raise RuntimeError('lease ACL drift was not observable, detected and repaired')
+            emit('lease_forged_sources', project=project, ipv6_enabled=ipv6,
                  upstream_forged=sum(fence['upstream'].values()), host_forged_v6=fence['host'][spoof6])
         (report/'network.json').write_text(json.dumps(results, sort_keys=True))
         emit('dual_stack_egress', leases=len(results))
@@ -391,12 +441,14 @@ def main(args):
                 if item['name'] == 'anas-lease':
                     cli('profile', 'delete', item['name'], '--project', project)
             cli('project', 'delete', project)
-            bridge = 'anas' + hashlib.sha256(project.encode()).hexdigest()[:10]
-            if cli('network', 'show', bridge, check=False).returncode == 0:
-                cli('network', 'delete', bridge)
-            # The lease source fence ACL shares the bridge name; free it after the bridge.
-            if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
-                cli('network', 'acl', 'delete', bridge)
+            # A failed run can leave the lease bridge behind, which would block
+            # the next ensure; older Providers used the legacy name.
+            for bridge in (lease_bridge(project), legacy_bridge(project)):
+                if cli('network', 'show', bridge, check=False).returncode == 0:
+                    cli('network', 'delete', bridge)
+                # The lease ACL shares the bridge name; free it after the bridge.
+                if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
+                    cli('network', 'acl', 'delete', bridge)
         for item in json.loads(cli('image', 'list', '--format=json').stdout):
             if {a.get('name') for a in item.get('aliases') or []} != {'anas-network-debian'}:
                 raise RuntimeError('unexpected image; refusing cleanup')

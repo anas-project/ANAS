@@ -40,7 +40,7 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M8b：staging 共享构建路径 | R-084 | 已完成；三个镜像的源码/staging 六次无缓存实际构建、缺少覆盖路径反例、输入/业务二进制及固定 CLI 摘要比对通过；不代表完整 Core 部署验收 |
 | M8：长驻实例档预留 | R-039—R-042、R-046 | 未开始；2026-09-28 起也覆盖用户手动创建、当主机使用的虚拟机（需求 §2 预留），实施前另定需求 |
 | M9：网络 IPv6 姿态与 image_policy 预留 | R-043、R-045、R-052 | 已完成 |
-| M9a：双栈出网验收 | R-044 | 已完成；IPv6 启用/关闭两种租约的真实出网均经各自网桥 masquerade（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；伪造子网外源地址由 Provider 自有网桥 ACL 丢弃，实机上游计数为 0 且漂移可检出、可修复（2026-09-27，[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）；同租约 guest 间 IPv6 冒用不在该围栏范围内 |
+| M9a：双栈出网验收 | R-044 | 已完成；IPv6 启用/关闭两种租约的真实出网均经各自网桥 masquerade（2026-09-26，[两档生命周期](../reviews/2026-09-26-incus-vm-tier-lifecycle.md)）；伪造子网外源地址由 Provider 自有网桥 ACL 丢弃，实机上游计数为 0 且漂移可检出、可修复（2026-09-27，[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）；同租约 guest 间 IPv6 冒用不在该围栏范围内；2026-10-11 按 M10a 租约网络模型（`lease` 前缀网桥、出站档位写入租约 ACL）更新测试脚本后实机复验通过（§8.4） |
 | M10：宿主 Incus 供给（安装、发行版矩阵、控制台边界） | R-047、R-048、R-050、R-051、R-057、R-094、R-107、R-108、R-109 | 已完成；三个一级发行版以 Zabbly 7.0.1 各通过 23 项审批/卸载（2026-09-26），未适配的 Debian 14 在同一审批链路保持关闭且不改宿主（2026-09-27），真实 Core 自动投影、撤销后拒绝与移除消费者撤销（2026-09-26）通过；ARM64、真实 Forgejo/AI Agent 业务部署与失败 intent 的运维恢复未作验收 |
 | M10a：租约出站分级与入站默认拒绝 | R-105、R-112—R-127、R-130 | 已完成；2026-10-03 实现完成并有单元测试：出站四档与两个开关写进租约 ACL，`anas-leases` 与 `anas-traefik` 两份 address set，窄静态 FORWARD 规则与开机恢复单元，专用网桥前缀 `lease` 与旧网桥迁移，撤销关闭 ACL 并停止实例，默认拒绝入站（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）。2026-10-08 实机 r16 通过 R-113—R-118、R-120、R-122—R-124、R-130 与 R-126 的规则排序（§14.1）；同日按实测把其他租约的网段改为 `ensure` 时直接写进各租约 ACL，删除 `anas-leases` 地址集。2026-10-10 同一工件 native.54 在 Debian 13（docker.io 26.1.5）r26 与 Ubuntu 26.04（docker.io 29.1.3）r27 全部通过，补齐 R-105 管理员规则先后、R-115/R-126 的 docker.io 26 与 R-126 卸载删除（§14.2）。2026-09-30 的实机验证见[租约网络探测](../reviews/2026-09-30-incus-lease-network-probe.md)，原 R-101—R-104 废弃、旧实现已删除；只覆盖 amd64 与容器档 |
 | M10b：租约网络视图 | R-128—R-129、R-159 | 已完成；2026-10-03 API `GET /api/v1/workspaces/{ws}/compute/leases` 与只读图形页面已实现，`ensure` 结果交回网桥网段与网关并记入 resource state（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 r16 经控制台 API 核对撤销前后的租约视图（R-128、R-159，§14.1）；2026-10-10 r26 在 Debian 13 用无头 Chromium 打开租约网络页，各租约各方向的放行/拒绝与 API 一致、页面只读且只发 GET（R-129，§14.2） |
@@ -788,6 +788,22 @@ ACL 视为在用。实机 r10 中两种租约伪造两族源地址到达上游�
 故意加 allow-all 规则后泄漏可见、`inspect` 未就绪、`ensure` 修复（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)）。
 M9a 关闭。
 
+2026-10-11：`server-incus-network-e2e.py`（生命周期实验的 `network` 阶段）落后于 Provider 三处——`ensure` 自
+2026-10-03 起多返回 `network` 报告（R-159）、网桥改名为 `lease`+摘要（R-127，清理也用旧名，失败轮会留下网桥挡住
+下一次 `ensure`）、仍按 2026-09-27 的来源围栏（默认 ingress allow）核验，而 M10a（§14）已把出站档位写入租约 ACL、
+默认两向 drop。脚本改为：`ensure` 须报告本租约网桥及与 IPv6 姿态一致的子网；网桥挂本租约 ACL、默认两向 drop，
+每条启用的 egress allow 规则来源都恰为网桥子网（伪造源因此不匹配）；清理同时删 `lease` 与旧 `anas` 名。租约取默认
+`internet` 档，上游文档地址段属公网范围。R-044 的实机判据不变（两族 masquerade、伪造源上游计数 0、漂移可检出可修复）。
+
+实机：ln 一次性 QEMU VM（Debian 13 / Incus 7.0.1，`anas-incus-lifecycle-56cab6`），实验根
+`ln:/data/anas-incus-lifecycle-20261011.h4KJvx`，轮次 `r1-net-m10a`（hold 诊断轮，只跑 `network` 阶段，
+供给器无总判定）；Provider 由 `1d7e72a9` 构建（`cdfe6b6c…3eb1`），其余输入复用 `…9IGgs9/inputs`，脚本差异
+摘要见 `inputs/source.json`。结果 7/7 检查通过：IPv6 租约两族都 masquerade 为 `198.51.100.1`/`2001:db8:99::1`，
+IPv4 租约无全局 IPv6、IPv4 masquerade；两租约伪造两族源上游计数 0，IPv6 租约伪造 IPv6 到达实验 VM 4 个报文；
+allow-all 漂移泄漏 4 个、`inspect` 未就绪、`ensure` 修复后 ready 且增量 0；清理后 daemon 无网桥、ACL、额外
+project 与 netns；宿主 Docker/nft/路由基线前后一致。证据 `r1-net-m10a/reports/manual-network-232440.log`、
+`network-evidence.tgz`（`942277ea…111d`）。离线单元 `test_incus_network_e2e.py` 14 项（含 lifecycle-lab）通过。
+
 ### 8.5 M10：宿主供给
 
 同日接续补 `OpenSystemdActivation` 的固定安装策略/已接受 fd 校验、拒绝审计，及唯一 job
@@ -1160,6 +1176,7 @@ VM 档产品镜像的真实烘焙、ARM64 与正式签名分发不在退出条�
 | R-042 | 待新增 `test-env/scripts/server-incus-longlived-e2e.sh` | 长驻档下既有边界不被削弱 | — | 待执行 |
 | R-044 | `test-env/scripts/server-incus-network-e2e.py` | 同一 Debian 13 / Incus 7.0.1 实验 VM，上游为独立 netns 与文档地址段 | 2026-09-26 | IPv6 启用租约两族流量都 masquerade 为实验 VM 上游地址，IPv6 关闭租约无全局 IPv6 且 IPv4 masquerade |
 | R-044 | 同上，伪造源与故意漂移反例 | 同上，Provider 自有网桥 ACL（r10） | 2026-09-27 | 两租约伪造两族源地址上游计数 0，IPv6 租约伪造 IPv6 到达实验 VM 4 个报文；allow-all 漂移泄漏 4 个、`inspect` 未就绪、`ensure` 修复后增量 0；归档 `c45232f8…f305`（[来源围栏](../reviews/2026-09-27-incus-source-fence-acl.md)） |
+| R-044 | 同上，按 M10a 租约网络模型更新的脚本 | Debian 13 / Incus 7.0.1 一次性 VM，`r1-net-m10a`，Provider 来自 `1d7e72a9` | 2026-10-11 | 两族 masquerade、两租约伪造源上游计数 0（IPv6 租约到达实验 VM 4 个）、漂移泄漏 4 个后 `inspect` 未就绪、`ensure` 修复；归档 `942277ea…111d`（§8.4） |
 | R-047 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 三个一级发行版 amd64 宿主审批；26.04 真实 Core CLI/Hook/Provider/Compose 双合成消费者 | 2026-09-24 | 三档宿主以 Incus 7.0.1 各 23 项通过（2026-09-26），加入 ACL 盘点后 Ubuntu 26.04 复验 23/23（2026-09-27）；Core 七阶段（含 prune、清理与撤销）于 host-v43 通过，无需手填连接/架构；正式安装器及实际业务部署另验 |
 | R-048 | `test-env/scripts/server-incus-host-provision-e2e.py`、`server-incus-host-action-e2e.py`、`server-incus-core-projection-e2e.py` | 跳过、重复执行、保留卷拒绝、两种卸载及 Core 新冻结部署/撤销 | 2026-09-24 | 三档精确删包/保留原包/重复卸载通过；Core 新版本实际激活保持凭据、撤销后拒绝旧凭据且私有 Store 不变；2026-09-27 删包前盘点加入 `network-acls`，Core 清理 ACL 后审批卸载通过；完整降级/失败恢复仍未完成 |
 | R-050 | `test-env/scripts/server-incus-host-action-e2e.py` 与 `server-incus-core-projection-e2e.py` | 回环 daemon、实际控制桥及 Core 自动投影的两个非 root 消费者 | 2026-09-24 | 宿主传输正反例与 Core 自身租约/既存项目隔离通过，业务网关优先级不变；完整 LAN/双栈及实际 Forgejo/AI Agent 部署另验 |
