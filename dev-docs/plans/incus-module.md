@@ -1186,8 +1186,17 @@ restricted 键并调整 `limits.disk`，共享客户端加卷的增删挂卸与�
     `checkStoragePoolUnused` 对真实 daemon（`TestNativeUninstallKeepsPoolWithLeaseVolume`，在诊断轮内单独执行）在租约
     project 有卷时返回阻止，删卷后放行。完整的 `incus.uninstall` 宿主动作没有带卷执行；镜像 prune 只删镜像，经代码核对不触及卷。
   - `INCUS-R-165`、`R-167`、`R-168`、`R-172` 为契约、单元与文档验收，见上。
-- **未覆盖**：VM 档卷、ARM64、ZFS；`volumes` 阶段与卸载检查尚未在一次非诊断完整轮里连续跑过。network 阶段的过时脚本
-  已于 2026-10-11 更新并单独实机通过（§8.4），完整轮不再受它阻挡，待用新脚本重跑。
+- **完整轮（2026-10-12）**：实验根 `ln:/data/anas-incus-lifecycle-20261012.k8bxAB`，轮次 `r1-m15-full`（非诊断轮
+  `full-1`，VM `anas-incus-lifecycle-d4db7a`）。全部 Go 输入由已提交的 `bc06e8f2` 构建，无工作树差异（`provider`
+  `fb3d014b…6d8d`；`computeclient.test` `209a48c0…aa7e`，与 r2 最终版逐字节相同），镜像沿用 `…9IGgs9/inputs`。四个阶段在同一
+  daemon 上连续执行，全部退出 0：container 23/23（创建到就绪 5.4/4.1 s，典型作业墙钟 7.1 s）、`volumes` 12/12、vm 21/21
+  （82.6/67.4 s，墙钟 50.0 s）、network 7/7（同 §8.4 判据：伪造源上游 0，IPv6 租约伪造 IPv6 到达实验 VM 4 个，漂移泄漏 4 个后
+  修复）。证据包 `r1-m15-full/reports/lifecycle-evidence.tgz`（`46ee56da…b8ec`）。供给器清理判为失败，唯一原因是宿主基线
+  `routes6` 差一条：`anas_bridge` 的 IPv6 临时地址在本轮内轮换（旧 `…fd64:fb35:f07d:6d64` 过期、新 `…cf35:c21e:b31d:4162`
+  出现，`ip -6 addr` 标为 `temporary`），是宿主自身变化；其余 9 项基线一致，VM 用 user-mode NAT，无 QEMU 残留。按设计
+  清理未通过时保留 VM 磁盘文件，留在 `r1-m15-full/vm/`。
+- **未覆盖**：VM 档卷、ARM64、ZFS；R-171 的产品卸载检查（`TestNativeUninstallKeepsPoolWithLeaseVolume`）不在实验脚本的
+  阶段内，仍只有 2026-10-11 诊断轮里的单独执行。
 
 ## 9. CI 门禁
 
