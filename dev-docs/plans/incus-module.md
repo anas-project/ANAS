@@ -1194,7 +1194,7 @@ restricted 键并调整 `limits.disk`，共享客户端加卷的增删挂卸与�
   修复）。证据包 `r1-m15-full/reports/lifecycle-evidence.tgz`（`46ee56da…b8ec`）。供给器清理判为失败，唯一原因是宿主基线
   `routes6` 差一条：`anas_bridge` 的 IPv6 临时地址在本轮内轮换（旧 `…fd64:fb35:f07d:6d64` 过期、新 `…cf35:c21e:b31d:4162`
   出现，`ip -6 addr` 标为 `temporary`），是宿主自身变化；其余 9 项基线一致，VM 用 user-mode NAT，无 QEMU 残留。按设计
-  清理未通过时保留 VM 磁盘文件，留在 `r1-m15-full/vm/`。
+  清理未通过时保留 VM 磁盘文件；核对原因后于 2026-10-13 手动删除，`reports/` 保留。
 - **未覆盖**：VM 档卷、ARM64、ZFS；R-171 的产品卸载检查（`TestNativeUninstallKeepsPoolWithLeaseVolume`）不在实验脚本的
   阶段内，仍只有 2026-10-11 诊断轮里的单独执行。
 
