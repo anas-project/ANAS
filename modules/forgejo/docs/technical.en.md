@@ -496,3 +496,11 @@ journal text. Observations cannot turn a failed gate into a pass.
 New recipe bytes require a new revision; archived `lab-r4` is unchanged. SSH to the selected host did
 not complete its handshake in this continuation. The enhanced native gate has not run, and the original
 engine exit 125 remains unresolved rather than being declared fixed by these local tests.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

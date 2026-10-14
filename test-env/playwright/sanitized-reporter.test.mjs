@@ -9,7 +9,7 @@ import { validateReport } from "./validate-sanitized-report.mjs";
 
 function fixtureEnvironment() {
   return {
-    ANAS_TEST_IAM_PROVIDER: "authentik",
+    ANAS_TEST_IAM_PROVIDER: "casdoor",
     ANAS_TEST_IAM_PROTOCOL: "oidc",
     ANAS_TEST_APP: "nextcloud",
     ANAS_TEST_LOGOUT_ORIGIN: "module",
@@ -64,7 +64,7 @@ test("validator rejects an empty successful report", () => {
     schema: "anas.iam-logout-e2e/v1",
     status: "passed",
     fixture: {
-      provider: "authentik",
+      provider: "casdoor",
       protocol: "oidc",
       application: "nextcloud",
       origin: "module",

@@ -1,5 +1,11 @@
+# NetBird remains an upgrade target; DIRKEY-R-013 blocks render with Casdoor.
+# The fixed image-release/46-2 fixture gate also lacks the Casdoor Module.
 modules:
+  samba_dc: {}
+  postgres: {}
   casdoor: {}
+  eturnal: {}
+  netbird: {}
 identity:
   iam:
     provider: casdoor

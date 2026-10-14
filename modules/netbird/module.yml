@@ -11,6 +11,32 @@ title: NetBird
 description: Incomplete WireGuard overlay network scaffold; excluded from recommended deployments.
 category: network
 status: developing
+applications:
+  - name: netbird
+    display_name:
+      zh-CN: NetBird
+      en: NetBird
+    url_from: NETBIRD_DOMAIN_FULL
+    summary:
+      zh-CN: "安全组网"
+      en: "Secure private networking"
+    description:
+      zh-CN: "安全组网。"
+      en: "Secure private networking."
+    documentation_url:
+      zh-CN: https://docs.netbird.io/
+      en: https://docs.netbird.io/
+    weight: 100
+    kind: user
+    categories:
+      - network
+    access:
+      mode: iam
+      client: netbird
+    visibility:
+      mode: access
+    icons:
+      source: assets/netbird.png
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -52,7 +78,6 @@ config:
   # whichever IAM the deployment selected.
   exports:
     - ANAS_IAM_CLIENT__NETBIRD__*
-    - APPS_LIST*
   # This module's own IAM binding. It reads no other consumer's binding and no
   # IAM-implementation variable.
   consumes:

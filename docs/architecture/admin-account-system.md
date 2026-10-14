@@ -1,5 +1,8 @@
 # 管理员账号系统设计
 
+> 当前范围（2026-10-10）：Authentik 已移除，Casdoor 为主力，保留 LLNG。文中 Authentik 对比、命令及验收记录属于历史基线；移除的命令不可执行，也不代表 Casdoor 已通过相同验收。
+
+
 > 状态：**当前模型**。目录角色 `Admins` 契约、`anas admin local` 的本地账号清单与轮换、
 > 六个 Module 的 `management.local_accounts` 声明均已实现。文中标注为规划的管理控制台
 > 相关内容当前不可执行。

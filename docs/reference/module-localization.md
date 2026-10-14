@@ -7,7 +7,6 @@
 | Module | Version | Timezone | Language | Selection | Global language | Global locale | Count |
 | --- | --- | --- | --- | --- | --- | --- | ---: |
 | [ai_agent](#ai_agent) | 0.1.0-r3 | configured | supported | deployment_default | applied | not_consumed | 2 |
-| [authentik](#authentik) | 2026.5.6-r16 | container | supported | browser | not_consumed | not_consumed | 17 |
 | [casdoor](#casdoor) | 3.143.0-r12 | container | supported | application | applied | not_consumed | 2 |
 | [collabora](#collabora) | 26.4.2-r7 | container | supported | integration | not_consumed | not_consumed | 43 |
 | [ddns_go](#ddns_go) | 6.17.4-r7 | container | supported | application | not_consumed | not_consumed | 2 |
@@ -29,6 +28,7 @@
 | [samba_dc](#samba_dc) | 4.23.6-r13 | system | not_applicable | none | not_applicable | not_applicable | 0 |
 | [samba_fs](#samba_fs) | 4.23.6-r7 | container | not_applicable | client | not_applicable | not_applicable | 0 |
 | [traefik](#traefik) | 3.7.10-r8 | container | fixed | fixed | not_consumed | not_consumed | 1 |
+| [user_portal](#user_portal) | 0.1.0-r1 | container | supported | application | applied | not_consumed | 2 |
 | [versitygw](#versitygw) | 1.7.0-r4 | container | not_applicable | none | not_consumed | not_consumed | 0 |
 | [vikunja](#vikunja) | 2.4.0-r5 | configured | supported | application | fallback | not_consumed | 32 |
 
@@ -42,17 +42,6 @@
 - **Supported / 支持语言：** `en`, `zh-CN`
 - **Notes / 说明：** The two values are the languages the orchestrator's own strings exist in. Agent replies are model output and are not translated by this module.
 - **Evidence / 证据：** [0.1.0 — agentLanguages](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/hook/main.go)
-
-## authentik
-
-- **Version / 版本：** `2026.5.6-r16`; reviewed 2026-08-21
-- **Timezone / 时区：** `container` — All long-running authentik services receive the module .env and TZ; no separate application timezone is forced.
-- **Language / 语言：** `supported`, `browser` — authentik Web UI
-- **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
-- **Fallback / 回退：** Browser negotiation first; authentik falls back to English when no packaged locale matches.
-- **Supported / 支持语言：** `cs-CZ`, `de-DE`, `en`, `en-XA`, `es-ES`, `fi-FI`, `fr-FR`, `it-IT`, `ja-JP`, `ko-KR`, `nl-NL`, `pl-PL`, `pt-BR`, `ru-RU`, `tr-TR`, `zh-Hans`, `zh-Hant`
-- **Notes / 说明：** The list describes packaged frontend locales. ANAS does not force a locale and preserves authentik's browser locale selector.
-- **Evidence / 证据：** [2026.5.6 — web/lit-localize.json targetLocales](https://github.com/goauthentik/authentik/blob/version/2026.5.6/web/lit-localize.json)
 
 ## casdoor
 
@@ -273,6 +262,17 @@
 - **Fallback / 回退：** The built-in Dashboard is English and exposes no supported language selector.
 - **Supported / 支持语言：** `en`
 - **Evidence / 证据：** [v3.7.10 — Dashboard and static configuration expose no localization setting](https://github.com/traefik/traefik/tree/v3.7.10)
+
+## user_portal
+
+- **Version / 版本：** `0.1.0-r1`; reviewed 2026-10-14
+- **Timezone / 时区：** `container` — TZ is supplied to the process; audit timestamps use UTC and the browser displays local time.
+- **Language / 语言：** `supported`, `application` — All portal pages and catalog presentation
+- **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
+- **Fallback / 回退：** Unsupported selected languages immediately use English. Individual catalog fields fall back to English then simplified Chinese.
+- **Supported / 支持语言：** `en`, `zh-CN`
+- **Notes / 说明：** Changing language does not replace the authenticated identity.
+- **Evidence / 证据：** [v0.1.0 — modules/user_portal/portal/ui/app.js](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/portal/ui/app.js)
 
 ## versitygw
 

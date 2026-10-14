@@ -112,7 +112,7 @@ func TestMeshcentralPublishesOIDCRegistration(t *testing.T) {
 		"ANAS_IAM_CLIENT__MESHCENTRAL__INTERFACE":     "oidc",
 		"ANAS_IAM_CLIENT__MESHCENTRAL__CLIENT_ID":     "meshcentral",
 		"ANAS_IAM_CLIENT__MESHCENTRAL__REDIRECT_URIS": "https://meshcentral.nas.test:9000/auth-oidc-callback",
-		"APPS_LIST__MESHCENTRAL__URI":                 "https://meshcentral.nas.test:9000",
+		"MESHCENTRAL_DOMAIN_FULL":                 "https://meshcentral.nas.test:9000",
 	}
 	for key, want := range checks {
 		if got := env[key]; got != want {

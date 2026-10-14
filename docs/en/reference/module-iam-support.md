@@ -1,6 +1,7 @@
 # Module IAM and OIDC support
 
-Authentik is marked `deprecated` as of 2026-10-05 and is no longer recommended for new deployments. Its results below are historical evidence; Authentik remediation is not a prerequisite for releasing Casdoor.
+Authentik was removed on 2026-10-10 at the user's request. Current providers are Casdoor (primary) and LLNG. Authentik results below are historical evidence only; removed scripts cannot be run and their passes do not apply to Casdoor.
+
 
 OIDC is the current ANAS default IAM integration protocol, but it applies only to modules that consume the `iam` capability and declare OIDC support. Modules without OIDC are never forced outside their manifests; they fall back to a supported protocol or retain their own authentication mechanism.
 
@@ -64,7 +65,6 @@ verification. Acceptance belongs to M2 of the
 | `immich` | Yes | OIDC-only JIT with shared PostgreSQL; trusted admin role claim | developing; fixed image, registration, entry guards and Authentik directory revocation implemented and locally verified; real IAM/mobile/directory-chain acceptance pending | Anchor → OIDC `sub` → `user.oauthId`; internal `user.id` remains upstream-generated |
 | `vikunja` | Yes | IAM/OIDC JIT account creation; `APP_vikunja`/`APP_all` access gate; local authentication and registration disabled | Developing: manifest, provider registration, secrets, hook, and application configuration are implemented; real browser/database E2E remains pending | OIDC `(issuer, sub)`; not configurable, stability follows the Provider |
 | `lam` | No | LDAPS directory-management login | Not an IAM consumer | None; searches by `sAMAccountName` and binds the DN on each login |
-| `authentik` | N/A | IAM provider with fixed `akadmin` break-glass account | Provides OIDC/SAML | Consuming: identity anchor (`object_uniqueness_field`). Issuing: internal user UUID, **not the anchor** |
 | `casdoor` | N/A | Release IAM provider with default-template `admin_casdoor` break-glass account | Real E2E covers OIDC/SAML login, Samba reconciliation, permanent anchors, `ALLOW_GROUPS`, and exact-`sid` OIDC revocation; the pinned version publishes no SAML SLO and M5 formal release acceptance passed on 2026-10-06 | Consuming: identity anchor (`externalId`). Revision r10 issues the anchor as OIDC sub, UserInfo/Logout Token subject and SAML NameID; signed protocol, OIDC fault-matrix and real Nextcloud ownership acceptance pass; formal lifecycle acceptance passes and the module is marked release |
 | `llng` | N/A | IAM provider | r12 developing; provides OIDC/SAML | Consuming: no user replica, session stores anchor. Issuing: r12 OIDC `sub` = anchor; SAML NameID pending |
 | `ddns_go` | No | ANAS-managed local emergency account | No OIDC | N/A (local account) |

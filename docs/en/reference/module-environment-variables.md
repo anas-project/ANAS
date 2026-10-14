@@ -64,7 +64,7 @@ owned by `runner`, and only `samba_dc`, which consumes it explicitly through
 `features.domain: true` and preserves the full FQDN:
 
 ```text
-inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/authentik
+inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/casdoor
 ```
 
 The protocol does not include `SAMBA_DC_DOMAIN`, and does not use the old
@@ -212,44 +212,6 @@ Produces no new cross-module environment variables. It consumes the global
 domain, ports, network prefix, BasicAuth, and the `ANAS_TLS_*` certificate
 contract.
 
-## authentik
-
-- Service endpoints: `AUTHENTIK_DOMAIN`, `AUTHENTIK_DOMAIN_PORT`,
-  `AUTHENTIK_DOMAIN_FULL`, `ANAS_IAM_PORTAL_URL`.
-- PostgreSQL: `AUTHENTIK_NETWORK_DB`, `AUTHENTIK_POSTGRESQL__HOST`,
-  `AUTHENTIK_POSTGRESQL__PORT`, `AUTHENTIK_POSTGRESQL__USER`,
-  `AUTHENTIK_POSTGRESQL__PASSWORD`, `AUTHENTIK_POSTGRESQL__NAME`.
-- Samba AD source: `AUTHENTIK_LDAP_SERVER_URI`, `AUTHENTIK_LDAP_BIND_DN`,
-  `AUTHENTIK_LDAP_BIND_PASSWORD`, `AUTHENTIK_LDAP_BASE_DN`,
-  `AUTHENTIK_LDAP_ADDITIONAL_USER_DN`, `AUTHENTIK_LDAP_ADDITIONAL_GROUP_DN`,
-  `AUTHENTIK_LDAP_USER_OBJECT_FILTER`, `AUTHENTIK_LDAP_GROUP_OBJECT_FILTER`,
-  `AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD`,
-  `AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE`.
-- Local runtime secrets: `AUTHENTIK_SECRET_KEY`, `AUTHENTIK_SIGNING_KEY`,
-  `AUTHENTIK_SIGNING_CERT`.
-- The managed recovery account: account id `break_glass`, fixed username
-  `akadmin`. The runner supplies
-  `AUTHENTIK_LOCAL_ADMIN__BREAK_GLASS_PASSWORD` to the hook only temporarily, and
-  the deployment environment keeps only the
-  `AUTHENTIK_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE` path and the username. The
-  container entrypoint temporarily exports the upstream
-  `AUTHENTIK_BOOTSTRAP_PASSWORD` from that `0600` file, and an existing
-  installation is updated by the `ak shell` handler.
-- Non-sensitive bootstrap variables: `AUTHENTIK_BOOTSTRAP_EMAIL`.
-- Per-application IAM endpoints: `ANAS_IAM_BINDING__<MODULE>__OIDC_*` or
-  `ANAS_IAM_BINDING__<MODULE>__SAML_*`.
-- Application session logout: consumes
-  `ANAS_IAM_CLIENT__<MODULE>__OIDC_LOGOUT_*` and `SAML_SLS_*`, and generates
-  Authentik `logout_uri/logout_method` or `sls_*` blueprint fields.
-
-Every LDAP variable is computed from `SAMBA_DC_*`, and blueprints read
-`AUTHENTIK_LDAP_*` only through `!Env`, storing no deployment DN or password.
-The Authentik worker imports `anas-samba-ad-ca` from
-`ANAS_TLS_CERTS_DIR/ANAS_TLS_INTERNAL_CA_NAME`, and the LDAP source validates the
-Samba DC's LDAPS certificate through `peer_certificate` and SNI; an empty
-certificate field must not be relied on, because Authentik skips validation in
-that state.
-
 ## llng
 
 - Database aliases: `DB_HOST`, `DB_POST`, `DB_USER`, `DB_PASSWORD`.
@@ -285,8 +247,7 @@ LLNG reads the final protocol inventory from `ANAS_IDENTITY_OIDC_CLIENTS` and
   `NEXTCLOUD_TALK_*`, `TALK_SIGNALING_SECRET`.
 - Image runtime aliases: `MYSQL_*`, `POSTGRES_*`, `REDIS_HOST`, `PHP_*`,
   `APACHE_BODY_LIMIT`, `OVERWRITE*`.
-- Application registration: `ANAS_IAM_CLIENT__NEXTCLOUD__*`,
-  `APPS_LIST__NEXTCLOUD__*`; of these, OIDC publishes
+- Application registration: `ANAS_IAM_CLIENT__NEXTCLOUD__*`; of these, OIDC publishes
   `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED` and SAML publishes
   `SAML_SLS_URL/BINDINGS`.
 
@@ -316,7 +277,7 @@ attributes.
   `VIKUNJA_FILES_BASEPATH`. Local registration and local authentication are
   disabled through `VIKUNJA_SERVICE_ENABLEREGISTRATION=false` and
   `VIKUNJA_AUTH_LOCAL_ENABLED=false` respectively.
-- Launcher: `APPS_LIST__VIKUNJA__*`. This module publishes no `OIDC_LOGOUT_*`
+- Catalog entry: manifest applications and `VIKUNJA_APPLICATION_URL`. This module publishes no `OIDC_LOGOUT_*`
   receiver; Vikunja `2.4.0` offers only application-initiated RP-Initiated
   Logout, with no standard IAM→module front-channel or back-channel notification
   entry point.
@@ -332,7 +293,7 @@ attributes.
   `NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`, `NETBIRD_AUTH_USER_ID_CLAIM`.
 - Secrets: `NETBIRD_DATASTORE_ENC_KEY`, `NETBIRD_RELAY_AUTH_SECRET`.
 - IAM registration: `ANAS_IAM_CLIENT__NETBIRD__*`.
-- Launcher: `APPS_LIST__NETBIRD__*`.
+- Catalog entry: manifest applications, with URL from `NETBIRD_DOMAIN_FULL`.
 
 ## lam
 
@@ -428,3 +389,12 @@ map to the same key.
 
 `anas config list [global|<module>]` prints each parameter's path, env key,
 default, current value, and change effect.
+
+## Application catalog files
+
+Applications use manifest applications rather than an aggregated launcher environment namespace.
+A consumer must declare application_catalog.consumes and a read-only Compose mount. Runner supplies
+ANAS_APP_CATALOG_FILE only during rendering, and retains ANAS_APP_CATALOG_DIR (final deployment path)
+and ANAS_APP_CATALOG_DIGEST in that consumer's environment. The private catalog.json contains normalized
+metadata and group facts, never IAM credentials; only assets may be mounted into a public static directory.
+See the [configuration reference](/en/reference/configuration#application-catalog).

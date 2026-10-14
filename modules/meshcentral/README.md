@@ -1,5 +1,8 @@
 # MeshCentral
 
+2026-10-10 Authentik 已移除；下文相关运行记录是旧基线，原脚本已退役。当前保留 LLNG 用例，Casdoor 组合须独立验收，不继承旧 Provider 结论。
+
+
 使用 OIDC-only 登录并通过 LDAPS 配置目录用户和 Group 的远程设备管理服务。
 
 ## 快速信息

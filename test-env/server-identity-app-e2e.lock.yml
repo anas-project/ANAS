@@ -1,79 +1,88 @@
 api_version: anas.module-lock/v1
 modules:
-    authentik:
-        version: 2026.5.6
-        revision: 4
-        app_version: 2026.5.6
-        source: bundle:authentik
-        digest: sha256:ee4d213e3567ba73517e404490624f736d664363173ac4adc48debc772358fd0
+    casdoor:
+        version: 3.143.0
+        revision: 12
+        app_version: 3.143.0
+        lifecycle: developing
+        source: bundle:casdoor
+        digest: sha256:6acbfa4d6bf0f0ff26978e20eb2b043d70ed5542acfbaffa9f7e1244c3c281a9
     eturnal:
         version: 1.12.2
-        revision: 1
+        revision: 7
         app_version: 1.12.2
+        lifecycle: release
         source: bundle:eturnal
-        digest: sha256:9410b9412a215d100580699d4e760c7bbdf937deb3b31c8ac1a7b73392901987
+        digest: sha256:4e33c8203be4ef87718680c5bbbf6a2c08796239d05bf056d40c93b10ec4c8aa
     lego:
         version: 5.3.1
-        revision: 2
+        revision: 6
         app_version: 5.3.1
+        lifecycle: release
         source: bundle:lego
-        digest: sha256:f78184ad5b671bd5211d67bc04b9c8aa9ea1269d7f10b68d131539d5fd17ec68
+        digest: sha256:108b6684ac7a8c3616fa36598a67343245bcb20bd5c682719181b75c7c459dc4
     meshcentral:
         version: 1.2.4
-        revision: 4
+        revision: 9
         app_version: 1.2.4
+        lifecycle: release
         source: bundle:meshcentral
-        digest: sha256:7fd54264d654648fb3d745440625a5a53ff2274b4f04b5c47b962eaf10b23c9c
+        digest: sha256:098cc7730740e97be57c06a7ec880d72852dcbbe848869abf94c577c5f2d1a7c
     netbird:
         version: 0.76.1
-        revision: 2
+        revision: 6
         app_version: 0.76.1
+        lifecycle: developing
         source: bundle:netbird
-        digest: sha256:4843ef59844977b82f2ac27a2fd8b029742bfbfc78b1431f11495b4c02b2aa10
+        digest: sha256:7fa7a8bb647f4a35d1983ecff874a482cec7509b8b50fb3354766819f1f6172f
     nextcloud:
         version: 34.0.2
-        revision: 4
+        revision: 12
         app_version: 34.0.2
+        lifecycle: developing
         source: bundle:nextcloud
-        digest: sha256:2d02b6519b8e19738ef50e9fd88dcc5eb81d2bbb2ed11dca47eebd03d41b8513
+        digest: sha256:396f81d4c11f973225d2a367aab0e8b372554ce2f1469e27c8b544a87cf40573
     postgres:
         version: 18.4.0
-        revision: 1
+        revision: 5
         app_version: 18.4.0
+        lifecycle: developing
         source: bundle:postgres
-        digest: sha256:fc86688b2f12b21cae897a1ccbdcd4d785a8cf8a1233b24e79b6673805b118c6
+        digest: sha256:183116eab6d10ed3b7763ccd4cc6cde2d88b0170a56ddd415e6b12acc6fc9fd8
     samba_dc:
         version: 4.23.6
-        revision: 6
+        revision: 13
         app_version: 4.23.6
+        lifecycle: release
         source: bundle:samba_dc
-        digest: sha256:aaff909e3f93daf269979e9bc64d874c7ad29f602343577e9a6eaa8e482a8765
+        digest: sha256:f8813103680e33f1cfbcb198c1f89a4d5292aaaee7129911551943488a5a55af
     traefik:
         version: 3.7.10
-        revision: 2
+        revision: 8
         app_version: 3.7.10
+        lifecycle: release
         source: bundle:traefik
-        digest: sha256:45169008dd74bba931a23b8f43c7fefbffb3f7b937653515b5e3a6b6bb4f7db3
+        digest: sha256:b2ed57a396e1bee6654da47f468bdb69d9dd021518408e9365aca62df9620084
 contracts:
     relational_database:
         version: 1.0.0
-        digest: sha256:c354bcae319632a9f606a14fe6dd06ed5bbc659e169e405f3d468c7f93ad71eb
+        digest: sha256:b0ed967a15c6251876c4a6796c6e509e7e041298958099ad5d039c36114fd4c6
 iam:
-    provider: authentik
+    provider: casdoor
 bindings:
-    authentik:
+    casdoor:
         relational_database: postgres
         relational_database.interface: postgres
     meshcentral:
-        iam: authentik
+        iam: casdoor
         iam.interface: oidc
         relational_database: postgres
         relational_database.interface: postgres
     netbird:
-        iam: authentik
+        iam: casdoor
         iam.interface: oidc
     nextcloud:
-        iam: authentik
+        iam: casdoor
         iam.interface: oidc
         relational_database: postgres
         relational_database.interface: postgres

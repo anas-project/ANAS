@@ -176,7 +176,6 @@ MariaDB 为上游 `mysql`，并固定当前 Provider network 内部连接的 TLS
 ### 导出
 
 - `ANAS_IAM_CLIENT__VIKUNJA__*`
-- `APPS_LIST*`
 
 ### 显式消费
 
@@ -223,3 +222,10 @@ Runner-owned globals（包括 `TZ`、`DEFAULT_LANGUAGE`、`LOCAL_DNS_SERVER` 和
 
 SMTP、S3、Redis、搜索、Pro、bot user 和 AI/MCP sidecar 不在首期自动配置范围。上游移动应用
 仍处于早期阶段。应用没有本地恢复账号，也不接收 IAM 主动会话撤销。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

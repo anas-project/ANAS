@@ -1,18 +1,20 @@
 ---
 doc_type: architecture
-status: proposed
-updated: 2026-10-04
+status: partial
+updated: 2026-10-11
 ---
 
 # 应用目录协议
 
-**状态：提案，当前不可执行。** 2026-10-03 按未发版前提重写，替代原 `APPS_LIST` 扩展方案，
+**状态：部分实施；第一阶段使用原生列表，第二阶段门户待实现。** 2026-10-03 按未发版前提重写，替代原 `APPS_LIST` 扩展方案，
 不保留双写、旧配置迁移或旧字段别名。本文满足
 [应用目录要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/app-catalog.md)
-`APPCAT-R-001`—`APPCAT-R-035`；进度见
+`APPCAT-R-001`—`APPCAT-R-039`；进度见
 [实施计划](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/app-catalog.md)。
-Casdoor 是首要交付目标；Authentik 进入逐步弃用路线，新协议不受其字段限制。
+Casdoor 是首要交付目标；2026-10-10 用户要求直接移除 Authentik，当前保留 Casdoor 与 LLNG。
+未发版不增加旧 Provider 兼容别名、自动改绑或业务数据迁移。
 2026-10-04 补充多语言：首期支持简体中文 `zh-CN` 和英文 `en`，应用与分类的展示字段使用语言映射。
+2026-10-08 明确两级展示：先分用户应用和后台管理两个大组，再在大组内按主分类分小组。
 
 ## 1. 应用条目与登录客户端分别声明
 
@@ -22,7 +24,7 @@ Casdoor 是首要交付目标；Authentik 进入逐步弃用路线，新协议�
 没有人员入口的数据库、TURN、ACME 等不自动生成卡片。
 
 目录只表示入口及当前用户可见性。服务健康、业务权限和数据库权限继续由相应系统负责。
-`kind: admin` 是入口用途，`categories` 是展示分类，管理员授权必须明确绑定
+`kind: user/admin` 决定入口用途与大组，`categories` 决定大组内的小组及分类筛选，管理员授权必须明确绑定
 `platform_admin`，不能从“系统管理”文字推导。
 
 三份事实各有来源：
@@ -32,7 +34,9 @@ Casdoor 是首要交付目标；Authentik 进入逐步弃用路线，新协议�
 - 现有 identity/IAM 注册：OIDC/SAML 协议、client secret、claim、允许组和回调。
 
 目录通过 `access.client` 引用 IAM 注册。一个 IAM client 可以被多个入口引用；
-仅有目录条目不产生 OAuth client、client secret 或 SAML SP。
+仅有目录条目不注册可用于登录的 OAuth client 或 SAML SP。
+Casdoor 的原生 Application 初始化会自动补客户端字段；目录适配禁用登录，不授予授权类型或回调地址，
+这些字段不能被当作目录条目的可用登录凭据。
 
 ## 2. 条目字段
 
@@ -47,10 +51,10 @@ Casdoor 是首要交付目标；Authentik 进入逐步弃用路线，新协议�
 | `summary` | 按语言映射的卡片简介，各值为纯文本，1—160 字符 |
 | `description` | 按语言映射的详情描述，各值为纯文本，1—4000 字符；支持换行，不解析 HTML |
 | `documentation_url` | 按语言映射的 HTTPS 文档地址，可指官方或 ANAS 文档；允许两种语言使用相同地址 |
-| `weight` | 0—10000 的整数，默认 100；数值越小越靠前，同权重按 `name` 字典序 |
-| `categories` | 非空、去重的分类 ID 列表；第一个为主分类，目录中同一应用只显示一张卡片 |
+| `weight` | 0—10000 的整数，默认 100；同一小组内数值越小越靠前，同权重按 `name` 字典序 |
+| `categories` | 非空、去重且保留声明顺序的分类 ID 列表；第一项决定卡片所属小组，所有项参与分类筛选，同一条目只显示一张卡片 |
 | `icons` | 16/32/48/64/128/256/512 像素的方形 PNG 文件记录，详见 §4 |
-| `kind` | `user` 或 `admin`；管理入口不能借改分类改变角色要求 |
+| `kind` | `user` 对应“用户应用”大组，`admin` 对应“后台管理”大组；每个条目只属于一个大组，管理入口不能借改分类改变角色要求 |
 | `enabled` | 可选功能实际启用后才为 true；不是健康状态 |
 | `hidden` | 默认 false；true 时任何用户的日常目录均不返回该项，包括 IAM 管理员 |
 | `access` | 实际访问方式及其已有授权事实，见 §3 |
@@ -135,7 +139,7 @@ applications:
 认证 API 先做权限过滤，再按选定语言返回解析后的字符串字段和响应级 `language`；
 不因某语言缺译而改变条目可见性。门户切换语言重新取得已过滤结果，无需重新登录或部署。
 API 与页面使用同一回退算法；如缓存结果，必须同时隔离用户与语言。
-目录自身的“打开应用”“文档”“分类”“无可用应用”等界面文字也需中英文资源，
+目录自身的“用户应用”“后台管理”“打开应用”“文档”“分类”“无可用应用”等界面文字也需中英文资源，
 不能只翻译应用文案而把操作按钮留成单语。
 
 ## 3. 权限过滤与执行点
@@ -182,13 +186,13 @@ API 与页面使用同一回退算法；如缓存结果，必须同时隔离用�
 不能改变 Module 的 `kind/access/visibility`。需要调整应用准入时修改该应用既有授权配置，
 目录随后重新派生，避免出现两份允许组。外部条目由配置完整声明自己的显示规则。
 
-### 3.3 Casdoor 的安全边界
+### 3.3 第二阶段门户的安全边界
 
 Casdoor `GetAllowedApplications` / `CheckLoginPermission` 不能直接作为完整目录契约：
 没有有效 Application Permission 时默认允许，组织管理员还会绕过原生检查。
 `DisableSignin` 也不隐藏卡片；应用 `Tags` 的登录检查没有被这个列表函数覆盖。
 
-推荐 adapter 使用 Casdoor 现有会话、用户/组和权限引擎，先做显式的
+第二阶段门户通过 Casdoor OIDC 建立门户会话，并读取当前用户/组和权限判定，先做显式的
 `hidden/enabled/组织/有效用户/预期策略存在且已启用批准` 检查，再直接调用其原生 Permission enforcer 求值生成的组允许规则；该引擎不经过列表函数的管理员提前放行。
 不得把原生 `IsAdmin` 当作目录超级通行证；需要管理员可见时规则明确包含解析后的管理员组。
 关联 IAM client 的条目还要通过原生 client 准入检查，防止目录放宽登录资格。
@@ -201,8 +205,27 @@ Casdoor 需要管理和同步的组是 IAM client 准入组与目录条目引用
 在现有 apply/启动配置协调入口创建、更新和移除，只处理本部署拥有的对象。
 写入失败或期望策略不一致时目录条目不开放；不通过新守护进程或定时全量复制维护元数据。
 
-上述是目标行为。源码实验验证了基础与反例，尚未证明新 adapter 已实现这些约束。
+上述是第二阶段目标行为，第一阶段原生列表无法保证全部约束。源码实验验证了基础与反例，
+尚未证明自己的门户已实现这些约束。
 策略故障及管理员不绕过等反例必须纳入后续 HTTP 和浏览器 E2E。
+
+### 3.4 第一阶段的声明与计划边界
+
+目录 Provider 在 manifest 中声明 application_catalog.consumes: true 和 limitations 列表，
+Compose 必须把整个目录只读挂到 /run/anas/application-catalog；公网目录只能挂资产子目录。
+Runner 为 render Hook 临时注入 ANAS_APP_CATALOG_FILE，.env 只保留最终 ANAS_APP_CATALOG_DIR
+与 ANAS_APP_CATALOG_DIGEST。Hook 不可改写这些值或把暂存文件路径写入输出。
+共享文件属于不可变 deployment，图标内容变更同时改变消费者摘要；历史 deployment 保留原图。
+plan 的 application_catalog_digest 包含配置相对图标源的内容摘要，apply 重新检查计划摘要。
+
+选中的目录 Provider 以 identity.roles.platform_admin 指向自身组导出，以 identity.groups_from
+发布其可识别的目录组集合。当前 Samba 发布 Admins、文件共享组、启用的 APP_* 与 CAP_* 组；
+未知引用和空的准入集合拒绝渲染。IAM access.client 引用发布 Module 的真实注册；
+ForwardAuth role 必须匹配实际绑定网关与目录角色；native.groups_from 必须声明为可读环境键。
+本地/外部入口用 visibility.subjects 仅过滤目录，目标 URL 继续由应用认证。
+
+当前文件共享只支持本地 Unix Docker endpoint。选定 SSH/TCP endpoint 或无法确认当前 context
+会在 plan 拒绝，不把本机路径交给远程 daemon。还没有远程制品投影实现。
 
 ## 4. 多尺寸图标和共享文件
 
@@ -211,13 +234,13 @@ Casdoor 需要管理和同步的组是 IAM client 准入组与目录条目引用
 统一交付 `16,32,48,64,128,256,512` 七档 PNG；每档包含 `path/media_type/width/height/sha256`。
 Module 提供至少 512×512、最多 2048×2048 的方形 PNG 源图，可逐档提供专门设计的图片，
 尤其是小尺寸细节。Runner 对缺少的档位按固定算法缩小，不放大；UI 按显示尺寸与像素密度选择。
-未提供任何图标时，使用仓库自带完整七档占位图并在 plan 提示。
+未提供任何图标时，由 Core 固定图案生成完整七档占位图，并在 plan 提示。Nextcloud/NetBird 使用随 Module 打包的 512px PNG。
 
 Module 作者可从 SVG 制作 PNG，但第一版不把 SVG、HTML、远程 URL 或动画文件直接交给浏览器。
 这样无需引入 SVG 执行/字体/外部资源清洗链路。自定义图标随配置工作区保存，不在 apply 时联网下载。
 PNG 输入限单文件 2 MiB、解码像素 2048²；七档输出每应用合计最多 4 MiB，部署共享图标总量最多
 64 MiB；在解析图片前检查头部/尺寸，扩展名不能代替真实内容校验。
-缩放拟采用 `golang.org/x/image/draw`：新增的 Go 编译依赖仅用于确定性重采样，
+缩放采用 `golang.org/x/image/draw`：新增的 Go 编译依赖仅用于确定性重采样，
 不新增运行服务或宿主命令；如实施时发现已有等价依赖，应复用并记录版本。
 
 ### 4.2 一个目录制品，不创建文件共享服务
@@ -228,7 +251,7 @@ PNG 输入限单文件 2 MiB、解码像素 2048²；七档输出每应用合计
 ```text
 <deployment>/shared/application-catalog/
   catalog.json                 # 完整规范化条目、分类与 provenance，不能公网静态发布
-  assets.json                  # 源/输出摘要、尺寸、媒体类型、来源与许可记录
+  assets.json                  # 源/输出摘要、尺寸、媒体类型、来源记录
   assets/<sha256>.png           # 实际内容寻址文件；相同内容去重
 ```
 
@@ -265,16 +288,50 @@ Module→Runner→Consumer 的共享过程：
 不新增热更新守护进程。旧 deployment 持有自己的完整目录制品，回滚读取旧制品；
 清理沿用 deployment 引用与保留规则，不删除仍被历史部署使用的资源。
 
-## 5. 分类与外部配置
+## 5. 两级分组与外部配置
 
-workspace 顶层 `application_catalog` 是完整配置入口。内置分类提供
-`applications/admin/files/collaboration/media/network/development/security`，
-允许补充自定义分类；分类字段为 `id/display_name/description/weight`，显示名和描述按 §2.1 提供语言映射，
-按权重升序、ID 同序排序。
-类别本身不带授权规则，管理用途由条目 `kind` 表达。
-一个条目可同时属于多个分类；选中多个分类按任一匹配筛选，卡片去重且维持全局确定性排序。
+### 5.1 大组与小组
 
-以下示例包含自定义分类、展示覆盖和不使用 IAM 登录的外部后台：
+门户固定两级结构，复用 `kind` 与 `categories`，不新增 group/parent 字段或任意深度分类树。
+这部分复杂度低：只对已授权条目做确定性分组，不增加组件、依赖、持久副本或同步流程。
+
+| 大组与固定顺序 | `kind` | 英文标题 | 小组示例 |
+| --- | --- | --- | --- |
+| 1. 用户应用 | `user` | User applications | 文件、协作、影音、开发 |
+| 2. 后台管理 | `admin` | Administration | 数据库、网络、身份与权限、监控 |
+
+一个条目只归属一个大组。一个 Module 同时提供用户界面和独立管理后台时，使用不同 `name`
+分别声明两个入口，各自指定 `kind`、分类和权限。只有数据库进程、TURN、纯 API 等后端服务，
+没有可打开的人员界面时不生成条目；有管理界面的服务发布其管理入口。
+大组标题使用门户内置中英文资源，小组显示名来自分类语言映射，均遵循 §2.1 的语言选择规则；
+未支持语言直接使用英文，切换语言不改变分组、权限或顺序。
+
+分类注册表全局共用，同一分类可出现在两个大组下，例如用户网络工具与网络管理后台均使用
+`network`；分组位置由 `(kind, categories[0])` 确定，不能把两个大组的同名小组合并。
+类别本身不带授权规则，后台管理仍由条目明确绑定 `platform_admin`。
+
+展示顺序如下：
+
+1. 服务端按 §3 过滤身份、权限、hidden 和 enabled，再向门户返回可见条目。
+2. 有分类筛选时，对可见条目的完整 `categories` 列表匹配；选择多个分类按任一匹配保留。
+3. 按 `kind` 分大组，再按第一项主分类分小组。附加分类只参与筛选，不复制卡片或改变卡片所属小组。
+4. 大组按上表顺序；各大组内的小组按分类 `weight` 升序、同权重按分类 ID 排序；
+   小组内卡片按条目 `weight` 升序、同权重按 `name` 排序。条目权重不跨小组比较。
+5. 权限过滤及当前筛选后没有卡片的小组、大组隐藏；全部为空时显示“无可用应用”。
+
+例如 Nextcloud 的 `kind: user`、`categories: [files, collaboration]` 只在“用户应用 → 文件”
+出现一张卡片。筛选“协作”仍能找到它，卡片继续归属“文件”，不会复制到“协作”小组。
+因此规范化及摘要排序必须保留 `categories` 的声明顺序，不能按 ID 重排主分类。
+
+### 5.2 分类配置与外部条目
+
+workspace 顶层 `application_catalog` 是完整配置入口。内置小组分类提供
+`files/collaboration/media/development/database/network/identity/monitoring/security/other`，
+不再用 `applications/admin` 充当内置小组，避免与大组用途混淆。允许补充自定义分类；
+分类字段为 `id/display_name/description/weight`，显示名和描述按 §2.1 提供语言映射。
+`other`（其他 / Other）仅供显式选择，不能用它掩盖空分类或未知分类 ID。
+
+以下示例包含分类配置、展示覆盖和不使用 IAM 登录的外部后台；路由器位于“后台管理 → 网络”：
 
 ```yaml
 application_catalog:
@@ -305,7 +362,7 @@ application_catalog:
         zh-CN: https://openwrt.org/docs/guide-user/start
         en: https://openwrt.org/docs/guide-user/start
       weight: 80
-      categories: [admin]
+      categories: [network]
       kind: admin
       icons:
         source: branding/router-512.png
@@ -323,9 +380,9 @@ application_catalog:
 禁止 `javascript/data/file`、URL 内用户名密码；不探测或抓取目标页面。
 内置条目的 URL、执行点不允许通过展示 override 偷换；确需自定义目的地时新增外部条目。
 
-## 6. Casdoor、LLNG 与 Authentik
+## 6. Casdoor 与 LLNG
 
-### Casdoor（首要目标，完整交付）
+### Casdoor（首要目标，第一阶段原生投射）
 
 现有模型可对应 `Name/DisplayName/Logo/Order/HomepageUrl/Description`，但一个 `Logo` 和一段
 `Description` 不能完整承载本协议。`Category` 是 Default/Agent 协议分类，`Tags` 带登录限制，
@@ -334,36 +391,50 @@ application_catalog:
 目录 API 与页面必须保留中英文切换能力；写入原生单字符串字段的值只能作为部署默认语言的
 显示投影，完整翻译继续来自目录制品，不能用每次用户切换语言就更新数据库的方式实现。
 
-**需要确认的实现选择**：推荐在现有 Casdoor Module 中扩展认证目录 API 与页面，
-从只读制品加载完整元数据，使用 Casdoor 自己的登录会话、目录用户和权限引擎。
-元数据不再复制进额外数据库；只把 IAM 必需的显示字段和受管权限映射到现有对象。
-可避免增加独立服务，但会新增后端与前端补丁，并要求构建和验收自有前端资产；
-目前 Dockerfile 只替换后端、沿用官方前端，不能靠 Go 字段变更完成 UI 交付。
-独立门户是备选，会新增部署、会话/认证接入和接口维护成本。
-此处在获得确认前保持候选，不开始产品补丁实现。
+2026-10-08 用户确认分阶段交付。第一阶段不修改 Casdoor API 或页面，只在现有 Hook 中把目录
+投射到原生 Application 和 Permission。显示名、简介、URL、单个 128px 图标和顺序写入原生字段；
+本版本原生字段最大 100 字符，标题/简介/URL 超长会拒绝渲染，不截断链接。
+不把展示分类映射到 Category/Tags，不伪造纯目录条目的 OAuth/SAML 凭据。
+Casdoor 自动补齐的 clientId/clientSecret 保留为原生对象内部字段，grantTypes/redirectUris 为空，
+disableSignin 为 true，enablePassword 为 false。原生列表中的 clientSecret 是掩码；
+验收须检查实际协议拒绝签发和密钥掩码，不能只断言数据库中的客户端字段为空。
+只有目录用途的原生 Application 使用独立受管命名空间，启动时清理配置已删除的这类对象和权限，
+保留已有 IAM client 与非 ANAS 对象。
+
+原生限制沿用上游行为：点击追加 silentSignin、无有效 Permission 默认允许、IAM 管理员绕过、
+hidden/禁用的 IAM client 对象可能仍被枚举。配置解析拒绝空或未知组不能消除这些运行时缺口。
+因此第一阶段不是完整过滤/保密保证，直接访问仍由目标 IAM/ForwardAuth/应用本地认证保护。
+
+第二阶段实现自己的门户，完成全部文案、两级分组、附加分类筛选、七档图标选择、原样链接和严格
+认证后过滤；推荐组件部署位置与复杂度见 §10；仍是提案，本次不实施新的 API 或页面。
 
 ### LLNG（保留，能力须另验）
 
 按新协议实现适配，不保留 `APPS_LIST` 兼容层。
-第一轮交付优先 Casdoor；LLNG 是否完整展示详情、多分类和多尺寸必须逐字段试验。
-未支持的显示项在 plan 标明；权限字段不支持就拒绝发布，不能静默忽略或开放。
-未通过新版协议验证的 Provider 不能标记为新版目录已支持。
+LLNG 2.23.2 的菜单数据支持递归，但默认 Portal 模板只渲染一层 category；真实运行曾遗漏
+嵌套分类中的卡片。当前 Hook 将用途与主分类合成“用户应用 / 分类”“后台管理 / 分类”的原生组名，
+条目直接放在组内，完整两级布局由第二阶段门户实现，
+以明确的 inGroup OR 作为 display 规则，不自动附加管理员。图标通过资产子目录只读挂载。
+同一配置的旧受管分类会被替换，不复制源 Module 文件、不做 after_start 图标复制。
+原生界面的语言选择不切换应用文案；完整分类筛选、文档链接及多尺寸展示仍属第二阶段。
+这些显示缺口写入 Module 的 application_catalog.limitations 并进入 plan。
 
-### Authentik（逐步弃用）
+### Authentik（已移除）
 
-冻结新应用目录功能投入，不为其单分类或排序能力降低协议。
-继续保持已有能力的安全修复，文档标为弃用中；新增部署与示例优先 Casdoor。
-改默认选择要同步自动选择规则、配置解释和测试，不能只改文档。
-后续明确移除版本与依赖清单后再删除 Module，不静默转换已有 IAM 绑定、账号或业务数据。
-“不兼容旧目录协议”不等于允许破坏用户现有身份数据。
+2026-10-10 用户决定替代先前逐步弃用路线。模块源码、镜像/Module 发布清单、专属测试脚本与
+当前配置均移除；选择旧 Module/provider 时明确报错，不自动改成 Casdoor。Git 历史与旧计划中的
+版本、失败和通过记录保留，不能把它们重新标为 Casdoor 验收。本次仓库移除不操作既有外部部署、
+身份绑定、账号或业务数据。
 
 ## 7. Adminer 与 Module 覆盖
 
 PostgreSQL/MariaDB Adminer 的目标声明均为 `kind: admin`、`access.mode: forward_auth`、
 `role: platform_admin`、`visibility.mode: access`，且只在 `adminer_enabled` 时发布。
+两套入口均使用 `categories: [database]`，展示于“后台管理 → 数据库”。
 网关负责平台管理员身份，Adminer 继续用数据库凭据登录；不注入数据库超级用户密码。
 两套 compose 目前都已有 `ANAS_FORWARD_AUTH_MIDDLEWARE` 路由，oauth2_proxy 固定派生管理员组；
-剩余工作是新版目录声明与 Casdoor 实际会话下的直连/撤权验收，不重复增加第二层代理。
+新版目录声明和实际授权事实校验已实现；Casdoor 实际会话下的双数据库门禁/回调已在隔离主机完成（范围与证据见 plan），门户严格过滤仍待实现；
+不重复增加第二层代理。
 
 首轮覆盖由 Module inventory 派生，不能仅遍历 IAM client：
 
@@ -388,24 +459,49 @@ PostgreSQL/MariaDB Adminer 的目标声明均为 `kind: admin`、`access.mode: f
 | 单 `LOGO_PATH/LOGO_NAME`；LLNG 启动后复制 | 七尺寸 PNG、摘要清单、deployment 制品、只读挂载、浏览器 HTTPS URL |
 | 没有文档字段 | 必需 `documentation_url`；卡片/详情有独立文档入口 |
 | 单语展示字符串 | 应用/分类展示字段采用 `zh-CN/en` 映射；文档按语言选择，逐字段回退、逐语言覆盖 |
-| 无统一权重；前稿单分类 | 确定性 `weight` + `categories` 列表及分类注册表 |
+| 无统一权重；前稿单分类 | 固定 `kind` 大组 → 主分类小组；组内确定性 `weight` 排序，附加分类筛选去重 |
 | 门户与 IAM 允许组分别写 | 引用执行点规则；本地/外部规则明确仅管目录 |
 | 主要跟随 OIDC/SAML client 生成 | 发布目录与注册登录客户端独立 |
 | 前稿 `visibility: always` 含糊 | 显式 authenticated；缺失/空权限失败关闭；hidden 包括管理员 |
 | 前稿允许展示覆盖收窄组 | 首版不增加第二份内部应用权限覆盖，统一从执行点派生 |
-| 前稿 Runner→LLNG→Authentik 双写迁移 | 未发版直接替换旧目录协议，Casdoor 优先，Authentik 逐步弃用 |
+| 前稿 Runner→LLNG→Authentik 双写迁移 | 未发版直接替换旧目录协议，Casdoor 优先，Authentik 已移除 |
 | 前稿列 Adminer ForwardAuth 为未来工作 | 代码已存在，补目录与实机验收 |
 | 前稿仅 `ANAS_APP_ICONS_DIR` | 完整目录制品，区分 render 暂存路径、宿主挂载路径、容器路径和公开 URL |
 
 ## 9. 实施边界
 
 Core 只理解通用 schema、归一化、文件安全边界和制品；不包含 Casdoor/LLNG 产品字段。
-Provider adapter 负责原生对象、权限校验与门户页面。无新服务、数据库副本、后台文件同步器是推荐方向，
-Casdoor UI 扩展选择仍须确认。实现步骤、阻塞与验收记录仅维护在配套计划中。
+第一阶段 Provider adapter 负责原生对象和原生权限规则，沿用原生界面，无新增服务。
+第二阶段交付独立门户，负责完整展示与严格过滤；不建立应用/人员数据库副本或后台文件同步器。
+实现步骤、阻塞与验收记录仅维护在配套计划中。
 
 Module 的消费声明固定为 `application_catalog: { consumes: true }`，由 Runner 识别；
 不把目录消费伪装成另一个 IAM client，也不建立对每个发布应用的 capability 依赖。
 制品 JSON 顶层为 `schema: anas.app-catalog/v1`、`languages: [zh-CN, en]`、
 `default_language`（从全局默认匹配，无法匹配时为 `en`）、`categories`、`applications`；
 资产清单为 `schema: anas.app-catalog-assets/v1`、`files`，两者都不带构建时间等不稳定字段。
-对象/列表规范排序后计算摘要，同输入产生相同字节；不支持的 schema 版本必须拒绝读取。
+对象/无序集合规范排序后计算摘要，每个条目的 `categories` 列表保留声明顺序；
+同输入产生相同字节，不支持的 schema 版本必须拒绝读取。
+
+## 10. 第二阶段：独立用户门户（首版已确认，尚未实现）
+
+用户新增决定：第二阶段交付独立门户网站，并增加 LDAP 本人改密及获权管理员的分组、
+密码重置功能。此前 Casdoor 同进程页面提案不再作为推荐部署方案；第一阶段原生功能与历史验收不变。
+
+独立门户使用 Casdoor OIDC 登录，消费同一只读目录与七档图标，提供自己的受保护 API。
+完整应用目录仍遵守本协议：当前账号与权限过滤、策略失效拒绝、原样 URL、中英文切换、
+未知语言直接英文、两级分组与空组隐藏；原生 API/旧图标旁路仍须处理，独立页面不会自动解决泄漏。
+
+Casdoor 继续负责 IAM 认证与应用授权事实；Samba AD 继续负责真实用户、组与密码。
+门户不维护另一套用户/组数据库，也不使用原生管理员绕过或旧 JWT groups 代替当前授权。
+原生用户 token 的 UserInfo/get-account 当前本人读取与固定组过滤已完成能力实验，
+按此路径接线，当前不新增 Casdoor 受限接口或源码补丁；门户与资产保护仍未实现。
+
+2026-10-11 用户确认首版包括本人资料/原密码及首次/过期改密、范围受限用户查询、
+重置/强改/解锁和成员增删，配套近期认证与审计。动作、人员、组按同一委派规则限定，
+Admins 不自动取得账号写权，生产名单由配置显式给出。
+整体高复杂度分步方向已确认；存储推荐单实例内存会话与私有持久审计，能力实验在实现前完成。
+账号创建/启停、找回、MFA、跨应用会话管理与便利功能仍是后续候选。
+详细机制见 [门户设计](/architecture/user-portal-design)，新增判据的规范来源为
+[PORTAL-R-001—R-041](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md)，
+不替代原 APPCAT 矩阵。

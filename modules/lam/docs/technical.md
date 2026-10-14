@@ -128,3 +128,10 @@ LAM 直接通过 LDAPS 工作。主登录页使用操作者自己的目录用户
 ## 当前限制
 
 目录不可用时主登录不可用；当前没有由 `anas admin local` 管理的恢复入口。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

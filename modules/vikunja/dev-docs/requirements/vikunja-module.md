@@ -7,6 +7,9 @@ updated: 2026-08-23
 
 # Vikunja Module 集成要求
 
+2026-10-10：用户要求移除 Authentik；其专属验收项保留原 ID 并标已废弃，旧通过记录仅适用于原基线。保留的 LLNG 用例继续回归；Casdoor 组合需单独验收，不能继承旧 Provider 结果。
+
+
 本文规定 ANAS 集成 Vikunja 时必须交付的用户结果、边界、安全约束和验收标准。候选比较与
 选型证据见[自托管开源看板与项目管理方案调研](../../../../docs/research/self-hosted-open-source-kanban-research.md)；
 实施顺序和执行证据见[Vikunja Module 实施计划](../plans/archived/vikunja-module.md)。本文不重复调研结论，
@@ -127,7 +130,7 @@ Webhook。
 
 - amd64 与 arm64 镜像均可构建、启动并通过健康检查；
 - PostgreSQL 和 MariaDB 各完成一次空库安装、重启和小版本升级；
-- Authentik 与 LLNG 至少各完成一次 OIDC 登录、JIT 建号、应用组拒绝/允许和本地注册关闭验证；
+- 保留的 LLNG 至少完成一次 OIDC 登录、JIT 建号、应用组拒绝/允许和本地注册关闭验证；
 - 浏览器验证应用发起登出及 IAM 不可用时本地 session 仍失效；
 - 创建并恢复包含 project、task、comment 和 attachment 的备份；
 - 用最小权限 API token 完成读写 smoke test，并验证 webhook 签名/Secret 不进入日志；
@@ -164,7 +167,7 @@ Webhook。
 | `VIK-R-017` | amd64 与 arm64 镜像必须可构建；amd64 真实容器必须启动、健康、无异常重启且业务进程为非 root | CI + e2e |
 | `VIK-R-018` | PostgreSQL 必须完成空库安装、应用重启、数据库重启和固定版本升级/回滚边界验收，数据不得丢失 | e2e |
 | `VIK-R-019` | MariaDB 必须完成空库安装、`mysql` 映射、应用重启、数据库重启和固定版本升级/回滚边界验收，数据不得丢失 | e2e |
-| `VIK-R-020` | Authentik 必须用真实浏览器流程验证 OIDC 登录、JIT 建号、直接组/`APP_all`/管理员允许、无组拒绝、禁用账号拒绝和本地注册关闭 | e2e |
+| `VIK-R-020` | Authentik 必须用真实浏览器流程验证 OIDC 登录、JIT 建号、直接组/`APP_all`/管理员允许、无组拒绝、禁用账号拒绝和本地注册关闭（已废弃） | e2e |
 | `VIK-R-021` | LLNG 必须用真实浏览器流程验证 OIDC 登录、JIT 建号、直接组/`APP_all`/管理员允许、无组拒绝、禁用账号拒绝和本地注册关闭 | e2e |
 | `VIK-R-022` | 真实浏览器必须验证 Vikunja 发起登出会清除本地 session、携带 `id_token_hint`/post-logout URI，并在 IAM 不可用时仍清除本地 session | e2e |
 | `VIK-R-023` | 从空恢复点恢复后必须保留 project、task、comment、attachment、OIDC 关联、API token 与 webhook 配置 | e2e |

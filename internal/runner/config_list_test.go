@@ -288,7 +288,7 @@ func TestRawEnvCannotBypassDeclaredModuleTypes(t *testing.T) {
 		// A bare exported key and an ordinary prefixed key take the same generic
 		// owner/type path; neither needs a Module-specific import adapter.
 		{key: "SHARE_ACCESS_MODE", value: "not-a-mode", want: "all_read_group_write"},
-		{key: "AUTHENTIK_LDAP_ENABLED", value: "maybe", want: "true or false"},
+		{key: "LLNG_ENABLE_TEST", value: "maybe", want: "true or false"},
 	} {
 		cfg := &config.File{Env: map[string]any{test.key: test.value}}
 		err := validateConfiguredParameters(cfg, reg)

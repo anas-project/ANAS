@@ -20,7 +20,7 @@ This page records the current implementation, security boundaries, and verificat
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r13` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r13` | `traefik, db` | 5 |
 <!-- generated:compose-topology:end -->
 
 ## Configuration contract
@@ -87,7 +87,11 @@ Each RP Rule requires `defined($anasIdentityAnchor) and $anasIdentityAnchor ne "
 with its original application-group rule. An SSO session missing the anchor cannot obtain
 an authorization code. `ldapExportedVars` always loads the anchor regardless of whether the
 consumer requests an explicit anchor claim. Generic attributes still provide human login
-names, display names, email and array-valued groups. `hook/iam.go` rejects Netbird's `sub`
+names, display names, email and array-valued groups. The adapter maps the generic `email`
+source to Samba AD's `mail` session variable, preserving the consumer's OIDC/SAML output
+claim name. Reading an AD attribute named `email` loses the actual address and prevents
+OIDC consumers that require an email from completing login. Other explicit sources remain unchanged.
+`hook/iam.go` rejects Netbird's `sub`
 URL projection at calculate and render_env boundaries; Nextcloud's anchor UID follows the
 approved `DIRKEY-R-010` exception.
 
@@ -187,7 +191,6 @@ The runner creates a dedicated database, principal, and stable generated credent
 - `ANAS_IDENTITY_OIDC_CLIENTS`
 - `ANAS_IDENTITY_SAML_CLIENTS`
 - `ANAS_IAM_CLIENT_*`
-- `APPS_LIST*`
 - `SAMBA_DC_PASSWORD_BIND_PASSWORD`
 
 The dependency closure does not grant every environment value. Sensitive values enter this module's hook/container scope only through ownership or an explicit `config.consumes` claim.
@@ -219,3 +222,16 @@ Do not configure the removed `LLNG_PASSWORD`; it does not create an upstream adm
 The reserved generic OIDC ATTRIBUTES source `anasRole` uses an `inGroup` macro to derive admin/user
 from the trusted administrator group. The same-named LDAP exported variable is removed so user
 attributes cannot impersonate roles. Other ordinary directory claims retain their existing mapping.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Startup removes the upstream sample application,
+administration and documentation groups so undeployed examples and old URLs do not appear in the menu.
+ANAS management and documentation entries retain their administrator group rules. The default portal template renders one category
+level, so native category labels combine “User applications / primary category” or “Administration / primary
+category”, with applications directly beneath them. The full two-level layout belongs to the second-stage
+portal. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

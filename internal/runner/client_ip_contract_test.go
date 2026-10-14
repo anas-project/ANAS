@@ -13,10 +13,6 @@ func TestApplicationClientIPAdaptersRemainConfigured(t *testing.T) {
 		forbidden []string
 	}{
 		{
-			path:     "../../modules/authentik/authentik/server-entrypoint.sh",
-			required: []string{"AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS", "${traefik_ip}/32"},
-		},
-		{
 			path:     "../../modules/lam/lam/config.sh",
 			required: []string{"RemoteIPHeader X-Forwarded-For", "RemoteIPInternalProxy $TRAEFIK_HOSTNAME"},
 		},

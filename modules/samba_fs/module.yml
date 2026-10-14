@@ -11,6 +11,7 @@ title: Samba file server
 description: File sharing service joined to the Samba domain.
 category: storage
 status: release
+applications_not_published: "SMB shares have no browser UI; users access files through their file manager."
 runtime:
   type: compose
   compose_file: docker-compose.yml

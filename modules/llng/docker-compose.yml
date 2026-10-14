@@ -13,6 +13,9 @@ services:
     volumes:
       - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf/"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+      - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
+      - "${ANAS_APP_CATALOG_DIR}/assets:/usr/share/lemonldap-ng/portal/htdocs/static/common/apps/anas-catalog:ro"
+      - "./conf/application-list.json:/opt/anas/application-list.json:ro"
     tmpfs:
       # Explicitly cover the remaining inherited VOLUME declarations. These
       # contain generated runtime configuration/locks, not authoritative data.

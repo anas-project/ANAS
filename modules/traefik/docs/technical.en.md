@@ -122,7 +122,6 @@ Every Docker-provider route declares `anas.client-ip.mode`: `application` means 
 
 | Handling | Modules / entrypoints |
 | --- | --- |
-| Application restoration | Authentik, LAM, LLNG, MeshCentral Web, NetBird Management, the Nextcloud main site, OAuth2 Proxy |
 | Edge recording | Traefik Dashboard, Collabora, DDNS Updater, the DDNS Go dynamic route, MariaDB/Postgres Adminer, NetBird Dashboard/Signal/Relay, Nextcloud Push/Talk |
 | Non-HTTP / not applicable | Eturnal, FreeRADIUS, Lego, MariaDB/Postgres databases, MeshCentral MPS, Samba DC, Samba FS |
 
@@ -131,3 +130,11 @@ Non-HTTP services do not read `X-Forwarded-For`; they use peer information carri
 ## Current limitations
 
 The Traefik local account protects only the dashboard and grants no downstream application administration.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

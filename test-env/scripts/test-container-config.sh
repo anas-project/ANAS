@@ -184,58 +184,6 @@ if grep -Eq '^    - POSTGRES_(USERNAME|PASSWORD)$' "$ROOT_DIR/modules/nextcloud/
   exit 1
 fi
 
-# Authentik's worker must not race the server's first-run database migrations.
-awk '
-  /^  anas_authentik_worker:/ { worker = 1; next }
-  worker && /^  [^ ]/ { exit }
-  worker && /anas_authentik:/ { server = 1 }
-  server && /condition: service_healthy/ { found = 1 }
-  END { exit !found }
-' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-grep -Fq 'test -f /tmp/anas-blueprints.ready && ak healthcheck' \
-  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-grep -Fq '/opt/anas/bin/wait-blueprints &' \
-  "$ROOT_DIR/modules/authentik/authentik/worker-entrypoint.sh" || exit 1
-grep -Fq 'instance.last_applied_hash == source_hash' \
-  "$ROOT_DIR/modules/authentik/authentik/blueprints-ready.py" || exit 1
-
-# Deployment directories are root-only and the worker runs as UID 1000. The
-# root-only init service must copy only generated blueprint templates into the
-# private data tree and transfer ownership before server/worker startup; direct
-# bind mounts from the sealed deployment would be unreadable in the container.
-grep -Fq 'cp -a /rendered-blueprints/. /blueprints/anas/' \
-  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-grep -Fq 'chown -R 1000:1000 /data /blueprints/anas' \
-  "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-[[ $(grep -Fc '${DATA_PATH}/authentik/blueprints:/blueprints/anas:ro' \
-  "$ROOT_DIR/modules/authentik/docker-compose.yml") -eq 2 ]] || exit 1
-if grep -Fq './blueprints:/blueprints/anas:ro' "$ROOT_DIR/modules/authentik/docker-compose.yml"; then
-  echo "Authentik runtime binds unreadable blueprints directly from the sealed deployment" >&2
-  exit 1
-fi
-
-# The initial migration set can exceed the old three-minute effective health
-# window on the supported 4-vCPU/3-GiB server baseline. Keep the server's cold
-# start grace period distinct from the worker's steady-state health policy.
-awk '
-  /^  anas_authentik:/ { server = 1; next }
-  server && /^  [^ ]/ { exit }
-  server && /start_period: 600s/ { found = 1 }
-  END { exit !found }
-' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-
-# The managed break-glass projection is deliberately root:root 0600. The
-# server entrypoint must read it as root and drop privileges before launching
-# authentik; widening the secret file permissions is not acceptable.
-awk '
-  /^  anas_authentik:/ { server = 1; next }
-  server && /^  [^ ]/ { exit }
-  server && /user: root/ { found = 1 }
-  END { exit !found }
-' "$ROOT_DIR/modules/authentik/docker-compose.yml" || exit 1
-grep -Fq 'setpriv --reuid=1000 --regid=1000 --init-groups ak "$@"' \
-  "$ROOT_DIR/modules/authentik/authentik/server-entrypoint.sh" || exit 1
-
 # Vikunja's scratch image has no passwd database, so a symbolic `USER root`
 # fails before the entrypoint can repair the attachment mount and drop UID.
 grep -Fxq 'USER 0:0' "$ROOT_DIR/modules/vikunja/vikunja/Dockerfile" || exit 1

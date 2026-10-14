@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/configschema"
 	"gopkg.in/yaml.v3"
@@ -46,31 +47,34 @@ type manifestABI struct {
 }
 
 type moduleManifest struct {
-	APIVersion           string               `yaml:"api_version"`
-	Kind                 string               `yaml:"kind"`
-	Name                 string               `yaml:"name"`
-	Version              string               `yaml:"version"`
-	Revision             int                  `yaml:"revision"`
-	AppVersion           string               `yaml:"app_version"`
-	ABI                  manifestABI          `yaml:"abi"`
-	Title                string               `yaml:"title"`
-	Description          string               `yaml:"description"`
-	Category             string               `yaml:"category"`
-	TemporaryDirectories []TemporaryDirectory `yaml:"temporary_directories"`
-	Runtime              manifestRuntime      `yaml:"runtime"`
-	Capabilities         manifestCapabilities `yaml:"capabilities"`
-	Contracts            manifestContracts    `yaml:"contracts"`
-	Dependencies         manifestDependencies `yaml:"dependencies"`
-	Resources            manifestResources    `yaml:"resources"`
-	Credentials          manifestCredentials  `yaml:"credentials"`
-	Upgrade              manifestUpgrade      `yaml:"upgrade"`
-	Config               manifestConfig       `yaml:"config"`
-	Features             manifestFeatures     `yaml:"features"`
-	Identity             manifestIdentity     `yaml:"identity"`
-	Management           manifestManagement   `yaml:"management"`
-	Services             manifestServices     `yaml:"services"`
-	Logic                manifestLogic        `yaml:"logic"`
-	Status               string               `yaml:"status"`
+	APIVersion               string                   `yaml:"api_version"`
+	Kind                     string                   `yaml:"kind"`
+	Name                     string                   `yaml:"name"`
+	Version                  string                   `yaml:"version"`
+	Revision                 int                      `yaml:"revision"`
+	AppVersion               string                   `yaml:"app_version"`
+	ABI                      manifestABI              `yaml:"abi"`
+	Title                    string                   `yaml:"title"`
+	Description              string                   `yaml:"description"`
+	Category                 string                   `yaml:"category"`
+	Applications             []appcatalog.Declaration `yaml:"applications"`
+	ApplicationCatalog       appcatalog.Consumer      `yaml:"application_catalog"`
+	ApplicationsNotPublished string                   `yaml:"applications_not_published"`
+	TemporaryDirectories     []TemporaryDirectory     `yaml:"temporary_directories"`
+	Runtime                  manifestRuntime          `yaml:"runtime"`
+	Capabilities             manifestCapabilities     `yaml:"capabilities"`
+	Contracts                manifestContracts        `yaml:"contracts"`
+	Dependencies             manifestDependencies     `yaml:"dependencies"`
+	Resources                manifestResources        `yaml:"resources"`
+	Credentials              manifestCredentials      `yaml:"credentials"`
+	Upgrade                  manifestUpgrade          `yaml:"upgrade"`
+	Config                   manifestConfig           `yaml:"config"`
+	Features                 manifestFeatures         `yaml:"features"`
+	Identity                 manifestIdentity         `yaml:"identity"`
+	Management               manifestManagement       `yaml:"management"`
+	Services                 manifestServices         `yaml:"services"`
+	Logic                    manifestLogic            `yaml:"logic"`
+	Status                   string                   `yaml:"status"`
 }
 
 type manifestCredentials struct {
@@ -319,6 +323,8 @@ type manifestFeatures struct {
 // such as LDAPS is declared here. AppGroup is deliberately explicit: a daemon
 // may query a directory without representing an interactive application.
 type manifestIdentity struct {
+	Roles          map[string]string               `yaml:"roles"`
+	GroupsFrom     string                          `yaml:"groups_from"`
 	Interfaces     []string                        `yaml:"interfaces"`
 	AppGroup       bool                            `yaml:"application_group"`
 	Provisioning   *manifestIdentityProvisioning   `yaml:"provisioning"`
@@ -629,10 +635,7 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 	}
 
 	add(registryReservedNamespaceKeys()...)
-	// APPS_LIST is the root of a transitional cooperative Module protocol.
-	// Modules may append their own name through an explicit APPS_LIST* export,
-	// but callers may not seed the aggregate through raw env/secrets input.
-	add("APPS_LIST")
+	add("ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST")
 	add(configCoreReservedRuntimeKeys()...)
 
 	identityInterfaces := map[string]bool{}
@@ -684,8 +687,8 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 // registryReservedNamespaceKeys is deliberately narrower than the exact-key
 // registry above. These values are owned independently of any Module and thus
 // also reserve a namespace prefix. Per-Module IAM/local-admin keys must remain
-// exact-only: an authentik-owned AUTHENTIK_LOCAL_ADMIN__... value, for example,
-// must not make the AUTHENTIK prefix itself illegal.
+// exact-only: a casdoor-owned CASDOOR_LOCAL_ADMIN__... value, for example,
+// must not make the CASDOOR prefix itself illegal.
 func registryReservedNamespaceKeys() []string {
 	keys := []string{
 		"ALL_MODS_NAME", "USE_HOST_LAN_REQUIRED_MODS_NAME", "USE_HOST_LAN_OPTIONAL_MODS_NAME", "DOMAINS",
@@ -1039,52 +1042,60 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		return Module{}, err
 	}
 	mod := Module{
-		APIVersion:             manifest.APIVersion,
-		Name:                   manifest.Name,
-		Version:                manifest.Version,
-		Revision:               manifest.Revision,
-		AppVersion:             strings.TrimSpace(manifest.AppVersion),
-		Title:                  strings.TrimSpace(manifest.Title),
-		Description:            strings.TrimSpace(manifest.Description),
-		Category:               strings.TrimSpace(manifest.Category),
-		Lifecycle:              manifest.Status,
-		UpgradeFrom:            manifest.Upgrade.From,
-		DataBreaking:           cloneStringListPointer(manifest.Upgrade.DataBreaking),
-		SourceDir:              dir,
-		EnvPrefix:              envPrefix,
-		Defaults:               defaults,
-		InputRequired:          requirements.InputRequired,
-		Required:               requirements.Required,
-		MustResolve:            requirements.MustResolve,
-		Parameters:             parameters,
-		Types:                  types,
-		Consumes:               consumes,
-		Exports:                exports,
-		Changes:                changes,
-		Requires:               normalizeManifestDependencies(manifest.Dependencies.Requires),
-		RequiresOne:            normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
-		RequiresContracts:      requiresContracts,
-		ContractProviders:      contractProviders,
-		Resources:              resources,
-		Provides:               provides,
-		RequiresCapabilities:   requiresCapabilities,
-		RunAfter:               append([]string{}, manifest.Dependencies.After...),
-		IdentityInterfaces:     identityInterfaces,
-		IdentityAppGroup:       manifest.Identity.AppGroup,
-		IdentityProvisioning:   provisioning,
-		IdentityAuthentication: authentication,
-		ManagementSurfaces:     managementSurfaces,
-		LocalAccounts:          localAccounts,
-		CredentialProviders:    credentialProviders,
-		CredentialConsumers:    credentialConsumers,
-		CommandExecutor:        commandExecutor,
-		Commands:               commands,
-		UseHostLAN:             manifest.Features.HostLAN,
-		PublishesDomain:        manifest.Features.Domain,
-		Hook:                   hook,
-		RuntimeType:            manifest.Runtime.Type,
-		ComposeFile:            composeFile,
-		TemporaryDirectories:   temporaryDirectories,
+		APIVersion:               manifest.APIVersion,
+		Name:                     manifest.Name,
+		Version:                  manifest.Version,
+		Revision:                 manifest.Revision,
+		AppVersion:               strings.TrimSpace(manifest.AppVersion),
+		Title:                    strings.TrimSpace(manifest.Title),
+		Description:              strings.TrimSpace(manifest.Description),
+		Category:                 strings.TrimSpace(manifest.Category),
+		Applications:             manifest.Applications,
+		ApplicationCatalog:       manifest.ApplicationCatalog,
+		ApplicationsNotPublished: strings.TrimSpace(manifest.ApplicationsNotPublished),
+		Lifecycle:                manifest.Status,
+		UpgradeFrom:              manifest.Upgrade.From,
+		DataBreaking:             cloneStringListPointer(manifest.Upgrade.DataBreaking),
+		SourceDir:                dir,
+		EnvPrefix:                envPrefix,
+		Defaults:                 defaults,
+		InputRequired:            requirements.InputRequired,
+		Required:                 requirements.Required,
+		MustResolve:              requirements.MustResolve,
+		Parameters:               parameters,
+		Types:                    types,
+		Consumes:                 consumes,
+		Exports:                  exports,
+		Changes:                  changes,
+		Requires:                 normalizeManifestDependencies(manifest.Dependencies.Requires),
+		RequiresOne:              normalizeAlternativeDependencies(manifest.Dependencies.RequiresOne),
+		RequiresContracts:        requiresContracts,
+		ContractProviders:        contractProviders,
+		Resources:                resources,
+		Provides:                 provides,
+		RequiresCapabilities:     requiresCapabilities,
+		RunAfter:                 append([]string{}, manifest.Dependencies.After...),
+		IdentityInterfaces:       identityInterfaces,
+		IdentityAppGroup:         manifest.Identity.AppGroup,
+		IdentityRoles:            manifest.Identity.Roles,
+		IdentityGroupsFrom:       manifest.Identity.GroupsFrom,
+		IdentityProvisioning:     provisioning,
+		IdentityAuthentication:   authentication,
+		ManagementSurfaces:       managementSurfaces,
+		LocalAccounts:            localAccounts,
+		CredentialProviders:      credentialProviders,
+		CredentialConsumers:      credentialConsumers,
+		CommandExecutor:          commandExecutor,
+		Commands:                 commands,
+		UseHostLAN:               manifest.Features.HostLAN,
+		PublishesDomain:          manifest.Features.Domain,
+		Hook:                     hook,
+		RuntimeType:              manifest.Runtime.Type,
+		ComposeFile:              composeFile,
+		TemporaryDirectories:     temporaryDirectories,
+	}
+	if err := validateApplicationManifest(mod); err != nil {
+		return Module{}, err
 	}
 	return mod, nil
 }
@@ -1584,7 +1595,7 @@ func defaultEnvPrefix(module string) string {
 }
 
 // normalizeEnvPatterns validates consumes/exports entries: an exact env key,
-// a prefix glob such as APPS_LIST__*, or a suffix glob such as *_DB_NAME used
+// a prefix glob such as APP_METADATA__*, or a suffix glob such as *_DB_NAME used
 // by capability providers that scan their consumers' declarations. A glob has
 // exactly one leading or trailing *, and its non-wildcard stem is env-safe.
 func normalizeEnvPatterns(module, field string, in []string) ([]string, error) {

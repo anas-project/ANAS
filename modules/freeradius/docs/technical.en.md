@@ -80,3 +80,7 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Current limitations
 
 Status is `developing`; do not use it as a production authentication service.
+
+## Application catalog
+
+No personnel card is published: RADIUS authentication service has no personnel UI.

@@ -162,6 +162,11 @@ func applyClientAttributes(e map[string]string, src, dst string) {
 		for len(parts) < 3 {
 			parts = append(parts, "1")
 		}
+		// Generic IAM consumers use email; Samba AD stores it as mail.
+		// RP mappings reference LLNG session variables populated from LDAP.
+		if parts[1] == "email" {
+			parts[1] = "mail"
+		}
 		e[fmt.Sprintf("%sATTR%02d", dst, i+1)] = strings.Join(parts[:3], ",")
 	}
 }

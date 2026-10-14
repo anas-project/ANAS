@@ -32,6 +32,9 @@ func run(args []string) error {
 		return fmt.Errorf("usage: casdoor-helper <render-init|set-password|credential|healthcheck|service-healthcheck|exec-as|directory-watch>")
 	}
 	switch args[0] {
+	case "reconcile-catalog":
+		if len(args) != 2 { return fmt.Errorf("reconcile-catalog requires init data") }
+		return reconcileCatalog(args[1])
 	case "render-init":
 		if len(args) != 4 {
 			return fmt.Errorf("render-init requires template, password file, and output")

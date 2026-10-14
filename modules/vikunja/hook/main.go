@@ -284,13 +284,9 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	e[iamClientPrefix+"SCOPES"] = "openid,profile,email"
 	e[iamClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
+	e["VIKUNJA_APPLICATION_URL"] = e["VIKUNJA_DOMAIN_FULL"] + "/login?redirectToProvider=anas"
 	e[iamClientPrefix+"DOMAIN"] = e["VIKUNJA_DOMAIN"]
 
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "vikunja")
-	e["APPS_LIST__VIKUNJA__NAME"] = defaultValue(e["APPS_LIST__VIKUNJA__NAME"], "Vikunja")
-	e["APPS_LIST__VIKUNJA__DESC"] = defaultValue(e["APPS_LIST__VIKUNJA__DESC"], "Tasks, projects, and kanban boards")
-	e["APPS_LIST__VIKUNJA__URI"] = e["VIKUNJA_DOMAIN_FULL"] + "/login?redirectToProvider=anas"
-	e["APPS_LIST__VIKUNJA__ALLOW_GROUPS"] = allowGroups
 	return warnings, nil
 }
 

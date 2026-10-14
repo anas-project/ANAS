@@ -7,12 +7,12 @@ modules:
       application_dns_mode: auto
   samba_fs: {}
   postgres: {}
-  authentik: {}
+  casdoor: {}
   nextcloud: {}
   lam: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   base_domain: nas.test.example
   email: admin@nas.test.example

@@ -11,6 +11,38 @@ title: Casdoor
 description: IAM provider serving OIDC and SAML with Samba AD-backed sign-in.
 category: identity
 status: developing
+applications:
+  - name: casdoor-admin
+    display_name:
+      zh-CN: "Casdoor Administration"
+      en: "Casdoor Administration"
+    url_from: CASDOOR_DOMAIN_FULL
+    summary:
+      zh-CN: "身份与应用管理"
+      en: "Identity and application administration"
+    description:
+      zh-CN: "身份与应用管理。"
+      en: "Identity and application administration."
+    documentation_url:
+      zh-CN: https://casdoor.ai/docs/
+      en: https://casdoor.ai/docs/
+    weight: 100
+    kind: admin
+    categories:
+      - identity
+    access:
+      mode: local
+    visibility:
+      mode: subjects
+      any_of:
+        - role: platform_admin
+application_catalog:
+  consumes: true
+  limitations:
+    - "Single language and icon; title, summary and URL limited to 100 characters"
+    - "Native list lacks display categories and full descriptions/documentation links"
+    - "Native click adds silentSignin; missing/disabled policies allow access and IAM administrators bypass filtering"
+    - "Hidden/disabled IAM registrations may remain in the native list"
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -108,7 +140,6 @@ config:
     - ANAS_IDENTITY_OIDC_CLIENTS
     - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*
-    - APPS_LIST*
   changes:
     db_type:
       effect: data_migrate

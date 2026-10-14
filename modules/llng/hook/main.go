@@ -12,10 +12,11 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anas-project/ANAS/internal/appcatalog"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -135,30 +136,24 @@ func renderEnv(module string, env map[string]string, workdir string, secrets *se
 		return map[string]string{}, nil
 	}
 	applyServicePrivateKeys("LLNG", env, secrets)
-	return map[string]string{}, moduleLLNG(env, workdir)
+	if err := moduleLLNG(env, workdir); err != nil {
+		return nil, err
+	}
+	catalog, err := appcatalog.FromEnvironment(env)
+	if err != nil {
+		return nil, err
+	}
+	document, err := renderApplicationList(catalog)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"conf/application-list.json": document}, nil
 }
 func disabledServices(module string, env map[string]string) []string {
 	return nil
 }
 func afterStart(module string, env map[string]string) []dockerCopy {
-	if module != "llng" {
-		return nil
-	}
-	container := env["CONTAINER_PREFIX"] + "llng"
-	out := []dockerCopy{}
-	for _, app := range splitCSV(env["APPS_LIST"]) {
-		prefix := "APPS_LIST__" + strings.ToUpper(app) + "__"
-		path := env[prefix+"LOGO_PATH"]
-		if path == "" {
-			continue
-		}
-		out = append(out, dockerCopy{
-			Source:      path,
-			Container:   container,
-			Destination: "/usr/share/lemonldap-ng/portal/htdocs/static/common/apps/",
-		})
-	}
-	return out
+	return nil // Icons are shared by a read-only deployment asset mount.
 }
 func cloneMap(in map[string]string) map[string]string {
 	out := map[string]string{}
@@ -228,12 +223,6 @@ func moduleIdentity(prefix string, e map[string]string, _ string) error {
 	e["DB_POST"] = e[prefix+"_DB_PORT"]
 	e["DB_USER"] = e[prefix+"_DB_USERNAME"]
 	e["DB_PASSWORD"] = e[prefix+"_DB_PASSWORD"]
-	for _, app := range splitCSV(e["APPS_LIST"]) {
-		key := "APPS_LIST__" + strings.ToUpper(app) + "__LOGO_PATH"
-		if e[key] != "" {
-			e["APPS_LIST__"+strings.ToUpper(app)+"__LOGO_NAME"] = filepath.Base(e[key])
-		}
-	}
 	return applyClientRegistrations(e)
 }
 func defaultValue(v, d string) string {

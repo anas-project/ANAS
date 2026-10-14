@@ -30,6 +30,7 @@
 | --- | --- | --- | --- |
 | [Docker 与 Podman 双环境兼容性](./docker-podman-compatibility.md) | Compose/API 复用、rootful 范围、引擎身份与网络阻碍及 PoC 边界 | 2026-10-03 | 2026-10-03 |
 | [Casdoor 应用目录与权限过滤](./casdoor-app-catalog.md) | 固定源码 12 场景实验、默认允许/管理员绕过、元数据与页面缺口 | 2026-10-03 | 2026-10-03 |
+| [用户门户的身份与目录能力](./user-portal-identity-capabilities.md) | Casdoor 当前本人权限、原生配置再认证与联合登出，Samba 改密/最小 ACL/稳定成员操作；门户未实现 | 2026-10-12 | 2026-10-12 |
 | [Casdoor 目录主体标识符可行性](./casdoor-directory-subject.md) | 固定源码配置边界、统一锚点候选补丁与尚未完成的 Consumer/E2E 条件 | 2026-10-03 | 2026-10-03 |
 | [LLNG Passkey/WebAuthn 与 Samba 共享边界](./llng-passkey-webauthn-samba-sharing.md) | LLNG 分阶段启用、凭据存储与多 IAM 共享边界 | 2026-08-21 | 2026-08-21 |
 | [Immich 接入可行性](./immich-module-integration.md) | 前稿上游证据、本地复用基础；专属 Redis、OIDC-only 与下一版本通用资源方案的决策边界 | 2026-10-02 | 2026-10-01（沿用前稿；本次仅更新本地设计） |

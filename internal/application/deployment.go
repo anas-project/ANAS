@@ -85,6 +85,7 @@ type PlanResult struct {
 	Workspace                  string                           `json:"workspace"`
 	ConfigValidator            string                           `json:"config_validator"`
 	Digest                     string                           `json:"digest"`
+	ApplicationCatalogDigest   string                           `json:"application_catalog_digest,omitempty"`
 	Modules                    []string                         `json:"modules"`
 	IAM                        PlanIAM                          `json:"iam"`
 	ModulePlans                map[string]map[string]string     `json:"module_plans"`

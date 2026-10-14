@@ -1,5 +1,15 @@
 # ANAS Refactor Test Environment
 
+Authentik was removed on 2026-10-10. Current executable fixtures use Casdoor (primary) or LLNG. Historical Authentik evidence remains in dated plans; no result is reassigned to Casdoor. Generic fixture changes here require separate real-host reruns before acceptance.
+
+Fixtures retaining NetBird are currently blocked at render: both remaining IAM
+providers reject its ordinary-user URL projection of the directory identity anchor
+(`DIRKEY-R-013`). Coverage and the rejection remain in place. The fixed
+`image-release/46-2` upgrade-fixture gate also cannot import a Casdoor configuration
+because that source baseline has no Casdoor Module. These are failures, not waived
+or passing suites; see the [application catalog plan](../dev-docs/plans/app-catalog.md).
+
+
 This directory defines an isolated test environment for validating the Go
 refactor before replacing the current launcher.
 
@@ -124,7 +134,7 @@ applicable consumers for that provider/protocol:
 
 ```sh
 ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
-ANAS_TEST_IAM_PROVIDER=authentik \
+ANAS_TEST_IAM_PROVIDER=llng \
 ANAS_TEST_IAM_PROTOCOL=oidc \
 ANAS_TEST_USERNAME='<fixture-user>' \
 ANAS_TEST_PASSWORD="$(< /path/to/0600-password-file)" \
@@ -243,22 +253,6 @@ Do not commit `.anas-test/` or generated secrets.
      ./test-env/scripts/server-anchor-e2e.sh
    ```
 
-9. Directory event journal runtime test
-
-   Against a running deployment carrying both samba_dc and authentik, this
-   reproduces the stale-sync failure on purpose before proving the fix: with
-   the watcher stopped, a group membership written to AD stays invisible to
-   authentik and no sync runs; with the watcher running, the same change
-   converges in seconds without waiting for the schedule. It also covers noise
-   rejection, burst debouncing into a single sync, and cursor durability across
-   a watcher restart.
-
-   ```sh
-   DOCKER_HOST=unix:///run/anas-anchor-docker.sock \
-   ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
-     ./test-env/scripts/server-directory-events-e2e.sh
-   ```
-
 10. Casdoor directory event subscription runtime test
 
     Against an isolated deployment rendered from
@@ -321,7 +315,7 @@ Do not commit `.anas-test/` or generated secrets.
 
 11. Database resource hot-add test
 
-    Applies a PostgreSQL/authentik baseline, then adds Nextcloud. It proves the
+    Applies a PostgreSQL/Casdoor baseline, then adds Nextcloud. It proves the
     runner creates a dedicated `nextcloud` role and database through the
     one-shot provider operation without recreating PostgreSQL, and that an
     idempotent re-apply recreates neither PostgreSQL nor Nextcloud.
@@ -400,25 +394,6 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-lam-admins-e2e.sh
     ```
 
-15. Authentik OIDC application login runtime test
-
-    Against `server-identity-app-e2e.yml`, this drives the real Authentik
-    identification, password, application authorization, authorization-code
-    callback, and application session flows for both Nextcloud and
-    MeshCentral. It also verifies that Nextcloud reused its LDAP user and that
-    MeshCentral received the directory identity anchor and site-admin group.
-
-    ```sh
-    ANAS_TEST_PASSWORD='<directory-admin-password>' \
-    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
-    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
-      ./test-env/scripts/server-authentik-oidc-login-e2e.sh
-    ```
-
-    `server-authentik-nextcloud-login-e2e.sh` remains the explicit Nextcloud
-    SAML-fallback test and must be run against a deployment whose
-    `nextcloud.iam_protocol` is `saml`.
-
 16. Samba AD application-authorization matrices (run separately per IAM)
 
     These are the release-gating login tests. Neither test creates an IAM-local
@@ -430,19 +405,11 @@ Do not commit `.anas-test/` or generated secrets.
     compare the resulting user IDs/display names/identity anchors, and validate
     every registered application's generic env, provider translation, and app
     runtime binding. They retain the original Nextcloud cookie after IAM logout:
-    both providers cover browser logout, and Authentik additionally deletes an
-    authenticated session administratively to prove back-channel revocation.
+    the LLNG matrix covers browser logout; Casdoor session revocation uses its
+    separate native protocol probes.
     NetBird is included in the registration/runtime contract;
     its browser-only dashboard callback remains outside this curl-based session
     probe while the module is marked experimental.
-
-    Authentik deployment (`server-identity-app-e2e.yml`):
-
-    ```sh
-    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
-    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
-      ./test-env/scripts/server-authentik-login-matrix-e2e.sh
-    ```
 
     LLNG must use its own deployment and is tested independently with
     `server-identity-app-llng-e2e.yml`:
@@ -484,7 +451,7 @@ Do not commit `.anas-test/` or generated secrets.
     password-change endpoints. They verify provider policy/guidance state,
     minimum-length and confirmation preflight, AD complexity handling, a
     successful Samba writeback (`pwdLastSet` changes and the new credential
-    authenticates), safe user error mapping, and cleanup. The Authentik case also
+    authenticates), safe user error mapping, and cleanup. The retired Authentik case historically also
     requires the synchronized user's local password to remain unusable and
     probes every safe LDAP error category without exposing its diagnostic and
     verifies that history/minimum-age values remain explicitly guidance-only.
@@ -504,14 +471,6 @@ Do not commit `.anas-test/` or generated secrets.
     A trap restores the deployed value and removes the account. Never run them
     against a production domain.
 
-    Authentik deployment (`server-identity-app-e2e.yml`):
-
-    ```sh
-    ANAS_TEST_DOCKER_SOCKET=/run/anas-anchor-docker.sock \
-    ANAS_TEST_CONTAINER_PREFIX=anas_anchor_ \
-      ./test-env/scripts/server-authentik-password-policy-e2e.sh
-    ```
-
     LLNG deployment (`server-llng-password-policy-e2e.yml`):
 
     ```sh
@@ -529,7 +488,7 @@ Do not commit `.anas-test/` or generated secrets.
     existing IAM login matrix. The LLNG fixture also includes Eturnal so one
     fresh first activation covers the current TURN credential barrier:
 
-    - `server-domain-separation-authentik-e2e.yml` uses
+    - `server-domain-separation-llng-ad-zone-e2e.yml` uses
       `BASE_DOMAIN=nas.test.example`, `SAMBA_DC_DOMAIN=test.example`, and
       resolves `auto` to `ad_zone`.
     - `server-domain-separation-llng-e2e.yml` uses
@@ -540,7 +499,7 @@ Do not commit `.anas-test/` or generated secrets.
     dedicated test network namespace and isolated Docker socket. Do not reuse a
     workspace or seed it with a historical lock/Secret Store: this E2E validates
     only a current-version new installation, not compatibility or migration from
-    an earlier release. From the repository root, create the Authentik daemon
+    an earlier release. From the repository root, create the LLNG AD-zone daemon
     with the fixture's exact network and Docker ranges:
 
     ```sh
@@ -597,13 +556,13 @@ Do not commit `.anas-test/` or generated secrets.
       ./test-env/scripts/server-isolated-docker.sh start
     ```
 
-    After preparing the Authentik test daemon:
+    After preparing the LLNG AD-zone test daemon:
 
     ```sh
     export DOCKER_HOST=unix:///run/anas-domain-auth-e2e-docker.sock
     go run ./cmd/anas init /data/anas-domain-auth-e2e -y
     go run ./cmd/anas config import \
-      test-env/server-domain-separation-authentik-e2e.yml \
+      test-env/server-domain-separation-llng-ad-zone-e2e.yml \
       -w /data/anas-domain-auth-e2e
     go build -o /tmp/anas-domain-e2e ./cmd/anas
     sudo ip netns exec anas-domain-auth-e2e \
@@ -641,7 +600,7 @@ Do not commit `.anas-test/` or generated secrets.
     zone ownership, AD and application A/SRV records, Realm/Base DN/RootDSE,
     Samba FS `net ads testjoin`/`wbinfo -t`/`kinit`, LDAPS service-alias
     hostname and chain verification, service-account bind, Samba FS AD DNS
-    registration, Nextcloud cron CA installation, Authentik worker health and
+    registration, Nextcloud cron CA installation, LLNG signing-key projection and
     LDAP trust-bundle visibility, and the deployed LAM, Nextcloud, and IAM
     directory/Web split. For the LLNG fixture, the probe additionally verifies
     that both private-key projections reached the live LLNG config and that
@@ -653,7 +612,7 @@ Do not commit `.anas-test/` or generated secrets.
     ```sh
     ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-auth-e2e-docker.sock \
       ./test-env/scripts/server-domain-separation-e2e.sh \
-      authentik-ad-zone contracts
+      llng-ad-zone contracts
 
     ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-llng-e2e-docker.sock \
       ./test-env/scripts/server-domain-separation-e2e.sh \
@@ -670,7 +629,7 @@ Do not commit `.anas-test/` or generated secrets.
     ANAS_TEST_WORKSPACE=/data/anas-domain-auth-e2e \
     ANAS_TEST_DOCKER_SOCKET=/run/anas-domain-auth-e2e-docker.sock \
       ./test-env/scripts/server-domain-separation-e2e.sh \
-      authentik-ad-zone full
+      llng-ad-zone full
     ```
 
     Override `ANAS_TEST_CONTAINER_PREFIX` and `ANAS_TEST_ENTRY_IP` only when the
@@ -745,20 +704,18 @@ Do not commit `.anas-test/` or generated secrets.
     accepts the `ANAS_TEST_*_REGISTRY`, package mirror, GOPROXY, and GitHub
     download-proxy variables matching the Vikunja Dockerfile so cross-builds
     use the same configured sources as the deployed image. Run
-    `server-vikunja-oidc-e2e.sh authentik` or `server-vikunja-oidc-e2e.sh llng`
+    `server-vikunja-oidc-e2e.sh llng`
     for the provider-specific curl authorization-code matrix. The real-browser
     release gates are separate and must also pass:
 
     ```sh
-    npm run e2e:vikunja-authentik-matrix-browser
     npm run e2e:vikunja-llng-browser
     ```
 
-    Both browser suites use five isolated contexts for direct `APP_vikunja`,
+    The retained LLNG browser suite use five isolated contexts for direct `APP_vikunja`,
     `APP_all`, `Admins`, no-application-group, and disabled-directory-user
     cases. They disable screenshot, trace, and video artifacts and write only a
-    sanitized mode-0600 JSON report. Use the OIDC script's `setup-authentik`
-    or `setup` mode to create disposable accounts without pre-creating JIT
+    sanitized mode-0600 JSON report. Use the OIDC script's `setup` mode to create disposable accounts without pre-creating JIT
     users, then use `cleanup` with the same suffix after the browser run.
 
     `upgrade` makes the fixed-version boundary reproducible. It first verifies

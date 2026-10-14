@@ -134,11 +134,6 @@ func calculate(e, secrets map[string]string) error {
 	} {
 		e[clientPrefix+key] = value
 	}
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "immich")
-	e["APPS_LIST__IMMICH__NAME"] = "Immich"
-	e["APPS_LIST__IMMICH__DESC"] = "Photo and video library"
-	e["APPS_LIST__IMMICH__URI"] = e["IMMICH_DOMAIN_FULL"]
-	e["APPS_LIST__IMMICH__ALLOW_GROUPS"] = allowGroups
 	return nil
 }
 func render(e map[string]string) (string, error) {
@@ -196,15 +191,4 @@ func changed(old, cur map[string]string) map[string]string {
 		}
 	}
 	return out
-}
-func addCSV(value, item string) string {
-	for _, v := range strings.Split(value, ",") {
-		if strings.TrimSpace(v) == item {
-			return value
-		}
-	}
-	if value == "" {
-		return item
-	}
-	return value + "," + item
 }

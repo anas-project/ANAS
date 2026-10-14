@@ -71,7 +71,7 @@ func TestRenderRouteMatchesTraefikDeclaredRoute(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, middleware := range []string{"", "authentik-forward-auth@file"} {
+	for _, middleware := range []string{"", "gateway-forward-auth@file"} {
 		a := base.Clone()
 		env := []string{"PATH=" + os.Getenv("PATH"), "ANAS_CONFIG_DIR=" + t.TempDir(), "ANAS_TRAEFIK_BINARY=/usr/bin/true",
 			"LEGO_CERT_NAME=example.test.crt", "LEGO_KEY_NAME=example.test.key",
@@ -79,7 +79,7 @@ func TestRenderRouteMatchesTraefikDeclaredRoute(t *testing.T) {
 			"ANAS_TRAEFIK_ROUTE__COMPUTE__URL=http://10.101.0.17:7000"}
 		if middleware != "" {
 			a.Policy.Auth = "forward_auth"
-			a.ForwardAuth = &ForwardAuth{Provider: "authentik", Middleware: middleware}
+			a.ForwardAuth = &ForwardAuth{Provider: "gateway", Middleware: middleware}
 			env = append(env, "ANAS_TRAEFIK_ROUTE__COMPUTE__MIDDLEWARES="+middleware)
 		}
 		ours, err := RenderRoute(a, host, "10.101.0.17", 7000)

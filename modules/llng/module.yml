@@ -11,6 +11,36 @@ title: LemonLDAP::NG
 description: SSO portal, SAML/OIDC identity provider, and app launcher.
 category: identity
 status: developing
+applications:
+  - name: llng-admin
+    display_name:
+      zh-CN: "LemonLDAP::NG Manager"
+      en: "LemonLDAP::NG Manager"
+    url_from: LLNG_MANAGER_DOMAIN_FULL
+    summary:
+      zh-CN: "身份与门户管理"
+      en: "Identity and portal administration"
+    description:
+      zh-CN: "身份与门户管理。"
+      en: "Identity and portal administration."
+    documentation_url:
+      zh-CN: https://lemonldap-ng.org/documentation/
+      en: https://lemonldap-ng.org/documentation/
+    weight: 100
+    kind: admin
+    categories:
+      - identity
+    access:
+      mode: native
+      groups_from: SAMBA_DC_ADMIN_GROUP_NAME
+    visibility:
+      mode: access
+application_catalog:
+  consumes: true
+  limitations:
+    - "Catalog content uses deployment language; native UI language switching does not switch application text"
+    - "Default portal template supports one category level; kind and primary category share a label"
+    - "Native menu does not expose the complete category filter, documentation links or icon sizes"
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -77,6 +107,7 @@ config:
   # launcher metadata, and the resolved database backend's real password.
   # Consumers publish these, so they are outside this module's closure.
   consumes:
+    - SAMBA_DC_ADMIN_GROUP_NAME
     # The Compose mount and entrypoint need the shared certificate directory;
     # scoped environments do not inherit runner-owned TLS paths implicitly.
     - ANAS_TLS_CERTS_DIR
@@ -101,7 +132,6 @@ config:
     - ANAS_IDENTITY_OIDC_CLIENTS
     - ANAS_IDENTITY_SAML_CLIENTS
     - ANAS_IAM_CLIENT_*
-    - APPS_LIST*
     - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:
     db_type:

@@ -60,12 +60,12 @@ func main() {
 
 	args := append([]string{}, os.Args[1:]...)
 	args = append(args, trusted...)
-	if err := runProxyBridges(args); err != nil {
+	if err := runProxyBridges(args, peer); err != nil {
 		fatalf("%v", err)
 	}
 }
 
-func runProxyBridges(args []string) error {
+func runProxyBridges(args []string, peer netip.Addr) error {
 	issuer := strings.TrimSpace(os.Getenv("OAUTH2_PROXY_OIDC_ISSUER_URL"))
 	group := strings.TrimSpace(os.Getenv("ANAS_PROXY_PLATFORM_ADMIN_GROUP"))
 	if issuer == "" || group == "" {
@@ -74,8 +74,8 @@ func runProxyBridges(args []string) error {
 	target, _ := url.Parse(oauth2ProxyURL)
 	publicProxy := newOAuth2ReverseProxy(target, "", "")
 	identityProxy := newOAuth2ReverseProxy(target, issuer, group)
-	publicServer := &http.Server{Addr: publicBridgeAddress, Handler: publicProxy, ReadHeaderTimeout: 5 * time.Second}
-	identityServer := &http.Server{Addr: identityBridgeAddress, Handler: identityProxy, ReadHeaderTimeout: 5 * time.Second}
+	publicServer := &http.Server{Addr: publicBridgeAddress, Handler: trustedBridgeHandler(peer, true, publicProxy), ReadHeaderTimeout: 5 * time.Second}
+	identityServer := &http.Server{Addr: identityBridgeAddress, Handler: trustedBridgeHandler(peer, false, identityProxy), ReadHeaderTimeout: 5 * time.Second}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -111,6 +111,22 @@ func runProxyBridges(args []string) error {
 	return serviceErr
 }
 
+// The loopback hop to oauth2-proxy must be trusted, so validate the outer TCP
+// caller before forwarding its headers. Only Traefik and local public readiness
+// checks may reach the bridges; other containers cannot supply redirect headers.
+func trustedBridgeHandler(peer netip.Addr, public bool, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		address, parseErr := netip.ParseAddr(host)
+		localReadiness := public && address.IsLoopback() && r.Method == http.MethodGet && r.URL.Path == "/ping"
+		if err != nil || parseErr != nil || (address.Unmap() != peer.Unmap() && !localReadiness) {
+			http.Error(w, "untrusted proxy", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 var identityResponseHeaders = []string{
 	"X-Anas-Identity-Issuer", "X-Anas-Identity-Subject", "X-Anas-Identity-Role",
 	"X-Anas-Identity-Group", "X-Anas-Identity-Auth-Time", "X-Anas-Identity-Expires-At",
@@ -122,6 +138,9 @@ func newOAuth2ReverseProxy(target *url.URL, expectedIssuer, expectedGroup string
 	director := proxy.Director
 	proxy.Director = func(request *http.Request) {
 		director(request)
+		// Upstream detects forwarded requests by comparing Host with
+		// X-Forwarded-Host. Preserve the latter and name this internal hop.
+		request.Host = target.Host
 		for _, name := range identityResponseHeaders {
 			request.Header.Del(name)
 		}
@@ -247,7 +266,8 @@ func resolveProxyPeer(ctx context.Context, host string, resolver ipResolver, att
 }
 
 func trustedProxyArgs(peer netip.Addr, upstreams string) ([]string, error) {
-	values := []string{netip.PrefixFrom(peer, peer.BitLen()).String()}
+	// oauth2-proxy receives both bridges over its loopback-only listener.
+	values := []string{"127.0.0.1/32", netip.PrefixFrom(peer, peer.BitLen()).String()}
 	for _, raw := range strings.Split(upstreams, ",") {
 		value := strings.TrimSpace(raw)
 		if value == "" {

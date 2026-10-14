@@ -255,12 +255,6 @@ func calcNextcloud(e map[string]string, workdir string, secrets *secretStore) ([
 			return nil, err
 		}
 	}
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "nextcloud")
-	e["APPS_LIST__NEXTCLOUD__NAME"] = defaultValue(e["APPS_LIST__NEXTCLOUD__NAME"], "Nextcloud")
-	e["APPS_LIST__NEXTCLOUD__DESC"] = defaultValue(e["APPS_LIST__NEXTCLOUD__DESC"], "Self hosted file sharing and communication")
-	e["APPS_LIST__NEXTCLOUD__LOGO_PATH"] = defaultValue(e["APPS_LIST__NEXTCLOUD__LOGO_PATH"], filepath.Join(workdir, "assets", "nextcloud.png"))
-	e["APPS_LIST__NEXTCLOUD__URI"] = e["NEXTCLOUD_DOMAIN_FULL"]
-	e["APPS_LIST__NEXTCLOUD__ALLOW_GROUPS"] = allowGroups
 	if e["NEXTCLOUD_TALK_INTERNAL_SECRET"] == "" {
 		v, err := secrets.Ensure("NEXTCLOUD_TALK_INTERNAL_SECRET", func() (string, error) { return randomHexErr(16) })
 		if err != nil {

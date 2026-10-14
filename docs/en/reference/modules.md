@@ -10,7 +10,6 @@ This page is generated from the current Module manifests. The checked-in page an
 | Module | Version | Status | Category | Description |
 | --- | --- | --- | --- | --- |
 | [AI Agent orchestration](/en/reference/modules/ai_agent/) | `0.1.0-r3` | `developing` | `app` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
-| [authentik](/en/reference/modules/authentik/) | `2026.5.6-r16` | `deprecated` | `identity` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [Casdoor](/en/reference/modules/casdoor/) | `3.143.0-r12` | `developing` | `identity` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [Collabora Online](/en/reference/modules/collabora/) | `26.4.2-r7` | `release` | `app` | Online document editing backend for Nextcloud. |
 | [DDNS-GO](/en/reference/modules/ddns_go/) | `6.17.4-r7` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
@@ -32,5 +31,6 @@ This page is generated from the current Module manifests. The checked-in page an
 | [Samba domain controller and DNS](/en/reference/modules/samba_dc/) | `4.23.6-r13` | `release` | `identity` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [Samba file server](/en/reference/modules/samba_fs/) | `4.23.6-r7` | `release` | `storage` | File sharing service joined to the Samba domain. |
 | [Traefik reverse proxy](/en/reference/modules/traefik/) | `3.7.10-r8` | `release` | `network` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [ANAS User Portal](/en/reference/modules/user_portal/) | `0.1.0-r1` | `developing` | `identity` | Authorized applications, personal accounts and delegated directory administration. |
 | [VersityGW S3 gateway](/en/reference/modules/versitygw/) | `1.7.0-r4` | `developing` | `storage` | S3-compatible API backed by a dedicated POSIX directory. |
 | [Vikunja](/en/reference/modules/vikunja/) | `2.4.0-r5` | `developing` | `app` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |

@@ -1,7 +1,7 @@
 modules:
   samba_dc: {}
   postgres: {}
-  authentik: {}
+  casdoor: {}
   nextcloud:
     config:
       talk_enabled: "false"
@@ -9,7 +9,7 @@ modules:
   traefik: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   base_domain: nas.test
   email: admin@nas.test

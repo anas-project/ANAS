@@ -366,8 +366,8 @@ func TestCapabilityGroupsFollowTheEnabledRuntimes(t *testing.T) {
 	}
 }
 
-// The module appends to the deployment-wide list instead of replacing it, the
-// same way an application appends itself to APPS_LIST.
+// The module appends to the deployment-wide list instead of replacing it
+// through its declared aggregate export.
 func TestCapabilityGroupsAppendToWhatOtherModulesPublished(t *testing.T) {
 	env := baseEnv()
 	env["ANAS_IDENTITY_CAPABILITY_GROUPS"] = "nextcloud_admin,ai_agent_execute"

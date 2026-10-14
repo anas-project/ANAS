@@ -92,3 +92,11 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Current limitations
 
 Do not bypass ForwardAuth with a direct upstream port; doing so removes all access control.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

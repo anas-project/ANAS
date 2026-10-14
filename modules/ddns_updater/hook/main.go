@@ -158,6 +158,7 @@ func changed(old, cur map[string]string) map[string]string {
 func calcDDNSUpdater(e map[string]string, _ string, _ *secretStore) error {
 	e["DDNS_UPDATER_DNS_SERVER"] = defaultValue(e["DDNS_UPDATER_DNS_SERVER"], e["DNS_SERVER"])
 	e["DDNS_UPDATER_DOMAIN"] = e["DDNS_UPDATER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["DDNS_UPDATER_APPLICATION_URL"] = "https://" + e["DDNS_UPDATER_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	// IPv6 is a statement of intent, not of fact. Asking for AAAA records on a
 	// host with no IPv6 of its own produces nothing but a permanently unhealthy
 	// container: the updater cannot discover an address it does not have, so it

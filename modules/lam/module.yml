@@ -11,6 +11,31 @@ title: LDAP Account Manager
 description: Web UI for LDAP account administration.
 category: identity
 status: release
+applications:
+  - name: lam-admin
+    display_name:
+      zh-CN: "LDAP Account Manager"
+      en: "LDAP Account Manager"
+    url_from: LAM_APPLICATION_URL
+    summary:
+      zh-CN: "目录账号与组管理"
+      en: "Directory account and group administration"
+    description:
+      zh-CN: "目录账号与组管理。"
+      en: "Directory account and group administration."
+    documentation_url:
+      zh-CN: https://www.ldap-account-manager.org/
+      en: https://www.ldap-account-manager.org/
+    weight: 100
+    kind: admin
+    categories:
+      - identity
+    access:
+      mode: local
+    visibility:
+      mode: subjects
+      any_of:
+        - role: platform_admin
 runtime:
   type: compose
   compose_file: docker-compose.yml

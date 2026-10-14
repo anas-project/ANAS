@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# TEST_CASES: VIK-T-005, VIK-T-006
+# TEST_CASES: VIK-T-006
 set -Eeuo pipefail
 
-# Browser-facing Authentik authorization-code and Vikunja callback E2E. The
+# Browser-facing LLNG authorization-code and Vikunja callback E2E. The
 # script never prints the directory password, authorization code, JWT, or API
 # token. Run it only against the dedicated isolated Docker daemon.
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 source "$script_dir/server-require-isolated-docker.sh"
 
-mode=${1:-authentik}
+mode=${1:-llng}
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_vik_}
 domain=${ANAS_TEST_DOMAIN:-vikunja.test}
@@ -24,7 +24,6 @@ preserve_users=${ANAS_TEST_PRESERVE_USERS:-false}
 secret_file=${ANAS_TEST_SECRET_FILE:-}
 
 dc="${prefix}samba_dc"
-authentik="${prefix}authentik"
 direct_user="vkd${matrix_suffix}"
 all_user="vka${matrix_suffix}"
 admin_user="vkm${matrix_suffix}"
@@ -33,11 +32,11 @@ disabled_user="vkx${matrix_suffix}"
 matrix_users=("$direct_user" "$all_user" "$admin_user" "$denied_user" "$disabled_user")
 
 vikunja_host="tasks.$domain"
-authentik_host="auth.$domain"
+iam_host="auth.$domain"
 vikunja_url="https://$vikunja_host:$entry_port"
 resolve=(
   --resolve "$vikunja_host:$entry_port:$entry_ip"
-  --resolve "$authentik_host:$entry_port:$entry_ip"
+  --resolve "$iam_host:$entry_port:$entry_ip"
 )
 
 workdir=$(mktemp -d)
@@ -121,37 +120,6 @@ database_user_present() {
   esac
 }
 
-wait_authentik_users() {
-  local deadline users_csv
-  users_csv=$(IFS=,; printf '%s' "${matrix_users[*]}")
-  "$docker_cmd" exec "$authentik" ak shell -c \
-    "from authentik.tasks.schedules.models import Schedule; [s.send() for s in Schedule.objects.filter(actor_name='authentik.sources.ldap.tasks.ldap_sync') if getattr(s.rel_obj, 'slug', None) == 'samba-ad']" \
-    >/dev/null 2>&1
-  deadline=$(( $(date +%s) + matrix_timeout ))
-  while [ "$(date +%s)" -lt "$deadline" ]; do
-    if "$docker_cmd" exec "$authentik" ak shell -c \
-      "from authentik.core.models import User, UserSourceConnection; from authentik.sources.ldap.models import LDAPSource; s=LDAPSource.objects.get(slug='samba-ad'); names='$users_csv'.split(','); assert all(UserSourceConnection.objects.filter(source=s,user__username=n).exists() for n in names); assert User.objects.get(username='$direct_user').ak_groups.filter(name='APP_vikunja').exists(); assert User.objects.get(username='$all_user').ak_groups.filter(name='APP_all').exists(); assert User.objects.get(username='$admin_user').ak_groups.filter(name='Admins').exists()" \
-      >/dev/null 2>&1; then
-      printf 'authentik_directory_sync=ready users=%s\n' "${#matrix_users[@]}"
-      return 0
-    fi
-    sleep 3
-  done
-  printf 'Authentik did not synchronize all Vikunja matrix users\n' >&2
-  return 1
-}
-
-flow_api_url() {
-  python3 - "$1" <<'PY'
-import sys
-from urllib.parse import urlencode, urlsplit, urlunsplit
-
-parts = urlsplit(sys.argv[1])
-path = parts.path.replace("/if/flow/", "/api/v3/flows/executor/", 1)
-print(urlunsplit((parts.scheme, parts.netloc, path, urlencode({"query": parts.query}), "")))
-PY
-}
-
 absolute_url() {
   python3 - "$1" "$2" <<'PY'
 import sys
@@ -196,20 +164,6 @@ print(sys.argv[1] + "?" + urlencode(params))
 PY
 }
 
-json_component() {
-  jq -r '.component // empty' "$body"
-}
-
-expect_component() {
-  local want=$1 got
-  got=$(json_component)
-  if [ "$got" != "$want" ]; then
-    jq '{component,type,errors,to}' "$body" >&2 || true
-    printf 'expected Authentik component %s, got %s\n' "$want" "$got" >&2
-    return 1
-  fi
-}
-
 persist_direct_session() {
   local jwt=$1 target_dir
   [ -n "$secret_file" ] || return 0
@@ -225,117 +179,6 @@ persist_direct_session() {
   printf 'session_artifact=stored mode=0600\n'
 }
 
-login_user() {
-  local username=$1 expected=$2 save_session=${3:-false}
-  local state start flow_url api_url authenticated_redirect final authorization_api component
-  local consent_token returned_state code jwt status authorization_status
-
-  rm -f "$cookie_jar" "$headers" "$body" "$callback"
-  printf 'oidc_flow=start user=%s expected=%s\n' "$username" "$expected"
-  state=$(openssl rand -hex 16)
-  start=$(authorize_url "$state")
-  flow_url=$(curl_browser -L -D "$headers" -o "$body" -w '%{url_effective}' "$start")
-  case "$flow_url" in
-    */if/flow/default-authentication-flow/*) ;;
-    *) printf 'authorization did not reach Authentik login flow\n' >&2; return 1 ;;
-  esac
-  printf 'oidc_flow=authentication user=%s\n' "$username"
-
-  api_url=$(flow_api_url "$flow_url")
-  curl_browser -H 'Accept: application/json' -o "$body" "$api_url"
-  expect_component ak-stage-identification
-  curl_browser -L -H 'Accept: application/json' -H 'Content-Type: application/json' \
-    --data "$(jq -cn --arg username "$username" '{uid_field:$username}')" \
-    -D "$headers" -o "$body" "$api_url"
-  printf 'oidc_flow=identification-submitted user=%s\n' "$username"
-  expect_component ak-stage-password
-  curl_browser -L -H 'Accept: application/json' -H 'Content-Type: application/json' \
-    --data "$(jq -cn --arg password "$matrix_password" '{password:$password}')" \
-    -D "$headers" -o "$body" "$api_url"
-  printf 'oidc_flow=password-submitted user=%s\n' "$username"
-
-  if [ "$expected" = auth-denied ]; then
-    test "$(json_component)" = ak-stage-password
-    "$docker_cmd" exec "$authentik" ak shell -c \
-      "from authentik.events.models import Event; assert Event.objects.filter(action='login_failed', context__icontains='\"username\": \"$username\"').exists()" \
-      >/dev/null 2>&1
-    printf 'oidc_login=denied user=%s reason=directory-authentication\n' "$username"
-    return 0
-  fi
-  expect_component xak-flow-redirect
-
-  authenticated_redirect=$(absolute_url "$api_url" "$(jq -r '.to' "$body")")
-  final=$(curl_browser -L -D "$headers" -o "$body" -w '%{url_effective}' "$authenticated_redirect")
-  authorization_status=$(awk '/^HTTP\// { code=$2 } END { print code }' "$headers")
-  printf 'oidc_flow=authorization user=%s final_path=%s status=%s\n' \
-    "$username" "$(safe_url_path "$final")" "$authorization_status"
-  if [ "$expected" = policy-denied ] && {
-    [ "$authorization_status" = 403 ] || [ "$authorization_status" = 404 ] ||
-    grep -Eqi 'access[ -]denied|permission[ -]denied|not authorized|ak-stage-access-denied' "$body"
-  }; then
-    printf 'oidc_login=denied user=%s reason=application-group-policy\n' "$username"
-    return 0
-  fi
-  if [[ "$final" == */if/flow/* ]]; then
-    authorization_api=$(flow_api_url "$final")
-    curl_browser -H 'Accept: application/json' -o "$body" "$authorization_api"
-    component=$(json_component)
-    if [ "$component" = ak-stage-access-denied ]; then
-      if [ "$expected" = policy-denied ]; then
-        printf 'oidc_login=denied user=%s reason=application-group-policy\n' "$username"
-        return 0
-      fi
-      printf 'allowed user was denied by Authentik application policy\n' >&2
-      return 1
-    fi
-    if [ "$component" = ak-stage-consent ]; then
-      consent_token=$(jq -r '.token' "$body")
-      curl_browser -H 'Accept: application/json' -H 'Content-Type: application/json' \
-        --data "$(jq -cn --arg token "$consent_token" '{component:"ak-stage-consent",token:$token}')" \
-        -o "$body" "$authorization_api"
-    fi
-    expect_component xak-flow-redirect
-    final=$(curl_browser -L -D "$headers" -o "$body" -w '%{url_effective}' \
-      "$(absolute_url "$authorization_api" "$(jq -r '.to' "$body")")")
-  fi
-
-  if [ "$expected" = policy-denied ]; then
-    code=$(query_value "$final" code)
-    if [ -z "$code" ]; then
-      printf 'policy denial ended without an authorization code but lacked an explicit denial marker\n' >&2
-    else
-      printf 'user expected policy denial but received an authorization code\n' >&2
-    fi
-    return 1
-  fi
-  code=$(query_value "$final" code)
-  returned_state=$(query_value "$final" state)
-  test -n "$code"
-  test "$returned_state" = "$state"
-
-  : >"$callback"
-  chmod 0600 "$callback"
-  status=$(curl_browser -o "$callback" -w '%{http_code}' \
-    -H 'Content-Type: application/json' \
-    --data "$(jq -cn --arg code "$code" --arg redirect "$vikunja_url/auth/openid/anas" \
-      '{code:$code,scope:"openid profile email",redirect_url:$redirect}')" \
-    "$vikunja_url/api/v1/auth/openid/anas/callback")
-  if [ "$status" != 200 ]; then
-    printf 'Vikunja OIDC callback returned HTTP %s\n' "$status" >&2
-    jq '{code,message}' "$callback" >&2 || true
-    return 1
-  fi
-  jwt=$(jq -r '.token // empty' "$callback")
-  test -n "$jwt"
-  status=$(curl_browser -o "$body" -w '%{http_code}' \
-    -H "Authorization: Bearer $jwt" "$vikunja_url/api/v1/user")
-  test "$status" = 200
-  test "$(jq -r '.username' "$body")" = "$username"
-  database_user_present "$username"
-  [ "$save_session" = true ] && persist_direct_session "$jwt"
-  printf 'oidc_login=allowed user=%s jit_user=present state=verified callback=api\n' "$username"
-}
-
 llng_login_user() {
   local username=$1 expected=$2 save_session=${3:-false}
   local state start portal_url form_action form_payload final returned_state code jwt status
@@ -346,7 +189,7 @@ llng_login_user() {
   start=$(authorize_url "$state")
   portal_url=$(curl_browser -L -D "$headers" -o "$body" -w '%{url_effective}' "$start")
   case "$portal_url" in
-    "https://$authentik_host:$entry_port"/*) ;;
+    "https://$iam_host:$entry_port"/*) ;;
     *) printf 'authorization did not reach the LLNG portal: %s\n' "$(safe_url_path "$portal_url")" >&2; return 1 ;;
   esac
 
@@ -390,7 +233,7 @@ PY
 
   if [ "$expected" = auth-denied ]; then
     case "$final" in
-      "https://$authentik_host:$entry_port"/*) ;;
+      "https://$iam_host:$entry_port"/*) ;;
       *) printf 'disabled user unexpectedly left the LLNG portal\n' >&2; return 1 ;;
     esac
     grep -Eqi 'error|denied|invalid|failed|authentication' "$body"
@@ -404,7 +247,7 @@ PY
       return 1
     fi
     case "$final" in
-      "https://$authentik_host:$entry_port"/*) ;;
+      "https://$iam_host:$entry_port"/*) ;;
       *) printf 'LLNG policy denial ended outside the portal: %s\n' "$(safe_url_path "$final")" >&2; return 1 ;;
     esac
     grep -Eqi 'denied|forbidden|not allowed|error' "$body"
@@ -447,33 +290,11 @@ case "$mode" in
     create_users
     printf 'Vikunja OIDC matrix users are ready suffix=%s\n' "$matrix_suffix"
     ;;
-  setup-authentik)
-    : "${ANAS_TEST_MATRIX_SUFFIX:?ANAS_TEST_MATRIX_SUFFIX is required for setup-authentik mode}"
-    : "${ANAS_TEST_MATRIX_PASSWORD:?ANAS_TEST_MATRIX_PASSWORD is required for setup-authentik mode}"
-    preserve_users=true
-    create_users
-    wait_authentik_users
-    printf 'Vikunja Authentik matrix users are synchronized suffix=%s\n' "$matrix_suffix"
-    ;;
   cleanup)
     : "${ANAS_TEST_MATRIX_SUFFIX:?ANAS_TEST_MATRIX_SUFFIX is required for cleanup mode}"
     preserve_users=false
     cleanup_users
     printf 'Vikunja OIDC matrix users removed suffix=%s\n' "$matrix_suffix"
-    ;;
-  authentik)
-    create_users
-    wait_authentik_users
-    printf '\n== direct APP_vikunja ==\n'
-    login_user "$direct_user" allowed true
-    printf '\n== APP_all ==\n'
-    login_user "$all_user" allowed
-    printf '\n== Admins ==\n'
-    login_user "$admin_user" allowed
-    printf '\n== enabled user without application group ==\n'
-    login_user "$denied_user" policy-denied
-    printf '\n== disabled directory user ==\n'
-    login_user "$disabled_user" auth-denied
     ;;
   llng)
     create_users
@@ -493,10 +314,10 @@ case "$mode" in
     : "${ANAS_TEST_PASSWORD:?ANAS_TEST_PASSWORD is required for refresh mode}"
     matrix_password=$ANAS_TEST_PASSWORD
     direct_user=$ANAS_TEST_USERNAME
-    login_user "$direct_user" allowed true
+    llng_login_user "$direct_user" allowed true
     ;;
   *)
-    printf 'usage: %s {setup|setup-authentik|cleanup|authentik|llng|refresh}\n' "$0" >&2
+    printf 'usage: %s {setup|cleanup|llng|refresh}\n' "$0" >&2
     exit 2
     ;;
 esac

@@ -1,0 +1,298 @@
+--- a/controllers/account.go
++++ b/controllers/account.go
+@@ -368,7 +368,7 @@
+ 			return
+ 		}
+ 
+-		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage())
++		code, err := object.GetOAuthCode(userId, clientId, "", "password", responseType, redirectUri, scope, state, nonce, codeChallenge, "", c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage(), object.AnasAuthenticationTime(user.Id, c.GetSession("anas_auth_subject"), c.GetSession("anas_auth_time")))
+ 		if err != nil {
+ 			c.ResponseError(err.Error(), nil)
+ 			return
+--- a/controllers/auth.go
++++ b/controllers/auth.go
+@@ -57,7 +57,7 @@
+ }
+ 
+ // HandleLoggedIn ...
+-func (c *ApiController) HandleLoggedIn(application *object.Application, user *object.User, form *form.AuthForm) (resp *Response) {
++func (c *ApiController) HandleLoggedIn(application *object.Application, user *object.User, form *form.AuthForm, authenticatedAt ...int64) (resp *Response) {
+ 	if user.IsForbidden {
+ 		c.ResponseError(c.T("check:The user is forbidden to sign in, please contact the administrator"))
+ 		return
+@@ -146,6 +146,12 @@
+ 			}
+ 
+ 		}
++	}
++
++	// Only credential verification and completed MFA pass this server-side value.
++	if len(authenticatedAt) == 1 {
++		c.SetSession("anas_auth_subject", user.Id)
++		c.SetSession("anas_auth_time", authenticatedAt[0])
+ 	}
+ 
+ 	if form.Type == ResponseTypeLogin {
+@@ -184,7 +190,7 @@
+ 			resp = &Response{Status: "ok", Data: map[string]bool{"required": true}}
+ 			resp.Data3 = user.NeedUpdatePassword
+ 		} else {
+-			code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, resource, c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage())
++			code, err := object.GetOAuthCode(userId, clientId, form.Provider, form.SigninMethod, responseType, redirectUri, scope, state, nonce, codeChallenge, resource, c.Ctx.Input.CruSession.SessionID(context.Background()), c.Ctx.Request.Host, c.GetAcceptLanguage(), object.AnasAuthenticationTime(user.Id, c.GetSession("anas_auth_subject"), c.GetSession("anas_auth_time")))
+ 			if err != nil {
+ 				c.ResponseError(err.Error(), nil)
+ 				return
+@@ -822,7 +828,7 @@
+ 				return
+ 			}
+ 
+-			resp = c.HandleLoggedIn(application, user, &authForm)
++			resp = c.HandleLoggedIn(application, user, &authForm, time.Now().Unix())
+ 
+ 			c.Ctx.Input.SetParam("recordUserId", user.GetId())
+ 		}
+@@ -1252,7 +1258,7 @@
+ 			return
+ 		}
+ 
+-		resp = c.HandleLoggedIn(application, user, &authForm)
++		resp = c.HandleLoggedIn(application, user, &authForm, time.Now().Unix())
+ 		c.setMfaUserSession("")
+ 
+ 		c.Ctx.Input.SetParam("recordUserId", user.GetId())
+--- a/controllers/consent.go
++++ b/controllers/consent.go
+@@ -218,6 +218,7 @@
+ 		c.Ctx.Input.CruSession.SessionID(context.Background()),
+ 		c.Ctx.Request.Host,
+ 		c.GetAcceptLanguage(),
++		object.AnasAuthenticationTime(userObj.Id, c.GetSession("anas_auth_subject"), c.GetSession("anas_auth_time")),
+ 	)
+ 	if err != nil {
+ 		c.ResponseError(err.Error())
+--- /dev/null
++++ b/object/anas_auth_time.go
+@@ -0,0 +1,24 @@
++package object
++
++import "time"
++
++// A Beego session value is accepted only for the immutable Casdoor user ID that set it.
++// Missing older sessions require a fresh login; issuance time is not authentication time.
++func AnasAuthenticationTime(userID string, subject, value interface{}) int64 {
++	owner, ok := subject.(string)
++	if !ok || owner == "" || owner != userID {
++		return 0
++	}
++	timestamp, ok := value.(int64)
++	if !ok {
++		return 0
++	}
++	return anasTokenAuthenticationTime([]int64{timestamp})
++}
++
++func anasTokenAuthenticationTime(values []int64) int64 {
++	if len(values) != 1 || values[0] <= 0 || values[0] > time.Now().Unix() {
++		return 0
++	}
++	return values[0]
++}
+--- /dev/null
++++ b/object/anas_auth_time_test.go
+@@ -0,0 +1,42 @@
++package object
++
++import (
++	"testing"
++	"time"
++)
++
++func TestAnasAuthenticationTimeRequiresBoundVerifiedSession(t *testing.T) {
++	now := time.Now().Unix()
++	for _, tc := range []struct {
++		subject, value interface{}
++		expected       int64
++	}{
++		{"alice-id", now, now}, {"replacement-id", now, 0}, {nil, now, 0},
++		{"alice-id", "1234", 0}, {"alice-id", int64(0), 0},
++		{"alice-id", now + 3600, 0},
++	} {
++		if actual := AnasAuthenticationTime("alice-id", tc.subject, tc.value); actual != tc.expected {
++			t.Fatalf("authentication time = %d, expected %d", actual, tc.expected)
++		}
++	}
++}
++
++func TestAnasAuthenticationTimeCannotBeReplacedByCustomAttributes(t *testing.T) {
++	original := time.Now().Add(-time.Hour).Unix()
++	user := &User{Owner: "anas", Properties: map[string]string{"fake": "9999999999"}}
++	attributes := []*JwtItem{{Name: "auth_time", Category: "Existing Field", Value: "Properties.fake", Type: "String"}}
++	for _, timestamp := range []int64{original, 0} {
++		claims := Claims{User: user, AuthTime: timestamp}
++		custom := getClaimsCustom(claims, nil, attributes)
++		if timestamp == 0 {
++			if _, exists := custom["auth_time"]; exists {
++				t.Fatal("unverified authentication time was emitted")
++			}
++		} else if custom["auth_time"] != original {
++			t.Fatal("custom fields replaced original authentication time")
++		}
++		if getShortClaims(claims).AuthTime != timestamp || getClaimsWithoutThirdIdp(claims).AuthTime != timestamp || getStandardClaims(claims).AuthTime != timestamp {
++			t.Fatal("a token format dropped the original authentication time")
++		}
++	}
++}
+--- a/object/token_jwt.go
++++ b/object/token_jwt.go
+@@ -30,6 +30,7 @@
+ 	TokenType string `json:"tokenType,omitempty"`
+ 	Nonce     string `json:"nonce,omitempty"`
+ 	Sid       string `json:"sid,omitempty"`
++	AuthTime  int64  `json:"auth_time,omitempty"`
+ 	Tag       string `json:"tag"`
+ 	Scope     string `json:"scope,omitempty"`
+ 	// the `azp` (Authorized Party) claim. Optional. See https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+@@ -157,6 +158,7 @@
+ 	TokenType string `json:"tokenType,omitempty"`
+ 	Nonce     string `json:"nonce,omitempty"`
+ 	Sid       string `json:"sid,omitempty"`
++	AuthTime  int64  `json:"auth_time,omitempty"`
+ 	Scope     string `json:"scope,omitempty"`
+ 	Azp       string `json:"azp,omitempty"`
+ 	Provider  string `json:"provider,omitempty"`
+@@ -179,6 +181,7 @@
+ 	TokenType string `json:"tokenType,omitempty"`
+ 	Nonce     string `json:"nonce,omitempty"`
+ 	Sid       string `json:"sid,omitempty"`
++	AuthTime  int64  `json:"auth_time,omitempty"`
+ 	Tag       string `json:"tag"`
+ 	Scope     string `json:"scope,omitempty"`
+ 	Azp       string `json:"azp,omitempty"`
+@@ -314,6 +317,7 @@
+ 		TokenType:        claims.TokenType,
+ 		Nonce:            claims.Nonce,
+ 		Sid:              claims.Sid,
++		AuthTime:         claims.AuthTime,
+ 		Scope:            claims.Scope,
+ 		RegisteredClaims: claims.RegisteredClaims,
+ 		Azp:              claims.Azp,
+@@ -329,6 +333,7 @@
+ 		TokenType:           claims.TokenType,
+ 		Nonce:               claims.Nonce,
+ 		Sid:                 claims.Sid,
++		AuthTime:            claims.AuthTime,
+ 		Tag:                 claims.Tag,
+ 		Scope:               claims.Scope,
+ 		RegisteredClaims:    claims.RegisteredClaims,
+@@ -503,6 +508,12 @@
+ 		res[item.Name] = value
+ 	}
+ 
++	// A custom attribute cannot invent or overwrite credential authentication time.
++	delete(res, "auth_time")
++	if claims.AuthTime > 0 {
++		res["auth_time"] = claims.AuthTime
++	}
++
+ 	// Token attributes and selected properties must not replace the directory subject.
+ 	if claims.User.Owner == "anas" {
+ 		res["sub"] = claims.Subject
+@@ -536,7 +547,7 @@
+ 	return generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, "")
+ }
+ 
+-func generateJwtTokenWithSession(application *Application, user *User, provider string, signinMethod string, nonce string, scope string, resource string, host string, sessionId string) (string, string, string, error) {
++func generateJwtTokenWithSession(application *Application, user *User, provider string, signinMethod string, nonce string, scope string, resource string, host string, sessionId string, authenticatedAt ...int64) (string, string, string, error) {
+ 	subject, err := getAnasSubject(user)
+ 	if err != nil {
+ 		return "", "", "", err
+@@ -568,6 +579,7 @@
+ 		TokenType: "access-token",
+ 		Nonce:     nonce,
+ 		Sid:       sessionId,
++		AuthTime:  anasTokenAuthenticationTime(authenticatedAt),
+ 		// FIXME: A workaround for custom claim by reusing `tag` in user info
+ 		Tag:          user.Tag,
+ 		Scope:        scope,
+--- a/object/token_oauth_util.go
++++ b/object/token_oauth_util.go
+@@ -299,7 +299,7 @@
+ 	return "", application, nil
+ }
+ 
+-func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, resource string, sessionId string, host string, lang string) (*Code, error) {
++func GetOAuthCode(userId string, clientId string, provider string, signinMethod string, responseType string, redirectUri string, scope string, state string, nonce string, challenge string, resource string, sessionId string, host string, lang string, authenticatedAt ...int64) (*Code, error) {
+ 	if strings.HasPrefix(userId, "anas/") {
+ 		anasDirectoryMutex.Lock()
+ 		defer anasDirectoryMutex.Unlock()
+@@ -370,7 +370,7 @@
+ 	if user.Owner == "anas" && sessionId != "" {
+ 		oidcSessionId = util.GenerateId()
+ 	}
+-	accessToken, refreshToken, tokenName, err := generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, oidcSessionId)
++	accessToken, refreshToken, tokenName, err := generateJwtTokenWithSession(application, user, provider, signinMethod, nonce, scope, resource, host, oidcSessionId, authenticatedAt...)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -478,6 +478,7 @@
+ 	}
+ 
+ 	var oldTokenScope, oldSessionId, oldSubject string
++	var originalAuthTime int64
+ 	if application.TokenFormat == "JWT-Standard" {
+ 		oldToken, err := ParseStandardJwtToken(refreshToken, cert)
+ 		if err != nil {
+@@ -488,6 +489,7 @@
+ 		}
+ 		oldTokenScope = oldToken.Scope
+ 		oldSessionId = oldToken.Sid
++		originalAuthTime = oldToken.AuthTime
+ 		oldSubject = oldToken.Subject
+ 	} else {
+ 		oldToken, err := ParseJwtToken(refreshToken, cert)
+@@ -499,6 +501,7 @@
+ 		}
+ 		oldTokenScope = oldToken.Scope
+ 		oldSessionId = oldToken.Sid
++		originalAuthTime = oldToken.AuthTime
+ 		oldSubject = oldToken.Subject
+ 	}
+ 
+@@ -548,7 +551,7 @@
+ 			return &TokenError{Error: InvalidGrant, ErrorDescription: "application access has been revoked"}, nil
+ 		}
+ 	}
+-	newAccessToken, newRefreshToken, tokenName, err := generateJwtTokenWithSession(application, user, "", "", "", scope, "", host, oldSessionId)
++	newAccessToken, newRefreshToken, tokenName, err := generateJwtTokenWithSession(application, user, "", "", "", scope, "", host, oldSessionId, originalAuthTime)
+ 	if err != nil {
+ 		return &TokenError{
+ 			Error:            EndpointError,
+--- a/object/token_standard_jwt.go
++++ b/object/token_standard_jwt.go
+@@ -31,6 +31,7 @@
+ 	TokenType           string      `json:"tokenType,omitempty"`
+ 	Nonce               string      `json:"nonce,omitempty"`
+ 	Sid                 string      `json:"sid,omitempty"`
++	AuthTime            int64       `json:"auth_time,omitempty"`
+ 	Scope               string      `json:"scope,omitempty"`
+ 	Address             OIDCAddress `json:"address,omitempty"`
+ 	Azp                 string      `json:"azp,omitempty"`
+@@ -54,6 +55,7 @@
+ 		TokenType:        claims.TokenType,
+ 		Nonce:            claims.Nonce,
+ 		Sid:              claims.Sid,
++		AuthTime:         claims.AuthTime,
+ 		Scope:            claims.Scope,
+ 		RegisteredClaims: claims.RegisteredClaims,
+ 		Azp:              claims.Azp,
+--- a/routers/static_filter.go
++++ b/routers/static_filter.go
+@@ -122,7 +122,7 @@
+ 		return "", nil
+ 	}
+ 
+-	code, err := object.GetOAuthCode(userId, clientId, "", "autoSignin", responseType, redirectUri, scope, state, nonce, codeChallenge, resource, ctx.Input.CruSession.SessionID(stdcontext.Background()), ctx.Request.Host, getAcceptLanguage(ctx))
++	code, err := object.GetOAuthCode(userId, clientId, "", "autoSignin", responseType, redirectUri, scope, state, nonce, codeChallenge, resource, ctx.Input.CruSession.SessionID(stdcontext.Background()), ctx.Request.Host, getAcceptLanguage(ctx), object.AnasAuthenticationTime(user.Id, ctx.Input.Session("anas_auth_subject"), ctx.Input.Session("anas_auth_time")))
+ 	if err != nil {
+ 		return "", err
+ 	} else if code.Message != "" {

@@ -221,3 +221,7 @@ Changing the share directory requires file migration, which ordinary apply
 does not perform. An existing AD domain cannot be renamed in place, and the
 application-domain/internal-zone migrators for existing workspaces have not
 been delivered.
+
+## Application catalog
+
+No personnel card is published: SMB shares have no browser UI; users access files through their file manager.

@@ -10,6 +10,18 @@ title: Immich
 description: Photo and video upload, mobile backup, albums, and search with OIDC-only accounts.
 category: app
 status: developing
+applications:
+  - name: immich
+    display_name: {zh-CN: Immich, en: Immich}
+    url_from: IMMICH_DOMAIN_FULL
+    summary: {zh-CN: 照片与视频图库, en: Photo and video library}
+    description: {zh-CN: "照片上传、移动备份、相册与搜索。", en: "Photo uploads, mobile backup, albums, and search."}
+    documentation_url: {zh-CN: https://docs.immich.app/, en: https://docs.immich.app/}
+    weight: 100
+    kind: user
+    categories: [media]
+    access: {mode: iam, client: immich}
+    visibility: {mode: access}
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -73,7 +85,6 @@ config:
       constraints: {minimum: 1, maximum: 8}
   exports:
     - ANAS_IAM_CLIENT__IMMICH__*
-    - APPS_LIST*
   consumes:
     - ANAS_IAM_BINDING__IMMICH__*
     - ANAS_TLS_CERTS_DIR

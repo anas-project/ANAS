@@ -37,7 +37,7 @@
 `features.domain: true` 的 Module，并保留完整 FQDN：
 
 ```text
-inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/authentik
+inner/cloud.nas.example.net/nextcloud,inner/auth.nas.example.net/casdoor
 ```
 
 协议不包含 `SAMBA_DC_DOMAIN`，也不使用旧的“只保留第一个 label”含义。reconciler 按
@@ -104,24 +104,6 @@ readiness 检查同一份 AD 成员机 trust。
 
 不产生新的跨 Module 环境变量。它消费全局域名、端口、网络前缀、BasicAuth 和 `ANAS_TLS_*` 证书契约。
 
-## authentik
-
-- 服务端点：`AUTHENTIK_DOMAIN`、`AUTHENTIK_DOMAIN_PORT`、`AUTHENTIK_DOMAIN_FULL`、`ANAS_IAM_PORTAL_URL`。
-- PostgreSQL：`AUTHENTIK_NETWORK_DB`、`AUTHENTIK_POSTGRESQL__HOST`、`AUTHENTIK_POSTGRESQL__PORT`、`AUTHENTIK_POSTGRESQL__USER`、`AUTHENTIK_POSTGRESQL__PASSWORD`、`AUTHENTIK_POSTGRESQL__NAME`。
-- Samba AD Source：`AUTHENTIK_LDAP_SERVER_URI`、`AUTHENTIK_LDAP_BIND_DN`、`AUTHENTIK_LDAP_BIND_PASSWORD`、`AUTHENTIK_LDAP_BASE_DN`、`AUTHENTIK_LDAP_ADDITIONAL_USER_DN`、`AUTHENTIK_LDAP_ADDITIONAL_GROUP_DN`、`AUTHENTIK_LDAP_USER_OBJECT_FILTER`、`AUTHENTIK_LDAP_GROUP_OBJECT_FILTER`、`AUTHENTIK_LDAP_GROUP_MEMBERSHIP_FIELD`、`AUTHENTIK_LDAP_USER_MEMBERSHIP_ATTRIBUTE`。
-- 本地运行 Secret：`AUTHENTIK_SECRET_KEY`、`AUTHENTIK_SIGNING_KEY`、`AUTHENTIK_SIGNING_CERT`。
-- 托管恢复账号：账号 ID `break_glass`、固定用户名 `akadmin`；Runner 仅向 Hook 暂时提供
-  `AUTHENTIK_LOCAL_ADMIN__BREAK_GLASS_PASSWORD`，部署环境只保存
-  `AUTHENTIK_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE` 路径和用户名。容器入口从该 `0600`
-  文件临时导出上游 `AUTHENTIK_BOOTSTRAP_PASSWORD`，已有安装由 `ak shell` handler 更新。
-- 非敏感启动变量：`AUTHENTIK_BOOTSTRAP_EMAIL`。
-- 每应用 IAM 端点：`ANAS_IAM_BINDING__<MODULE>__OIDC_*` 或 `ANAS_IAM_BINDING__<MODULE>__SAML_*`。
-- 应用会话登出：消费 `ANAS_IAM_CLIENT__<MODULE>__OIDC_LOGOUT_*` 和
-  `SAML_SLS_*`，生成 Authentik `logout_uri/logout_method` 或 `sls_*` blueprint 字段。
-
-LDAP 变量全部从 `SAMBA_DC_*` 计算，Blueprint 只通过 `!Env` 读取 `AUTHENTIK_LDAP_*`，不保存部署 DN 或密码。
-Authentik worker 从 `ANAS_TLS_CERTS_DIR/ANAS_TLS_INTERNAL_CA_NAME` 导入 `anas-samba-ad-ca`，LDAP Source 通过 `peer_certificate` 和 SNI 验证 Samba DC 的 LDAPS 证书；不能依赖空证书字段，因为 Authentik 在该状态下会跳过验证。
-
 ## llng
 
 - 数据库别名：`DB_HOST`、`DB_POST`、`DB_USER`、`DB_PASSWORD`。
@@ -144,7 +126,7 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 - SAML：`NEXTCLOUD_SAML_IDP_*`、`NEXTCLOUD_SAML_SP_PRIVATE_KEY`、`NEXTCLOUD_SAML_SP_CERT`、`NEXTCLOUD_IAM_HOST`。
 - Redis/Imaginary/Talk：`NEXTCLOUD_REDIS_*`、`NEXTCLOUD_IMAGINARY_*`、`NEXTCLOUD_TALK_*`、`TALK_SIGNALING_SECRET`。
 - 镜像运行别名：`MYSQL_*`、`POSTGRES_*`、`REDIS_HOST`、`PHP_*`、`APACHE_BODY_LIMIT`、`OVERWRITE*`。
-- 应用注册：`ANAS_IAM_CLIENT__NEXTCLOUD__*`、`APPS_LIST__NEXTCLOUD__*`；其中 OIDC
+- 应用注册：`ANAS_IAM_CLIENT__NEXTCLOUD__*`；其中 OIDC
   发布 `OIDC_LOGOUT_URI/METHODS/SESSION_REQUIRED`，SAML 发布 `SAML_SLS_URL/BINDINGS`。
 
 ## meshcentral
@@ -157,7 +139,7 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 - 数据库 Resource：Runner 产生 `VIKUNJA_DB_TYPE`、`VIKUNJA_DB_HOST`、`VIKUNJA_DB_PORT`、`VIKUNJA_DB_NAME`、`VIKUNJA_DB_USERNAME`、`VIKUNJA_DB_PASSWORD`、`VIKUNJA_NETWORK_DB`；Hook 将 PostgreSQL 映射为上游 `postgres`、MariaDB 映射为 `mysql`，并产生 `VIKUNJA_DATABASE_TYPE/HOST/DATABASE/USER/PASSWORD/SSLMODE/TLS`。
 - OIDC：`VIKUNJA_OIDC_CLIENT_ID`、`VIKUNJA_OIDC_CLIENT_SECRET`、`VIKUNJA_AUTH_OPENID_*`，以及 Provider 注册契约 `ANAS_IAM_CLIENT__VIKUNJA__*`。固定 provider ID 为 `anas`，回调路径为 `/auth/openid/anas`。
 - 运行 Secret 与存储：`VIKUNJA_SERVICE_SECRET`、`VIKUNJA_FILES_BASEPATH`。本地注册与本地认证分别通过 `VIKUNJA_SERVICE_ENABLEREGISTRATION=false` 和 `VIKUNJA_AUTH_LOCAL_ENABLED=false` 关闭。
-- Launcher：`APPS_LIST__VIKUNJA__*`。该 Module 不发布 `OIDC_LOGOUT_*` receiver；Vikunja `2.4.0` 只提供应用发起的 RP-Initiated Logout，没有标准 IAM→Module 前台/后台通知入口。
+- 目录入口：manifest applications 与 `VIKUNJA_APPLICATION_URL`。该 Module 不发布 `OIDC_LOGOUT_*` receiver；Vikunja `2.4.0` 只提供应用发起的 RP-Initiated Logout，没有标准 IAM→Module 前台/后台通知入口。
 
 ## netbird
 
@@ -165,7 +147,7 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 - OIDC：`AUTH_AUDIENCE`、`AUTH_AUTHORITY`、`AUTH_CLIENT_ID`、`AUTH_CLIENT_SECRET`、`AUTH_SUPPORTED_SCOPES`、`NETBIRD_AUTH_AUTHORITY`、`NETBIRD_AUTH_OIDC_CONFIGURATION_ENDPOINT`、`NETBIRD_AUTH_USER_ID_CLAIM`。
 - Secret：`NETBIRD_DATASTORE_ENC_KEY`、`NETBIRD_RELAY_AUTH_SECRET`。
 - IAM 注册：`ANAS_IAM_CLIENT__NETBIRD__*`。
-- Launcher：`APPS_LIST__NETBIRD__*`。
+- 目录入口：manifest applications，URL 来源为 `NETBIRD_DOMAIN_FULL`。
 
 ## lam
 
@@ -228,3 +210,11 @@ LLNG 从 `ANAS_IDENTITY_OIDC_CLIENTS` 和 `ANAS_IDENTITY_SAML_CLIENTS` 读取最
 映射只有一处定义（`internal/config` 的 `globalBindings`），并由测试保证是双射——两个参数不能映射到同一个键。
 
 `anas config list [global|<module>]` 打印每个参数的路径、env 键、默认值、当前值和变更效果。
+
+## 应用目录文件
+
+应用通过 manifest applications 发布，不使用聚合 Launcher 环境变量。消费者必须声明
+application_catalog.consumes 并提供只读 Compose 挂载。Runner 只在渲染时注入
+ANAS_APP_CATALOG_FILE，消费者 .env 保留最终 deployment 路径 ANAS_APP_CATALOG_DIR
+与内容摘要 ANAS_APP_CATALOG_DIGEST。私有 catalog.json 包含规范化元数据与组事实，不含 IAM 凭据；
+公网静态目录只能挂载 assets。见[配置参考](/reference/configuration#应用目录)。

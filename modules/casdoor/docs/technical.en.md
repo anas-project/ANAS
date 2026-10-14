@@ -11,7 +11,7 @@ This document records the protocol contract, security boundaries, and verificati
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `traefik, db, casdoor` | 7 |
 | `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
@@ -212,3 +212,26 @@ did not request one, which Immich's strict OIDC validation rejects. The patch
 matches the native standard token's `omitempty` behavior: omit an unrequested
 nonce and preserve a requested value. Client validation stays enabled; no IAM
 parameter is added.
+
+## Application catalog
+
+r12 supplies OIDC `auth_time` after successful password/LDAP verification or completed MFA,
+binding it to the immutable Casdoor user ID in the server session. Existing-session authorization
+and refresh preserve the original authentication time. Older sessions without this record require
+a fresh login; token issuance time is not substituted. Custom JWT attributes cannot override it.
+ForwardAuth retains strict checks for stable identity, authentication time and group claims;
+real-host results are recorded in the application catalog plan below.
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Catalog-only Applications disable password
+login and sign-in and have empty grant types and redirect URIs. Casdoor initialization still fills client
+fields; the list API masks the secret. Empty database fields are therefore not a valid login-safety test.
+Actual protocol rejection baselines and results are recorded in the
+[application catalog plan](../../../dev-docs/plans/app-catalog.md). Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).
+
+Public PKCE consumers register `PUBLIC_CLIENT=true` and receive no application API secret. Native import may generate a provider-side secret; the portal does not consume it. Native `tokenFields` includes `Groups` for current UserInfo groups. `REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` create a separate client with automatic sign-in and signin session disabled; the consumer still checks signed auth_time and identity consistency.
+
+The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1`. The portal checks this API contract rather than branching on IAM module names; it continues using existing native self-account APIs. The portal has a `no_prior_release` inventory baseline, with no earlier-version upgrade result claimed.

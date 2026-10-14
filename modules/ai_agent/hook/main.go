@@ -219,8 +219,8 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 }
 
 // capabilityGroups are the directory groups that grant use of this module.
-// They are appended to the deployment-wide list the directory module reads, the
-// same way an application appends itself to APPS_LIST -- so enabling a runtime
+// They are appended to the deployment-wide list the directory module reads
+// through its declared aggregate export -- so enabling a runtime
 // creates its group and no group is written down twice.
 //
 // Two of them are properties of the module: `execute` gates approving an

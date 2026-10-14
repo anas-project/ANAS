@@ -1,11 +1,58 @@
 # Architecture
 
-## Application catalog proposal
+## Independent user portal: confirmed first version
 
-The [replanned application catalog](/architecture/app-catalog-design) (Chinese original) covers
+The [Chinese user portal design](/architecture/user-portal-design) specifies the confirmed scope:
+authorized applications and search, a read-only personal profile and group/grant sources, old-password
+self-change including first-login/expired-password flows, scoped user search, temporary-password reset,
+forced change, separate unlocking, direct member changes, recent reauthentication, audit and logout
+from both the portal and the current IAM browser session.
+Chinese and English use the catalog language rules; unsupported languages select English.
+Account creation/disable, recovery without the old password, MFA, cross-application session management,
+favorites, access requests and external notifications remain later candidates.
+
+Casdoor handles login, Samba AD owns users/groups/passwords, and the read-only catalog owns metadata.
+Each complete delegation rule must cover the actor, action, target person and applicable group.
+Admins/platform_admin has no implicit account write permission; absent rules disable delegation.
+Privileged identities, service accounts and groups that define delegation boundaries are protected.
+Directory attribute/object ACLs complement the portal's dynamic target and privilege checks.
+
+The implemented first version has one portal process, memory-only server sessions (restart requires
+login), and a private persistent audit journal. No identity replica, new database or sync daemon is added.
+A durable audit intent precedes LDAP writes; incomplete outcomes are retained and never replayed.
+LDAP save, IAM synchronization and external session state are reported separately.
+The high-complexity staged direction was confirmed on 2026-10-11.
+Fixed-version experiments verify Samba old-password change (including first-login/expired accounts),
+scoped attribute/object ACLs, and GUID/SID single-member operations with concurrent additions and DN reuse rejection.
+Casdoor supports secret-free PKCE code exchange and genuine auth_time, but max_age=0/prompt=login reuse
+old authentication, while ordinary application credentials expose broad APIs. Follow-up experiments
+verify native UserInfo/get-account reads with the user's own token, fixed group-policy checks,
+a separate client with automatic sign-in disabled plus validated auth_time, and discovery-based OIDC logout.
+No new Casdoor patch or custom authorization endpoint is required for these paths.
+get-user can hide account state; enforce alone ignores disabled/pending policy state.
+The portal must check these facts explicitly. LDAP assertion is unsupported; member-value scope
+and cross-object protection races require portal checks. The Linux/amd64 release image passed 95 runtime checks, including audit failures, and all 41 portal criteria. Multi-object transactions remain outside the supported directory capabilities. See the [capability research](/research/user-portal-identity-capabilities).
+New criteria are tracked separately in
+[PORTAL-R-001–R-041](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md).
+
+## Application catalog stages
+
+The [application catalog design](/architecture/app-catalog-design) covers
 non-SSO apps, separate admin interfaces and external config entries. It defines seven PNG icon sizes,
 immutable read-only deployment bundles, names, summaries/details, documentation links, category lists,
-ordering and explicit server-side filtering. Casdoor is the primary target; Authentik is being phased out.
+ordering and explicit server-side filtering. Casdoor is the primary target; Authentik was removed on 2026-10-10; LLNG remains available.
+
+The portal groups authorized entries first into User applications (`kind: user`), then Administration
+(`kind: admin`), with category subgroups inside each. An entry appears once under its first category;
+additional categories participate in OR filtering without moving or duplicating the card. Subgroups sort
+by category weight and ID, and cards within each subgroup by entry weight and name. The category list
+retains declaration order through normalization. Shared category IDs remain separate under each top-level
+group. Empty groups disappear after authorization and filtering; an entirely empty result shows the
+localized no-applications message. A module may publish separate user and admin entries. Headless services
+publish no card. Both levels have Chinese and English labels, and language changes preserve grouping.
+This is a low-complexity presentation rule using existing fields, with no new component or recursive tree;
+LLNG projects combined purpose/category labels because its default native template has one level; the separate portal implements the complete two-level view.
+
 The initial catalog languages are Simplified Chinese (`zh-CN`) and English (`en`). Display names,
 summaries, descriptions, documentation links and category text use language maps. Built-in copy must
 cover both languages; external entries may supply one with deterministic per-field fallback. Overrides
@@ -14,9 +61,14 @@ The language source is the explicit user choice, then the browser's first prefer
 default, advancing only when a source is absent. An unsupported selected language resolves directly to
 English, even when a lower-priority preference is Chinese. Missing field translations fall back to English,
 then existing Chinese text for external entries; this does not change the selected portal language.
-There is no APPS_LIST compatibility bridge. The API/UI extension inside Casdoor is a recommendation
-awaiting confirmation; the new protocol and portal are not implemented. Existing Adminer ForwardAuth
-wiring is present, while Casdoor browser and real-host acceptance remain pending.
+There is no legacy catalog compatibility bridge. The confirmed first stage uses each IAM's native
+application list. Hooks project deployment-default language text (unsupported languages select English),
+icons and native group rules; all translations and seven PNG sizes remain in the immutable shared bundle.
+Casdoor keeps its native default-allow, administrator bypass and silentSignin behavior, and hidden IAM
+registrations may remain visible. LLNG receives flattened purpose/category labels with native group rules. Provider limitations and placeholder icons appear in plan output.
+The second stage builds our own portal to satisfy full display, live language switching and strict filtering.
+Local Unix Docker bind endpoints are supported; remote endpoints are rejected during plan.
+Existing Adminer ForwardAuth remains in place. Native Casdoor/LLNG and dual Adminer host/browser acceptance completed on the recorded phase-one baseline. The user has now selected a separately deployed portal website for phase two. The previous in-process page proposal was superseded; the first-version account scope is confirmed and tracked in the separate portal matrix.
 
 ## Directory events and Casdoor sessions
 
@@ -353,6 +405,7 @@ Chinese is the source language for the detailed design set. The pages below link
 - [administrator account lifecycle](/architecture/admin-account-system);
 - [IAM capability, protocol selection, and bidirectional logout registration](/en/architecture/iam-capability-design);
 - [application catalog visibility and authorization](/architecture/app-catalog-design);
+- [independent user portal and delegated account-management design](/architecture/user-portal-design);
 - [dynamic DNS capability selection](/architecture/dynamic-dns-capability-design);
 - [object-storage capability binding and normalized S3 outputs](/en/architecture/object-storage-capability-design);
 - [Forgejo Module identity, Actions authorization, and Incus VM runner design](/architecture/forgejo-module-design);
@@ -916,3 +969,5 @@ distinct from nested virtualization and changes the permitted shared-kernel oper
 cross-trust workloads still require explicit VMs. Native positive and rejection controls, actual workflow
 execution and recovery are separate acceptance stages. See [the Chinese Forgejo design](/architecture/forgejo-module-design),
 section 4.3, and the dated acceptance review for exact executed scope rather than the earlier build snapshots.
+
+The user_portal release Dockerfile built successfully and its historical Linux/amd64 image passed 95 runtime checks and 41 criteria on isolated finance. Pre-commit review fixed public recovery limit disclosure and rejected-member audit attribution; the plan is reopened until the updated release image is revalidated. See the Module-private portal plan for exact baselines.

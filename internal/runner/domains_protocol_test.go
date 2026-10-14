@@ -8,7 +8,7 @@ func TestBundledWebModulesDeclarePublishedDomainFeature(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{
-		"authentik", "collabora", "ddns_go", "ddns_updater", "eturnal",
+		"collabora", "ddns_go", "ddns_updater", "eturnal",
 		"lam", "llng", "meshcentral", "netbird", "nextcloud", "oauth2_proxy", "traefik",
 	} {
 		mod, ok := reg[name]

@@ -11,6 +11,31 @@ title: DDNS Updater
 description: Dynamic DNS updater for the base domain and wildcard host.
 category: network
 status: release
+applications:
+  - name: ddns_updater-admin
+    display_name:
+      zh-CN: "DDNS Updater"
+      en: "DDNS Updater"
+    url_from: DDNS_UPDATER_APPLICATION_URL
+    summary:
+      zh-CN: "动态 DNS 状态"
+      en: "Dynamic DNS status"
+    description:
+      zh-CN: "动态 DNS 状态。"
+      en: "Dynamic DNS status."
+    documentation_url:
+      zh-CN: https://github.com/qdm12/ddns-updater
+      en: https://github.com/qdm12/ddns-updater
+    weight: 100
+    kind: admin
+    categories:
+      - network
+    access:
+      mode: local
+    visibility:
+      mode: subjects
+      any_of:
+        - role: platform_admin
 runtime:
   type: compose
   compose_file: docker-compose.yml

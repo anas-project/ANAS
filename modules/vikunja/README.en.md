@@ -205,7 +205,7 @@ durable inbox, idempotency, and reconciliation instead of assuming unlimited del
 ## Current limitations
 
 - The module is `developing`. PostgreSQL/MariaDB, amd64/arm64, backup/restore, upgrade/rollback, and
-  Authentik/LLNG browser E2E remain release gates.
+  LLNG browser E2E remain release gates.
 - SMTP, S3, Redis, search, Vikunja Pro, bot users, and an AI/MCP sidecar are not configured automatically.
 - The upstream mobile app remains early-stage and is not promised as a full Web-equivalent client.
 - There is no IAM-initiated Vikunja session receiver and no local recovery account.

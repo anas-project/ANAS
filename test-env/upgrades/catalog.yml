@@ -26,110 +26,109 @@ products:
 
 modules:
   - name: ai_agent
-    current: 0.1.0-r2
+    current: 0.1.0-r3
     # Still developing: this records the next first-release baseline, not a
     # successful native upgrade.
-    baseline: {id: ai-agent-first-release-r2, version: 0.1.0-r2, reason: no_prior_release}
-  - name: authentik
-    current: 2026.5.6-r15
-    transitions:
-      - {id: authentik-r8-r15, from: 2026.5.6-r8, to: 2026.5.6-r15, suite: modules-authentik}
-      - {id: authentik-r14-r15, from: 2026.5.6-r14, to: 2026.5.6-r15, suite: modules-authentik}
+    baseline: {id: ai-agent-first-release-r2, version: 0.1.0-r3, reason: no_prior_release}
   - name: casdoor
-    current: 3.143.0-r11
+    current: 3.143.0-r12
     transitions:
-      - {id: casdoor-r8-r11, from: 3.143.0-r8, to: 3.143.0-r11, suite: modules-casdoor}
-      - {id: casdoor-r10-r11, from: 3.143.0-r10, to: 3.143.0-r11, suite: modules-casdoor}
+      - {id: casdoor-r8-r11, from: 3.143.0-r8, to: 3.143.0-r12, suite: modules-casdoor}
+      - {id: casdoor-r10-r11, from: 3.143.0-r10, to: 3.143.0-r12, suite: modules-casdoor}
   - name: collabora
-    current: 26.4.2-r6
+    current: 26.4.2-r7
     transitions:
-      - {id: collabora-r4-r6, from: 26.4.2-r4, to: 26.4.2-r6, suite: modules-app}
+      - {id: collabora-r4-r6, from: 26.4.2-r4, to: 26.4.2-r7, suite: modules-app}
   - name: ddns_go
-    current: 6.17.4-r6
+    current: 6.17.4-r7
     transitions:
-      - {id: ddns-go-r5-r6, from: 6.17.4-r5, to: 6.17.4-r6, suite: modules-ddns}
+      - {id: ddns-go-r5-r6, from: 6.17.4-r5, to: 6.17.4-r7, suite: modules-ddns}
   - name: ddns_updater
-    current: 2.10.0-r4
+    current: 2.10.0-r5
     transitions:
-      - {id: ddns-updater-r3-r4, from: 2.10.0-r3, to: 2.10.0-r4, suite: modules-ddns}
+      - {id: ddns-updater-r3-r4, from: 2.10.0-r3, to: 2.10.0-r5, suite: modules-ddns}
   - name: eturnal
-    current: 1.12.2-r6
+    current: 1.12.2-r7
     transitions:
-      - {id: eturnal-r5-r6, from: 1.12.2-r5, to: 1.12.2-r6, suite: modules-authentik}
+      - {id: eturnal-r5-r6, from: 1.12.2-r5, to: 1.12.2-r7, suite: modules-casdoor}
   - name: forgejo
-    current: 15.0.7-r2
+    current: 15.0.7-r3
     # Still developing: this records the next first-release baseline, not a
     # successful native upgrade.
-    baseline: {id: forgejo-first-release-r2, version: 15.0.7-r2, reason: no_prior_release}
+    baseline: {id: forgejo-first-release-r2, version: 15.0.7-r3, reason: no_prior_release}
   - name: freeradius
-    current: 3.2.10-r4
+    current: 3.2.10-r5
     transitions:
-      - {id: freeradius-r3-r4, from: 3.2.10-r3, to: 3.2.10-r4, suite: modules-base}
+      - {id: freeradius-r3-r4, from: 3.2.10-r3, to: 3.2.10-r5, suite: modules-base}
   - name: immich
-    current: 3.2.4-r1
+    current: 3.2.4-r2
     # Developing first installation; no older ANAS Immich release exists.
     # This is an inventory baseline, not successful upgrade evidence.
-    baseline: {id: immich-first-release-r1, version: 3.2.4-r1, reason: no_prior_release}
+    baseline: {id: immich-first-release-r1, version: 3.2.4-r2, reason: no_prior_release}
   - name: incus
-    current: 7.3.0-r2
+    current: 7.3.0-r4
     # Still developing: this records the next first-release baseline, not a
     # successful native upgrade or permission to bypass Incus acceptance.
-    baseline: {id: incus-first-release-r2, version: 7.3.0-r2, reason: no_prior_release}
+    baseline: {id: incus-first-release-r2, version: 7.3.0-r4, reason: no_prior_release}
   - name: lam
-    current: 9.6.0-r8
+    current: 9.6.0-r9
     transitions:
-      - {id: lam-r7-r8, from: 9.6.0-r7, to: 9.6.0-r8, suite: modules-app}
+      - {id: lam-r7-r8, from: 9.6.0-r7, to: 9.6.0-r9, suite: modules-app}
   - name: lego
-    current: 5.3.1-r5
+    current: 5.3.1-r6
     transitions:
-      - {id: lego-r4-r5, from: 5.3.1-r4, to: 5.3.1-r5, suite: modules-ddns}
+      - {id: lego-r4-r5, from: 5.3.1-r4, to: 5.3.1-r6, suite: modules-ddns}
   - name: llng
-    current: 2.23.2-r12
+    current: 2.23.2-r13
     transitions:
-      - {id: llng-r9-r12, from: 2.23.2-r9, to: 2.23.2-r12, suite: modules-app}
+      - {id: llng-r9-r12, from: 2.23.2-r9, to: 2.23.2-r13, suite: modules-app}
   - name: mariadb
-    current: 12.3.2-r4
+    current: 12.3.2-r5
     transitions:
-      - {id: mariadb-r3-r4, from: 12.3.2-r3, to: 12.3.2-r4, suite: modules-base}
+      - {id: mariadb-r3-r4, from: 12.3.2-r3, to: 12.3.2-r5, suite: modules-base}
   - name: meshcentral
-    current: 1.2.4-r8
+    current: 1.2.4-r9
     transitions:
-      - {id: meshcentral-r6-r8, from: 1.2.4-r6, to: 1.2.4-r8, suite: modules-app}
+      - {id: meshcentral-r6-r8, from: 1.2.4-r6, to: 1.2.4-r9, suite: modules-app}
   - name: netbird
-    current: 0.76.1-r5
+    current: 0.76.1-r6
     transitions:
-      - {id: netbird-r4-r5, from: 0.76.1-r4, to: 0.76.1-r5, suite: modules-authentik}
+      - {id: netbird-r4-r5, from: 0.76.1-r4, to: 0.76.1-r6, suite: modules-casdoor}
   - name: nextcloud
-    current: 34.0.2-r11
+    current: 34.0.2-r12
     transitions:
-      - {id: nextcloud-r7-r11, from: 34.0.2-r7, to: 34.0.2-r11, suite: modules-app}
+      - {id: nextcloud-r7-r11, from: 34.0.2-r7, to: 34.0.2-r12, suite: modules-app}
   - name: oauth2_proxy
-    current: 7.15.3-r5
+    current: 7.15.3-r6
     transitions:
-      - {id: oauth2-proxy-r3-r5, from: 7.15.3-r3, to: 7.15.3-r5, suite: modules-ddns}
+      - {id: oauth2-proxy-r3-r5, from: 7.15.3-r3, to: 7.15.3-r6, suite: modules-ddns}
   - name: postgres
-    current: 18.4.0-r4
+    current: 18.4.0-r5
     transitions:
-      - {id: postgres-r3-r4, from: 18.4.0-r3, to: 18.4.0-r4, suite: modules-app}
+      - {id: postgres-r3-r4, from: 18.4.0-r3, to: 18.4.0-r5, suite: modules-app}
   - name: samba_dc
-    current: 4.23.6-r12
+    current: 4.23.6-r13
     transitions:
-      - {id: samba-dc-r7-r12, from: 4.23.6-r7, to: 4.23.6-r12, suite: modules-app}
-      - {id: samba-dc-r11-r12, from: 4.23.6-r11, to: 4.23.6-r12, suite: modules-app}
+      - {id: samba-dc-r7-r12, from: 4.23.6-r7, to: 4.23.6-r13, suite: modules-app}
+      - {id: samba-dc-r11-r12, from: 4.23.6-r11, to: 4.23.6-r13, suite: modules-app}
   - name: samba_fs
-    current: 4.23.6-r6
+    current: 4.23.6-r7
     transitions:
-      - {id: samba-fs-r5-r6, from: 4.23.6-r5, to: 4.23.6-r6, suite: modules-base}
+      - {id: samba-fs-r5-r6, from: 4.23.6-r5, to: 4.23.6-r7, suite: modules-base}
   - name: traefik
-    current: 3.7.10-r6
+    current: 3.7.10-r8
     transitions:
-      - {id: traefik-r4-r6, from: 3.7.10-r4, to: 3.7.10-r6, suite: modules-app}
+      - {id: traefik-r4-r6, from: 3.7.10-r4, to: 3.7.10-r8, suite: modules-app}
+  - name: user_portal
+    current: 0.1.0-r1
+    # Unreleased first installation; this is not upgrade or runtime evidence.
+    baseline: {id: user-portal-first-release-r1, version: 0.1.0-r1, reason: no_prior_release}
   - name: versitygw
-    current: 1.7.0-r3
-    baseline: {id: versitygw-first-release-r3, version: 1.7.0-r3, reason: no_prior_release}
+    current: 1.7.0-r4
+    baseline: {id: versitygw-first-release-r3, version: 1.7.0-r4, reason: no_prior_release}
   - name: vikunja
-    current: 2.4.0-r4
-    baseline: {id: vikunja-first-release-r4, version: 2.4.0-r4, reason: no_prior_release}
+    current: 2.4.0-r5
+    baseline: {id: vikunja-first-release-r4, version: 2.4.0-r5, reason: no_prior_release}
 
 suites:
   - id: core-workspace-compatibility
@@ -156,15 +155,6 @@ suites:
     verify: test-env/scripts/server-upgrade-verify-app.sh
     report: test-env/scripts/server-upgrade-write-report.sh
     modules: [collabora, lam, llng, meshcentral, nextcloud, postgres, samba_dc, traefik]
-  - id: modules-authentik
-    kind: module
-    runner: test-env/scripts/server-module-upgrade-e2e.sh
-    config: test-env/upgrades/configs/modules-authentik.yml
-    targets: test-env/upgrades/configs/modules-authentik.targets
-    seed: test-env/scripts/server-upgrade-seed-markers.sh
-    verify: test-env/scripts/server-upgrade-verify-authentik.sh
-    report: test-env/scripts/server-upgrade-write-report.sh
-    modules: [authentik, eturnal, netbird]
   - id: modules-casdoor
     kind: module
     runner: test-env/scripts/server-module-upgrade-e2e.sh
@@ -173,7 +163,7 @@ suites:
     seed: test-env/scripts/server-upgrade-seed-markers.sh
     verify: test-env/scripts/server-upgrade-verify-casdoor.sh
     report: test-env/scripts/server-upgrade-write-report.sh
-    modules: [casdoor]
+    modules: [casdoor, eturnal, netbird]
   - id: modules-ddns
     kind: module
     runner: test-env/scripts/server-module-upgrade-e2e.sh

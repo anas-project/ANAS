@@ -284,9 +284,7 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	if got := env["ANAS_IAM_CLIENT__NEXTCLOUD__ALLOW_GROUPS"]; got != "APP_nextcloud,APP_all,Admins" {
 		t.Fatalf("allow groups = %q, want direct, all-app, or administrator access", got)
 	}
-	if got := env["APPS_LIST__NEXTCLOUD__ALLOW_GROUPS"]; got != "APP_nextcloud,APP_all,Admins" {
-		t.Fatalf("launcher allow groups = %q, want the IAM policy group set", got)
-	}
+
 	if env["NEXTCLOUD_OIDC_CLIENT_SECRET"] == "" || secrets.values["NEXTCLOUD_OIDC_CLIENT_SECRET"] != env["NEXTCLOUD_OIDC_CLIENT_SECRET"] {
 		t.Fatal("OIDC client secret was not generated and persisted")
 	}
@@ -308,7 +306,7 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	}
 }
 
-func TestNextcloudRequestsAuthentikSupportedWindowsNameID(t *testing.T) {
+func TestNextcloudRequestsWindowsNameID(t *testing.T) {
 	task, err := os.ReadFile("../nextcloud/root/usr/local/bin/task.sh")
 	if err != nil {
 		t.Fatal(err)

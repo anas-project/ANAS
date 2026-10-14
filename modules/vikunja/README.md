@@ -194,7 +194,7 @@ Secret 保存在调用方自己的 Secret 存储中。Webhook 接收端必须验
 ## 当前限制
 
 - Module 状态为 `developing`。PostgreSQL/MariaDB、amd64/arm64、备份恢复、升级回滚和
-  Authentik/LLNG 浏览器 E2E 仍是提升到 `release` 的门槛。
+  LLNG 浏览器 E2E 仍是提升到 `release` 的门槛。
 - SMTP、S3、Redis、搜索、Vikunja Pro、bot user 和 AI/MCP sidecar 尚未自动配置。
 - 上游移动应用仍处于早期阶段，不能按 Web 全功能客户端承诺。
 - 没有 IAM 主动清理 Vikunja session 的标准通知 endpoint，也没有本地恢复账号。

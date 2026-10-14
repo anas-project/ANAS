@@ -11,6 +11,30 @@ title: Vikunja
 description: Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV.
 category: app
 status: developing
+applications:
+  - name: vikunja
+    display_name:
+      zh-CN: Vikunja
+      en: Vikunja
+    url_from: VIKUNJA_APPLICATION_URL
+    summary:
+      zh-CN: "任务与项目管理"
+      en: "Tasks and project management"
+    description:
+      zh-CN: "任务与项目管理。"
+      en: "Tasks and project management."
+    documentation_url:
+      zh-CN: https://vikunja.io/docs/
+      en: https://vikunja.io/docs/
+    weight: 100
+    kind: user
+    categories:
+      - collaboration
+    access:
+      mode: iam
+      client: vikunja
+    visibility:
+      mode: access
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -98,7 +122,6 @@ config:
       default_source: inherited
   exports:
     - ANAS_IAM_CLIENT__VIKUNJA__*
-    - APPS_LIST*
   consumes:
     - ANAS_IAM_BINDING__VIKUNJA__*
     - ANAS_TLS_CERTS_DIR

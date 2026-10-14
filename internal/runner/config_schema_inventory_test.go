@@ -40,6 +40,9 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumSweepSeconds := 86400
 	maximumImmichJobs := 16
 	maximumImmichVideos := 8
+	minimumRecentSeconds := 5
+	maximumRecentSeconds := 900
+	maximumAuditCapacityMB := 1024
 	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
 	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
@@ -77,17 +80,19 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"incus.storage_pool": {Pattern: `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$`},
 		// Character set only; the incus hook parses each CIDR and refuses
 		// default, loopback, link-local and multicast ranges.
-		"incus.lan_extra_subnets":         {Pattern: `^[0-9A-Fa-f:./, ]*$`},
-		"meshcentral.mps_port":            {Minimum: &minimumOne, Maximum: &maximumPort},
-		"oauth2_proxy.console_proxy_port": {Minimum: &minimumOne, Maximum: &maximumPort},
-		"traefik.base_port":               {Minimum: &minimumOne, Maximum: &maximumPort},
-		"versitygw.domain_prefix":         {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
-		"versitygw.region":                {MinLength: &minimumDNSLabelLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9][A-Za-z0-9._-]*$`},
-		"versitygw.root_access_key":       {MinLength: &minimumAccessKeyLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9._-]+$`},
-		"versitygw.root_secret_key":       {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
-		"samba_dc.max_log_size":           {Minimum: &minimumOne},
-		"samba_dc.domain":                 {Format: configschema.FormatDNSName},
-		"vikunja.domain_prefix":           {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"incus.lan_extra_subnets":           {Pattern: `^[0-9A-Fa-f:./, ]*$`},
+		"meshcentral.mps_port":              {Minimum: &minimumOne, Maximum: &maximumPort},
+		"oauth2_proxy.console_proxy_port":   {Minimum: &minimumOne, Maximum: &maximumPort},
+		"traefik.base_port":                 {Minimum: &minimumOne, Maximum: &maximumPort},
+		"user_portal.recent_window_seconds": {Minimum: &minimumRecentSeconds, Maximum: &maximumRecentSeconds},
+		"user_portal.audit_capacity_mb":     {Minimum: &minimumOne, Maximum: &maximumAuditCapacityMB},
+		"versitygw.domain_prefix":           {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
+		"versitygw.region":                  {MinLength: &minimumDNSLabelLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9][A-Za-z0-9._-]*$`},
+		"versitygw.root_access_key":         {MinLength: &minimumAccessKeyLength, MaxLength: &maximumCredentialIDLength, Pattern: `^[A-Za-z0-9._-]+$`},
+		"versitygw.root_secret_key":         {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
+		"samba_dc.max_log_size":             {Minimum: &minimumOne},
+		"samba_dc.domain":                   {Format: configschema.FormatDNSName},
+		"vikunja.domain_prefix":             {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
 	for path, metadata := range inventory {
@@ -133,6 +138,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"samba_dc.password_bind_password": {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"samba_dc.anchor_bind_password":   {configschema.DefaultSourceGenerated, "calcSambaDC"},
 		"vikunja.language":                {configschema.DefaultSourceInherited, "vikunja calculate"},
+		"user_portal.language":            {configschema.DefaultSourceInherited, "user_portal calculate"},
 		"versitygw.root_secret_key":       {configschema.DefaultSourceGenerated, "versitygw calculate"},
 	}
 
@@ -170,6 +176,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"global.email":       true,
 	}
 	wantMustResolveOnly := map[string]bool{
+		"user_portal.language":            true,
 		"incus.storage_pool":              true,
 		"ai_agent.language":               true,
 		"global.timezone":                 true,

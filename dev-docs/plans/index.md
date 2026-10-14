@@ -10,7 +10,7 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
-| [应用目录](app-catalog.md) | 无旧协议兼容的新目录、中英文、共享资产、Casdoor 权限/API/页面、全 Module 覆盖与外部条目 | 提案 |
+| [应用目录](app-catalog.md) | 无旧协议兼容的新目录、用户与管理两级分组、中英文、共享资产、Casdoor/LLNG 原生适配、Authentik 移除、第二阶段独立门户，账号首版另按门户计划、全 Module 覆盖与外部条目 | 实施中 |
 | [应用域与 Samba AD 域分离](domain-separation.md) | 参数契约、DNS 模式、迁移与验收 | 实施中 |
 | [Samba 目录事件订阅与实时同步](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的订阅接入、可靠消费、全量兜底、准入丧失会话撤销、双接入和 E2E | 实施中 |
 | [目录身份键](directory-identity-key.md) | anchor 作为唯一持久身份键、主体标识符切换为 anchor、逐 Module 盘点匹配键与改名复用身份 E2E；验收依据见[要求](../requirements/directory-identity-key.md) | 实施中 |

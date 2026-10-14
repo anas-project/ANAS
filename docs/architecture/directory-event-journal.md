@@ -1,5 +1,8 @@
 # Directory event journal
 
+> Current scope (2026-10-10): Authentik has been removed. Casdoor is primary and LLNG remains available. Authentik comparisons, commands and acceptance records below describe historical baselines; removed commands are not executable and do not demonstrate Casdoor acceptance.
+
+
 > Status: **partially implemented**. The Samba audit follower plus the
 > `AUTHENTIK_DIRWATCH_*` and `CASDOOR_DIRWATCH_*` subscribers are implemented.
 > The product contract now requires every IAM provider and every direct LDAP/LDAPS

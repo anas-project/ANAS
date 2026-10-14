@@ -72,7 +72,7 @@ PY
   oidc_source="$RUNTIME_DIR/managed-config-oidc.yml"
   cat >"$oidc_source" <<'YAML'
 modules:
-  authentik: {}
+  casdoor: {}
   meshcentral: {}
   nextcloud: {}
   netbird: {}
@@ -83,7 +83,7 @@ identity:
   directory:
     provider: samba_dc
   iam:
-    provider: authentik
+    provider: casdoor
 YAML
   oidc_ws="$RUNTIME_DIR/managed-config-oidc"
   rm -rf "$oidc_ws"

@@ -89,3 +89,13 @@ root 密码是 Provider 管理凭据，不是 Module 本地管理员。Adminer �
 ## 当前限制
 
 普通 `config set` 不能完成 root 密码轮换；必须使用声明的凭据生命周期流程。
+
+## 应用目录
+
+Adminer 5.5 的服务器名校验不接受下划线。MariaDB 在自己的数据库网络发布 `mariadb`
+别名，Adminer 默认填写此地址，用户仍须输入独立数据库账号与密码。
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

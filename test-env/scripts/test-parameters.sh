@@ -87,7 +87,7 @@ for item in parameters:
     if "format" in constraints:
         assert item["type"] == "string", (item["path"], "format", constraints["format"])
         assert constraints["format"] in {
-            "iana_timezone", "language_tag", "locale", "ipv4", "dns_name",
+            "iana_timezone", "language_tag", "locale", "ipv4", "dns_name", "json_object",
         }, (item["path"], "format", constraints["format"])
 
 # Cover every source spelling and prove that an explicit empty literal remains
@@ -162,6 +162,7 @@ assert global_types == {
     "ipv4": "bool",
     "ipv6": "bool",
     "network_prefix": "string",
+    "temp_path": "string",
     "timezone": "string",
     "virtual_domain": "bool",
 }, global_types
@@ -180,10 +181,17 @@ must_resolve_paths = input_required_paths | {
     "global.default_locale",
     "global.host_ip",
     "global.timezone",
+    "ai_agent.language",
     "collabora.admin_password",
     "ddns_go.dns_provider",
     "ddns_updater.dns_provider",
     "forgejo.language",
+    "incus.admin_certificate_b64",
+    "incus.admin_key_b64",
+    "incus.endpoint",
+    "incus.image_architecture",
+    "incus.server_certificate_b64",
+    "incus.storage_pool",
     "lam.admin_password",
     "lam.language",
     "mariadb.root_password",
@@ -224,7 +232,6 @@ effect_cases = {
     "global.default_language": ("reconcile", "in_place", "localization"),
     "global.default_locale": ("reconcile", "in_place", "localization"),
     "global.virtual_domain": ("reconcile", "requires_recreate", "certificate_mode"),
-    "authentik.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),
     "casdoor.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),
     "forgejo.language": ("reconcile", "requires_recreate", "forgejo_localization"),
     "llng.domain_prefix": ("reconcile", "requires_recreate", "docker_route"),

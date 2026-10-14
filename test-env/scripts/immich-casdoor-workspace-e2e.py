@@ -21,7 +21,7 @@ import zlib
 spec = importlib.util.spec_from_file_location("immich_workspace", pathlib.Path(__file__).with_name("immich-workspace-e2e.py"))
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
-base.FIXED_MODULES = {"postgres": ("18.4.0", 4), "immich": ("3.2.4", 1), "casdoor": ("3.143.0", 11)}
+base.FIXED_MODULES = {"postgres": ("18.4.0", 5), "immich": ("3.2.4", 2), "casdoor": ("3.143.0", 12)}
 
 
 class CasdoorSuite(base.Suite):
@@ -225,7 +225,7 @@ class CasdoorSuite(base.Suite):
         """Reuse recovery checks, then exercise the actual Casdoor watcher."""
         self.extension_failure_restore(state, old_point, old_images, failed_modules, backup_id, expected_images)
         self.extension_crash_retry(state, old_point, old_images, backup_id, expected_images)
-        # The base suite's directory probes execute Authentik's native shell.
+        # The shared base does not provide an IAM-specific directory implementation.
         # Casdoor instead repeats its five automatic directory delivery cases
         # against the restored workspace; no fabricated policy token or sync.
         self.directory_cases(state)

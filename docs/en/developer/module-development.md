@@ -224,7 +224,7 @@ in the repository under `dev-docs/`; this section summarises the Module-author s
 
 A Module reads only its own `ANAS_IAM_BINDING__<APP>__*` values and publishes
 its own `ANAS_IAM_CLIENT__<APP>__*` request from the `calculate` Hook. It must
-not branch on a Provider name or generate LLNG-, Authentik-, Casdoor-, or other
+not branch on a Provider name or generate LLNG-, Casdoor-, or other
 Provider-private settings.
 
 An OIDC Module that accepts IAM-initiated logout publishes:
@@ -262,7 +262,7 @@ OIDC consumers that distinguish directory admission loss from ordinary logout ma
 The Provider publishes its supported set in `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` during
 calculate. Runner validates the intersection, backchannel URI, and subject-wide semantics
 (`OIDC_LOGOUT_SESSION_REQUIRED=false`); unknown values, wrong protocols, and unsupported Providers fail.
-The pinned Authentik/Immich implementation adds the [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
+The pinned Casdoor/Immich implementation adds the [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
 event member to existing signed backchannel delivery; ordinary logout omits it. This does not declare
 a complete SSF/CAEP deployment. Applications use the original event time and verified identity to
 target old credentials; durable retries must preserve credentials issued after admission is restored.
@@ -385,7 +385,7 @@ sensitive reads, real apply, successful rotation, verification rollback, and
 the direct entry point. Stable support requires a real-container test proving
 the old password fails and the new password succeeds.
 
-Current status is explicit: Authentik declares the fixed `akadmin`
+Current status is explicit: Casdoor declares the fixed `admin_casdoor`
 `break_glass` account, and Traefik declares an ANAS-default `primary` account;
 both have application apply/rotate handlers. MeshCentral now enforces OIDC-only
 and rejects local and LDAP passwords in its central authenticator, so it has no
@@ -464,3 +464,18 @@ or `projection: value` to pass decoded JSON through. Structured settings declare
 `constraints: {format: json_object}`. YAML objects under `modules.<module>.config.<parameter>` and
 JSON object strings normalize to the same environment value and remain one setting for change effects.
 Unknown projection names, malformed JSON and empty source values fail before resource provisioning.
+
+## Application entries and catalog consumers
+
+A Module publishes personnel URLs through applications in module.yml, separate from IAM client registrations.
+Declare bilingual text, kind: user/admin, primary category first, url or an owned url_from, and an explicit
+access/visibility rule. UI-less Modules declare applications_not_published with a reason.
+An existing execution point uses visibility.mode: access; local URLs use subjects and administrative
+entries must resolve solely to platform_admin. A conditional UI uses enabled_by referencing a declared bool.
+Native authorization references groups_from through declared environment access. Source PNGs stay inside the
+Module; Runner scales missing sizes and never exports source filesystem paths or credentials.
+
+An IAM consumer declares application_catalog.consumes: true, limitations, the fixed private read-only
+/run/anas/application-catalog mount and an assets-only public mount. Its render Hook reads the transient
+ANAS_APP_CATALOG_FILE and projects existing native IAM objects. The source catalog remains authoritative;
+the separate user_portal protects APIs and icons using current IAM/AD state from this private bundle. See the [catalog design](/architecture/app-catalog-design).

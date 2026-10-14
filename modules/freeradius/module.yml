@@ -22,3 +22,4 @@ upgrade:
   # changes the version. See docs/contracts/snapshot.md.
   data_breaking: []
 status: developing
+applications_not_published: "RADIUS authentication service has no personnel UI."

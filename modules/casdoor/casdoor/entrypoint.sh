@@ -58,6 +58,10 @@ kill -TERM "$bootstrap_pid" 2>/dev/null || true
 wait "$bootstrap_pid" 2>/dev/null || true
 trap - EXIT INT TERM
 
+# Reconcile only providerless catalog objects owned by ANAS. Native init-data
+# import updates objects but does not remove entries deleted from configuration.
+/opt/anas/bin/casdoor-helper reconcile-catalog /tmp/init_data.json
+
 # Casdoor reports HTTP health before the long-running process has necessarily
 # finished applying init data. Reconcile the recovery credential after that
 # process is live, and publish readiness only after the database projection is

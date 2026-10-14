@@ -24,9 +24,9 @@ class PlanEvidenceTests(unittest.TestCase):
             path.write_text("same managed state")
         with mock.patch.dict(harness.os.environ, {"DOCKER_HOST": "unix:///run/anas-immich-test.sock"}):
             suite = harness.Suite(argparse.Namespace(), root, root / "modules")
-        modules = ["samba_dc", "postgres", "authentik", "immich", "traefik"]
+        modules = ["samba_dc", "postgres", "casdoor", "immich", "traefik"]
         reply = {"modules": modules, "module_plans": {"postgres": {
-            "database_consumers": "authentik,immich",
+            "database_consumers": "casdoor,immich",
             "extension_upgrade": "provider artifact changes require a full workspace stop, ANAS recovery point, and provider qualification before consumers start; stop/restart scope=" + ",".join(modules),
         }}}
         return suite, reply
@@ -39,7 +39,7 @@ class PlanEvidenceTests(unittest.TestCase):
                 suite.verify_maintenance_plan("before-upgrade", suite.modules)
             anas.assert_called_once_with("before-upgrade", "plan", "-w", suite.workspace, "--module-root", suite.modules)
             self.assertEqual(suite.report["postgres_maintenance_plans"]["before-upgrade"], {
-                "database_consumers": ["authentik", "immich"], "stop_restart_scope": reply["modules"], "managed_state_unchanged": True,
+                "database_consumers": ["casdoor", "immich"], "stop_restart_scope": reply["modules"], "managed_state_unchanged": True,
             })
 
     def test_missing_or_repeated_consumer_and_partial_stop_scope_are_rejected(self):

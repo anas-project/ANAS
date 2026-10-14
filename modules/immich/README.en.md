@@ -26,7 +26,7 @@ only; existing local accounts are not imported. The module owns Valkey and an op
 ```yaml
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 modules:
   immich:
     config:
@@ -35,10 +35,11 @@ modules:
       video_concurrency: 1
 ```
 
-The default URL is `https://photos.<BASE_DOMAIN>:<TRAEFIK_BASE_PORT>`. This version selects Authentik
-`2026.5.6-r15`, with trusted administrator roleClaim and directory revocation wiring; real login/sync
-acceptance is pending. LLNG has the role mapping but lacks the required revocation capability. Casdoor
-cannot express the role mapping; unsupported combinations fail during configuration. Password login and local
+The default URL is `https://photos.<BASE_DOMAIN>:<TRAEFIK_BASE_PORT>`. This version selects Casdoor, whose current Module publishes the required
+trusted role claim and negotiated directory policy-revocation capability. Its fixed r11 historical
+acceptance and the new r12 catalog/gateway acceptance have separate scopes; current Immich images
+require their own rerun. LLNG lacks the required policy-revocation capability and is rejected.
+Password login and local
 admin setup are disabled. The first account must receive `anas_role=admin` from the trusted administrator
 group; the first ordinary visitor is refused. There is no emergency local account. Restore IAM, directory,
 DNS, and CA availability when authentication fails.
@@ -54,7 +55,7 @@ creation, password writes, OAuth binding changes/unlink, and administrator unlin
 | --- | --- |
 | Login name, email, display name | sub should remain the anchor; the same sub retains the internal id. Profile refresh is not guaranteed; real IAM rename acceptance is pending |
 | Group membership | IAM checks APP_immich/APP_all/administrator admission at new login; admin/user role updates at the OAuth callback |
-| Disabled/deleted account or admission removed | Pinned Authentik sends negotiated signed policy events after successful LDAP sync or deletion; the receiver revokes old sessions/API keys/shares. The actual directory chain remains unverified |
+| Disabled/deleted account or admission removed | Pinned Casdoor sends negotiated signed policy events after successful LDAP sync or deletion; the receiver revokes old sessions/API keys/shares. The actual directory chain remains unverified |
 | Anchor reassigned or replaced | Rebinding is unsupported; real PG fixtures verify concurrent uniqueness and refusal to create a new soft-deleted binding; actual IAM/host acceptance remains pending |
 
 Upstream supports RP logout and `/api/oauth/backchannel-logout`; the module registers that receiver.

@@ -1,6 +1,6 @@
 # Runtime fixture for the isolated Docker daemon on ln. Every stable consumer
 # that declares the MariaDB relational_database interface is bound explicitly;
-# authentik is intentionally absent because its manifest supports PostgreSQL only.
+# casdoor is intentionally absent because its manifest supports PostgreSQL only.
 modules:
   samba_dc: {}
   mariadb: {}

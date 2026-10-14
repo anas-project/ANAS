@@ -116,7 +116,6 @@ This module neither consumes nor provides a relational-database contract.
 ### Exports
 
 - `ANAS_IAM_CLIENT__NETBIRD__*`
-- `APPS_LIST*`
 
 ### Explicit consumes
 
@@ -154,3 +153,11 @@ Management startup resolves Traefik and writes its exact `/32` plus explicit ups
 ## Current limitations
 
 Status is `developing` and it is excluded from recommended deployments.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

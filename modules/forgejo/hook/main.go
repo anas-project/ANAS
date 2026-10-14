@@ -204,13 +204,8 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	e[iamClientPrefix+"SCOPES"] = "openid,profile,email,groups"
 	e[iamClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1,groups:groups:0"
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
+	e["FORGEJO_APPLICATION_URL"] = e["FORGEJO_DOMAIN_FULL"] + "/user/oauth2/anas"
 	e[iamClientPrefix+"DOMAIN"] = e["FORGEJO_DOMAIN"]
-
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "forgejo")
-	e["APPS_LIST__FORGEJO__NAME"] = defaultValue(e["APPS_LIST__FORGEJO__NAME"], "Forgejo")
-	e["APPS_LIST__FORGEJO__DESC"] = defaultValue(e["APPS_LIST__FORGEJO__DESC"], "Git repositories, code review, packages, and collaboration")
-	e["APPS_LIST__FORGEJO__URI"] = e["FORGEJO_DOMAIN_FULL"] + "/user/oauth2/anas"
-	e["APPS_LIST__FORGEJO__ALLOW_GROUPS"] = allowGroups
 
 	return warnings, nil
 }

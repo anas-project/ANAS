@@ -14,6 +14,7 @@ category: app
 # ingress. The requirement matrix keeps this module at `developing` until the
 # real-deployment acceptance in AGENT-R-062..064 has reproducible evidence.
 status: developing
+applications_not_published: "Internal agent coordinator; no independent personnel UI."
 runtime:
   type: compose
   compose_file: docker-compose.yml

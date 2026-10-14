@@ -6,7 +6,7 @@ source "$script_dir/server-require-isolated-docker.sh"
 
 docker_cmd=${DOCKER_CMD:-docker}
 prefix=${ANAS_TEST_CONTAINER_PREFIX:-anas_anchor_}
-provider=${ANAS_TEST_IAM_PROVIDER:?ANAS_TEST_IAM_PROVIDER must be authentik or llng}
+provider=${ANAS_TEST_IAM_PROVIDER:?ANAS_TEST_IAM_PROVIDER must be llng}
 # LLNG r12 rejects Netbird's unapproved anchor projection.
 if [ "$provider" = llng ]; then
   apps=${ANAS_TEST_IAM_APPS:-nextcloud,meshcentral}
@@ -15,7 +15,7 @@ else
 fi
 
 case "$provider" in
-  authentik|llng) ;;
+  llng) ;;
   *) printf 'unsupported IAM provider: %s\n' "$provider" >&2; exit 2 ;;
 esac
 
@@ -49,7 +49,11 @@ for app in "${app_list[@]}"; do
   expected="APP_${app},APP_all,${admin_group}"
   csv_has "$identity_apps" "$app"
   test "$(container_env "$iam_container" "ANAS_IAM_CLIENT__${upper}__ALLOW_GROUPS")" = "$expected"
-  test "$(container_env "$iam_container" "APPS_LIST__${upper}__ALLOW_GROUPS")" = "$expected"
+  "$docker_cmd" exec "$iam_container" cat /run/anas/application-catalog/catalog.json |
+    jq -e --arg app "$app" --arg groups "$expected" '
+      .schema == "anas.app-catalog/v1" and
+      any(.applications[]; .name == $app and .access.mode == "iam" and .access.client == $app and
+        ((.groups | sort) == ($groups | split(",") | sort)))' >/dev/null
   test "$(container_env "$iam_container" "ANAS_IAM_BINDING__${upper}__INTERFACE")" = oidc
   test -n "$(container_env "$iam_container" "ANAS_IAM_CLIENT__${upper}__CLIENT_ID")"
   test -n "$(container_env "$iam_container" "ANAS_IAM_BINDING__${upper}__OIDC_DISCOVERY_URL")"
@@ -68,10 +72,6 @@ test "$(container_env "$iam_container" ANAS_IAM_CLIENT__NEXTCLOUD__OIDC_LOGOUT_U
   "https://nc.${ANAS_TEST_DOMAIN:-nas.test}:${ANAS_TEST_ENTRY_PORT:-9000}/index.php/apps/user_oidc/backchannel-logout/anas"
 
 case "$provider" in
-  authentik)
-    "$docker_cmd" exec "$iam_container" ak shell -c \
-      "from authentik.core.models import Application; from authentik.policies.models import PolicyBinding; from authentik.providers.oauth2.models import OAuth2Provider, RedirectURIType; apps='$apps'.split(','); assert all(Application.objects.filter(slug=a).exists() for a in apps); assert all(PolicyBinding.objects.filter(target=Application.objects.get(slug=a)).exists() for a in apps); p=OAuth2Provider.objects.get(name='nextcloud'); assert p.logout_method == 'backchannel'; assert p.logout_uri.endswith('/index.php/apps/user_oidc/backchannel-logout/anas'); assert any(uri.redirect_uri_type == RedirectURIType.LOGOUT for uri in p.redirect_uris)"
-    ;;
   llng)
     # The generated LLNG configuration, rather than only its input env, must
     # contain an RP rule for every application.

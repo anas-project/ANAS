@@ -293,10 +293,10 @@ func TestTwoActiveIAMsFail(t *testing.T) {
 	reg := writeModules(t, map[string]string{
 		"core":      fixtureCoreModule,
 		"llng":      strings.Replace(fixtureProviderModule, "%s", "llng", 1),
-		"authentik": strings.Replace(fixtureProviderModule, "%s", "authentik", 1),
+		"other_iam": strings.Replace(fixtureProviderModule, "%s", "other_iam", 1),
 		"nextcloud": fixtureDualConsumerModule,
 	})
-	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "authentik"}, "llng", "", nil))
+	a := newIAMApp(reg, iamConfig([]string{"nextcloud", "other_iam"}, "llng", "", nil))
 	_, err := a.resolveOrder(a.cfg.Modules.Order)
 	if err == nil || !strings.Contains(err.Error(), "only one IAM") {
 		t.Fatalf("error = %v, want two active IAMs to be rejected", err)
@@ -426,7 +426,7 @@ func TestIAMLogoutClientContractRejectsIncompleteAndUnknownDeclarations(t *testi
 
 func TestIAMSAMLLogoutClientContractRequiresEndpointAndBinding(t *testing.T) {
 	a := &app{
-		iamProvider: "authentik",
+		iamProvider: "other_iam",
 		iamBindings: map[string]string{"nextcloud": interfaceSAML},
 		env: map[string]string{
 			"ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL":      "https://nc.example/sls",
@@ -473,7 +473,7 @@ func TestIAMLogoutClientContractRequiresAbsoluteHTTPSURLs(t *testing.T) {
 func TestIAMLogoutClientContractRejectsOppositeProtocolFields(t *testing.T) {
 	prefix := "ANAS_IAM_CLIENT__NEXTCLOUD__"
 	a := &app{
-		iamProvider: "authentik",
+		iamProvider: "other_iam",
 		iamBindings: map[string]string{"nextcloud": interfaceOIDC},
 		env: map[string]string{
 			prefix + "SAML_SLS_URL":      "https://nc.example/sls",

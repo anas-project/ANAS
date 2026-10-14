@@ -145,6 +145,8 @@ func calculate(module string, env map[string]string, workdir string, secrets *se
 	if err := domainCalc("COLLABORA", "collabora")(env, workdir, secrets); err != nil {
 		return err
 	}
+	// The catalog consumes this URL after calculate, before render_env.
+	env["COLLABORA_ADMIN_URL"] = env["COLLABORA_DOMAIN_FULL"] + "/browser/dist/admin/admin.html"
 	password, err := ensureCollaboraPassword(env["COLLABORA_ADMIN_PASSWORD"], secrets)
 	if err != nil {
 		return err

@@ -1,11 +1,22 @@
 # Immich technical implementation
 
+Authentik was removed on 2026-10-10. Casdoor is the current selected provider. Authentik evidence below remains historical; the updated Casdoor harness is not itself a new real-host pass.
+
+
 See the [README](../README.en.md) for operation. This page documents implemented code and keeps real-host
 acceptance open where no evidence exists.
 
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `3.2.4-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
+
+## Application catalog
+
+The `applications` declaration in `module.yml` publishes the photo library with Chinese and English
+text under `media`. Visibility uses the groups from Immich's actual OIDC registration. Runner generates
+seven PNG sizes with a deterministic placeholder because this module does not yet supply an icon.
+Catalog language does not change Immich's own preferences. Native IAM limits are recorded in the
+[catalog design](/architecture/app-catalog-design).
 
 ## Compose topology
 
@@ -124,8 +135,7 @@ eight concurrent requests can revoke sessions, and replay across restart preserv
 Generic OIDC_LOGOUT registration is reused. API keys and shares remain valid after these logout paths.
 
 Directory admission loss negotiates `OIDC_CAEP_EVENTS=session-revoked` through existing registration.
-Runner checks Provider support, backchannel, and subject-wide semantics. Pinned Authentik `2026.5.6-r15`
-supports it; other combinations fail. The sender reuses LDAP sync, deletion transactions, and native
+Runner checks Provider support, backchannel, and subject-wide semantics. Pinned Casdoor supports it; other combinations fail. The sender reuses LDAP sync, deletion transactions, and native
 durable tasks with the directory anchor and shared-PG detection time, even without an AccessToken.
 Trusted Admins-role loss persists notification in the native membership/group-update/delete transaction, even while admission remains allowed; the next native callback refreshes the role. Ordinary logout omits the policy member. The receiver validates signature, issuer/audience, sub_id,
 policy and event time with the original OIDC backchannel member. Only the selected
@@ -179,8 +189,11 @@ revocation boundaries; no automatic mount parameter is exposed.
 
 `valkey-e2e.py` reads the actual Compose health command and exercises bounded ENOSPC. The guarded
 `test-env/scripts/server-immich-workspace-e2e.sh` runs actual ANAS new/repeated apply, restart and full
-workspace backup/restore with Samba AD, Authentik, and a second PG consumer. It requires a caller-selected
-Linux/Btrfs host, isolated daemon, and test network namespace.
+workspace backup/restore. The current entry uses Samba AD, Casdoor, and a second PG consumer and
+requires a caller-selected Linux/Btrfs host, isolated daemon, and test network namespace.
+Authentik-specific flows were retired; the shared Python file is only imported by the Casdoor harness.
+Real-host records below belong to their historical artifacts. The new Casdoor/Immich/PostgreSQL
+revision combination still requires an independent rerun.
 
 Local arm64 build, compiled-method regression, real-PG concurrency/soft-delete guards, photo/video
 original hashes, and thumbnail jobs passed. Real paused metadataExtraction jobs survive a Valkey AOF

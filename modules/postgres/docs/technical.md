@@ -150,3 +150,13 @@ bash modules/postgres/tests/container-e2e.sh --local-task-fixture anas-postgres:
 该结果不证明 Immich、IAM 或任意其他消费者已完成真实主机业务验收。
 
 目标构建前，Runner 为当前 PG workspace 的实际运行镜像建立 workspace/服务专属本地保留引用。Docker 的 containerd 镜像存储可能在构建替换标签后无法按旧 ID 导出；这些固定服务引用随下一次构建更新，不推送、不改动其他部署标签。恢复点仍按不可变 ID 导出无标签 archive，服务停写后才捕获数据。
+
+## 应用目录
+
+Adminer 5.5 的服务器名校验不接受下划线。PostgreSQL 在自己的数据库网络发布 `postgres`
+别名，Adminer 默认填写此地址，用户仍须输入独立数据库账号与密码。
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

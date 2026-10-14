@@ -89,3 +89,15 @@ The dependency closure does not grant every environment value. Sensitive values 
 ## Current limitations
 
 Ordinary `config set` cannot rotate the root password; use the declared credential lifecycle workflow.
+
+## Application catalog
+
+Adminer 5.5 rejects underscores in server names. MariaDB publishes the `mariadb` alias on
+its private database network, and Adminer prefills that address. Users must still provide
+their separate database account and password.
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

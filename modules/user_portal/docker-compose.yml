@@ -1,0 +1,70 @@
+services:
+  anas_user_portal:
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1
+    build:
+      context: ./portal
+      additional_contexts:
+        shared: ${ANAS_SHARED_BUILD_CONTEXT:-../..}
+      args:
+        DOCKER_HUB_REGISTRY: ${DOCKER_HUB_REGISTRY:-docker.io}
+        GO_MODULE_PROXY: ${GO_MODULE_PROXY:-${GOPROXY_URL:-https://proxy.golang.org,direct}}
+        CHINESE_BUILD_SPEEDUP: ${CHINESE_BUILD_SPEEDUP:-false}
+        APK_MIRROR_URL: ${APK_MIRROR_URL:-}
+    container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
+    restart: unless-stopped
+    dns: ["${LOCAL_DNS_SERVER}"]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      TZ: ${TZ}
+      USER_PORTAL_URL: ${USER_PORTAL_URL}
+      USER_PORTAL_ISSUER: ${USER_PORTAL_ISSUER}
+      USER_PORTAL_CLIENT_ID: ${USER_PORTAL_CLIENT_ID}
+      USER_PORTAL_REAUTH_CLIENT_ID: ${USER_PORTAL_REAUTH_CLIENT_ID}
+      USER_PORTAL_LANGUAGE: ${USER_PORTAL_LANGUAGE}
+      USER_PORTAL_CATALOG: /run/anas/application-catalog/catalog.json
+      USER_PORTAL_CA_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
+      USER_PORTAL_AUDIT_DIR: /var/lib/anas-user-portal/audit
+      USER_PORTAL_LDAP_URL: ${USER_PORTAL_LDAP_URL}
+      USER_PORTAL_LDAP_BIND_DN: ${USER_PORTAL_LDAP_BIND_DN}
+      USER_PORTAL_LDAP_BIND_PASSWORD: ${USER_PORTAL_LDAP_BIND_PASSWORD}
+      USER_PORTAL_BASE_DN: ${USER_PORTAL_BASE_DN}
+      USER_PORTAL_USERS_DN: ${USER_PORTAL_USERS_DN}
+      USER_PORTAL_GROUPS_DN: ${USER_PORTAL_GROUPS_DN}
+      USER_PORTAL_ANCHOR_ATTRIBUTE: ${USER_PORTAL_ANCHOR_ATTRIBUTE}
+      USER_PORTAL_PASSWORD_BIND_DN: ${USER_PORTAL_PASSWORD_BIND_DN}
+      USER_PORTAL_PASSWORD_BIND_PASSWORD: ${USER_PORTAL_PASSWORD_BIND_PASSWORD}
+      USER_PORTAL_GROUP_BIND_DN: ${USER_PORTAL_GROUP_BIND_DN}
+      USER_PORTAL_GROUP_BIND_PASSWORD: ${USER_PORTAL_GROUP_BIND_PASSWORD}
+      USER_PORTAL_RULES: ${USER_PORTAL_DELEGATION_RULES}
+      USER_PORTAL_PROTECTED_USERS: ${USER_PORTAL_PROTECTED_USERS}
+      USER_PORTAL_PROTECTED_GROUPS: ${USER_PORTAL_PROTECTED_GROUPS}
+      USER_PORTAL_PROTECTED_GROUP_NAMES: ${USER_PORTAL_PROTECTED_GROUP_NAMES}
+      USER_PORTAL_RECENT_WINDOW_SECONDS: ${USER_PORTAL_RECENT_WINDOW_SECONDS}
+      USER_PORTAL_AUDIT_CAPACITY_MB: ${USER_PORTAL_AUDIT_CAPACITY_MB}
+      USER_PORTAL_PROXY_HOST: ${TRAEFIK_HOSTNAME}
+      USER_PORTAL_TRUSTED_FORWARDERS: ${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS}
+    volumes:
+      - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+      - "${DATA_PATH}/user_portal:/var/lib/anas-user-portal"
+    healthcheck:
+      test: [CMD, /usr/local/bin/anas-user-portal, healthcheck]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "traefik.enable=true"
+      - "anas.traefik.instance=${NETWORK_PREFIX}traefik"
+      - "anas.client-ip.mode=application"
+      - "traefik.http.routers.user_portal.entrypoints=https"
+      - "traefik.http.routers.user_portal.rule=Host(`${USER_PORTAL_DOMAIN}`)"
+      - "traefik.http.routers.user_portal.tls=true"
+      - "traefik.http.services.user_portal.loadbalancer.server.port=8080"
+networks:
+  default:
+    external: true
+    name: ${NETWORK_PREFIX}traefik

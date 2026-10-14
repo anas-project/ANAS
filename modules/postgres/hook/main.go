@@ -214,6 +214,7 @@ func calcPostgres(e map[string]string, _ string, secrets *secretStore) error {
 	e["POSTGRES_HOST_PORT"] = e["POSTGRES_HOST"] + ":" + e["POSTGRES_PORT"]
 	e["POSTGRES_ADMINER_DOMAIN_PREFIX"] = defaultValue(e["POSTGRES_ADMINER_DOMAIN_PREFIX"], "postgres_adminer")
 	e["POSTGRES_ADMINER_DOMAIN"] = e["POSTGRES_ADMINER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["POSTGRES_ADMINER_URL"] = "https://" + e["POSTGRES_ADMINER_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	return nil
 }
 

@@ -20,8 +20,8 @@ check_fixture() (
 )
 
 check_fixture \
-  authentik-ad-zone \
-  "$TEST_ENV_DIR/server-domain-separation-authentik-e2e.yml" \
+  llng-ad-zone \
+  "$TEST_ENV_DIR/server-domain-separation-llng-ad-zone-e2e.yml" \
   'module plan: samba_dc requested_mode=auto resolved_mode=ad_zone zone=test.example'
 
 check_fixture \

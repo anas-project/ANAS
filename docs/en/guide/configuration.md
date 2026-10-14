@@ -190,7 +190,6 @@ The current manifests declare the following compatibility. The runner rejects in
 | `llng` | supported | supported |
 | `nextcloud` | supported | supported |
 | `meshcentral` | supported | supported |
-| `authentik` | supported | not declared/supported |
 
 ## Secret boundary
 

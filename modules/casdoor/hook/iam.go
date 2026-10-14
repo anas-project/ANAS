@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/appcatalog"
 )
 
 const (
@@ -39,8 +42,10 @@ func publishIAMEndpoints(e map[string]string) error {
 			e[prefix+"OIDC_ISSUER_URL"] = base
 			e[prefix+"OIDC_DISCOVERY_URL"] = base + "/.well-known/openid-configuration"
 			e[prefix+"OIDC_CAEP_EVENTS"] = "session-revoked"
+			e[prefix+"OIDC_SELF_ACCOUNT_API_SCHEMA"] = "casdoor-account/v1"
 		case "saml":
 			delete(e, prefix+"OIDC_CAEP_EVENTS")
+			delete(e, prefix+"OIDC_SELF_ACCOUNT_API_SCHEMA")
 			metadata := base + "/api/saml/metadata?application=admin/" + appName(app)
 			e[prefix+"SAML_METADATA_URL"] = metadata
 			e[prefix+"SAML_ENTITY_ID"] = metadata
@@ -54,6 +59,10 @@ func publishIAMEndpoints(e map[string]string) error {
 }
 
 func renderInitData(e map[string]string) (string, error) {
+	catalog, err := appcatalog.FromEnvironment(e)
+	if err != nil {
+		return "", err
+	}
 	if err := validateSubjectConsumers(e); err != nil {
 		return "", err
 	}
@@ -86,6 +95,14 @@ func renderInitData(e map[string]string) (string, error) {
 			return "", err
 		}
 		applications = append(applications, application)
+		if e[iamClientPrefix+envName(app)+"__REAUTHENTICATION_REDIRECT_URI"] != "" {
+			reauthentication, err := oidcReauthenticationApplication(e, app)
+			if err != nil {
+				return "", err
+			}
+			application["enableAutoSignin"] = true
+			applications = append(applications, reauthentication)
+		}
 	}
 	for _, app := range splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"]) {
 		application, err := samlApplication(e, app)
@@ -93,6 +110,9 @@ func renderInitData(e map[string]string) (string, error) {
 			return "", err
 		}
 		applications = append(applications, application)
+	}
+	if err := projectCatalogApplications(e, catalog, &applications); err != nil {
+		return "", err
 	}
 	groups, roles, permissions := managedIAMAccessObjects(e)
 
@@ -169,7 +189,13 @@ func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	if err := validateCasdoorCAEPRegistration(e, app); err != nil {
 		return nil, err
 	}
-	if e[prefix+"CLIENT_ID"] == "" || e[prefix+"CLIENT_SECRET"] == "" {
+	if flag := e[prefix+"PUBLIC_CLIENT"]; flag != "" && flag != "true" && flag != "false" {
+		return nil, fmt.Errorf("invalid public client flag for %s", app)
+	}
+	if e[prefix+"PUBLIC_CLIENT"] == "true" && e[prefix+"CLIENT_SECRET"] != "" {
+		return nil, fmt.Errorf("public client %s must not publish an API secret", app)
+	}
+	if e[prefix+"CLIENT_ID"] == "" || (e[prefix+"CLIENT_SECRET"] == "" && e[prefix+"PUBLIC_CLIENT"] != "true") {
 		return nil, fmt.Errorf("oidc client %s did not publish credentials", app)
 	}
 	result := baseApplication(e, app)
@@ -181,12 +207,44 @@ func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	result["tokenFormat"] = "JWT-Custom"
 	result["tokenSigningMethod"] = "RS256"
 	result["tokenFields"] = []string{"Name", "DisplayName", "Email"}
+	if e[prefix+"PUBLIC_CLIENT"] == "true" {
+		// Native UserInfo selects fields through tokenFields independently of
+		// JWT-Custom tokenAttributes. The portal compares live groups with get-account.
+		result["tokenFields"] = []string{"Name", "DisplayName", "Email", "Groups"}
+	}
 	result["tokenAttributes"] = oidcTokenAttributes(
 		e[prefix+"ATTRIBUTES"], e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"], defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins"))
 	if uri := strings.TrimSpace(e[prefix+"OIDC_LOGOUT_URI"]); uri != "" && strings.Contains(e[prefix+"OIDC_LOGOUT_METHODS"], "backchannel") {
 		result["backchannelLogoutUri"] = uri
 	}
 	result["anasPolicyRevocation"] = e[prefix+"OIDC_CAEP_EVENTS"] == "session-revoked"
+	return result, nil
+}
+
+// Public PKCE clients do not receive a Casdoor application API secret. A
+// dedicated native application gives sensitive operations a password form
+// while leaving the ordinary application's SSO behavior intact.
+func oidcReauthenticationApplication(e map[string]string, app string) (map[string]any, error) {
+	p := iamClientPrefix + envName(app) + "__"
+	uri := e[p+"REAUTHENTICATION_REDIRECT_URI"]
+	if e[p+"PUBLIC_CLIENT"] != "true" || e[p+"REAUTHENTICATION_CLIENT_ID"] == "" || e[p+"REAUTHENTICATION_CLIENT_ID"] == e[p+"CLIENT_ID"] {
+		return nil, fmt.Errorf("reauthentication client %s requires public PKCE registration", app)
+	}
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
+		return nil, fmt.Errorf("invalid reauthentication redirect for %s", app)
+	}
+	result, err := oidcApplication(e, app)
+	if err != nil {
+		return nil, err
+	}
+	result["name"] = appName(app) + "-reauth"
+	result["clientId"] = e[p+"REAUTHENTICATION_CLIENT_ID"]
+	result["clientSecret"] = ""
+	result["redirectUris"] = []string{uri}
+	result["enableAutoSignin"] = false
+	result["enableSigninSession"] = false
+	result["backchannelLogoutUri"] = ""
 	return result, nil
 }
 
@@ -208,13 +266,9 @@ func samlApplication(e map[string]string, app string) (map[string]any, error) {
 }
 
 func baseApplication(e map[string]string, app string) map[string]any {
-	title := e["APPS_LIST__"+envName(app)+"__NAME"]
-	if title == "" {
-		title = app
-	}
 	return map[string]any{
-		"owner": "admin", "name": appName(app), "displayName": title,
-		"homepageUrl": e["APPS_LIST__"+envName(app)+"__URI"], "organization": "anas",
+		"owner": "admin", "name": appName(app), "displayName": app,
+		"homepageUrl": "", "organization": "anas",
 		"cert": "anas-signing", "enablePassword": true, "enableSignUp": false,
 		"disableSignin": false, "enableSigninSession": true,
 		"expireInHours": accessTokenExpireInHours, "refreshExpireInHours": refreshTokenExpireInHours,
@@ -352,6 +406,13 @@ func managedIAMGroups(e map[string]string) []string {
 			}
 		}
 	}
+	catalog, _ := appcatalog.FromEnvironment(e) // renderInitData validates this input.
+	for _, group := range catalog.Groups() {
+		if !seen[group] {
+			seen[group] = true
+			result = append(result, group)
+		}
+	}
 	return result
 }
 
@@ -404,6 +465,24 @@ func managedIAMAccessObjects(e map[string]string) ([]any, []any, []any) {
 			"groups": groupIDs, "model": "built-in/user-model-built-in", "resourceType": "Application",
 			"resources": []string{appName(app)}, "actions": []string{"Read"}, "effect": "Allow",
 			"isEnabled": true, "submitter": "admin", "approver": "admin", "state": "Approved",
+		})
+	}
+	catalog, _ := appcatalog.FromEnvironment(e)
+	for _, app := range catalog.Applications {
+		primary, found := catalog.IAMApplication(app.Access.Client)
+		if !app.Enabled || app.Hidden || (app.Access.Mode == "iam" && found && primary.Name == app.Name) || len(app.Groups) == 0 {
+			continue
+		}
+		ids := []string{}
+		for _, group := range app.Groups {
+			ids = append(ids, "anas/"+group)
+		}
+		permissions = append(permissions, map[string]any{
+			"owner": "anas", "name": "permission-" + catalogApplicationName(app.Name),
+			"displayName": "ANAS catalog access for " + app.Name, "groups": ids,
+			"model": "built-in/user-model-built-in", "resourceType": "Application",
+			"resources": []string{catalogApplicationName(app.Name)}, "actions": []string{"Read"},
+			"effect": "Allow", "isEnabled": true, "submitter": "admin", "approver": "admin", "state": "Approved",
 		})
 	}
 	return groups, roles, permissions

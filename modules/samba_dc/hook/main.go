@@ -250,6 +250,22 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_ADMIN_GROUP_DN"] = "CN=Admins," + e["SAMBA_DC_BASE_GROUPS_ROLE_DN"]
 	e["SAMBA_DC_FS_ADMIN_GROUP_NAME"] = "FS Admins"
 	e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"] = "FS Share RW"
+	groups := []string{e["SAMBA_DC_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"]}
+	if e["SAMBA_DC_APP_FILTER"] == "true" {
+		groups = append(groups, e["SAMBA_DC_APP_ALL_NAME"])
+		for _, app := range strings.Split(e["ANAS_IDENTITY_APP_CLIENTS"], ",") {
+			if app != "" {
+				groups = append(groups, "APP_"+app)
+			}
+		}
+	}
+	for _, group := range strings.Split(e["ANAS_IDENTITY_CAPABILITY_GROUPS"], ",") {
+		if group != "" {
+			groups = append(groups, "CAP_"+group)
+		}
+	}
+	e["SAMBA_DC_APPLICATION_CATALOG_GROUPS"] = strings.Join(groups, ",")
+
 	e["SAMBA_DC_LDAP_BIND_DN"] = "CN=" + e["SAMBA_DC_LDAP_BIND_NAME"] + "," + e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
 	ldapBindPassword, err := ensurePassword(e["SAMBA_DC_LDAP_BIND_PASSWORD"], "SAMBA_DC_LDAP_BIND_PASSWORD", secrets)
 	if err != nil {

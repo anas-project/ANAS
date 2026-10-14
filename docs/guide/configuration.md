@@ -185,7 +185,6 @@ Runner 会为每个 Consumer 创建独立数据库、用户和稳定生成的凭
 | `llng` | 支持 | 支持 |
 | `nextcloud` | 支持 | 支持 |
 | `meshcentral` | 支持 | 支持 |
-| `authentik` | 支持 | 不支持（Manifest 未声明） |
 
 ## Secret 边界
 

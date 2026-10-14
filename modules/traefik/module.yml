@@ -11,6 +11,31 @@ title: Traefik reverse proxy
 description: HTTPS reverse proxy and dashboard for all web-facing services.
 category: network
 status: release
+applications:
+  - name: traefik-admin
+    display_name:
+      zh-CN: Traefik
+      en: Traefik
+    url_from: TRAEFIK_DASHBOARD_URL
+    summary:
+      zh-CN: "反向代理状态与路由"
+      en: "Reverse proxy status and routes"
+    description:
+      zh-CN: "反向代理状态与路由。"
+      en: "Reverse proxy status and routes."
+    documentation_url:
+      zh-CN: https://doc.traefik.io/traefik/
+      en: https://doc.traefik.io/traefik/
+    weight: 100
+    kind: admin
+    categories:
+      - network
+    access:
+      mode: local
+    visibility:
+      mode: subjects
+      any_of:
+        - role: platform_admin
 runtime:
   type: compose
   compose_file: docker-compose.yml

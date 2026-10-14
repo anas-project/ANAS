@@ -387,7 +387,7 @@ func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 		"OIDC_RP__MESHCENTRAL__LOGOUT_TYPE":             "back",
 		"OIDC_RP__MESHCENTRAL__LOGOUT_SESSION_REQUIRED": "1",
 		"OIDC_RP__MESHCENTRAL__ATTR01":                  "cn,cn,1",
-		"OIDC_RP__MESHCENTRAL__ATTR02":                  "email,email,1",
+		"OIDC_RP__MESHCENTRAL__ATTR02":                  "email,mail,1",
 		"SAML_SP_APPS":                                  "nextcloud",
 		"SAML_SP__NEXTCLOUD__METADATA_URL":              "https://nc.example/metadata",
 		"SAML_SP__NEXTCLOUD__NAMEID_FORMAT":             "windows",
@@ -396,6 +396,20 @@ func TestApplyClientRegistrationsTranslatesToPrivateNames(t *testing.T) {
 		if e[key] != want {
 			t.Errorf("%s = %q, want %q", key, e[key], want)
 		}
+	}
+}
+
+func TestClientEmailUsesADMailWithoutChangingOtherSources(t *testing.T) {
+	e := map[string]string{"client_ATTRIBUTES": "email:email:1,alternate:mail:0,groups:groups:1,uid:sAMAccountName:1"}
+	applyClientAttributes(e, "client_", "rp_")
+	for i, want := range []string{"email,mail,1", "alternate,mail,0", "groups,groups,1", "uid,sAMAccountName,1"} {
+		key := fmt.Sprintf("rp_ATTR%02d", i+1)
+		if e[key] != want {
+			t.Errorf("%s = %q, want %q", key, e[key], want)
+		}
+	}
+	if e["client_ATTRIBUTES"] != "email:email:1,alternate:mail:0,groups:groups:1,uid:sAMAccountName:1" {
+		t.Fatal("provider translation changed the consumer's generic request")
 	}
 }
 

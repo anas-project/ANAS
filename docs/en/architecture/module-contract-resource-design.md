@@ -218,7 +218,6 @@ a placeholder contract that has not been migrated.
 | Name | Category | Status | Description |
 | --- | --- | --- | --- |
 | [`ai_agent`](/en/reference/modules/ai_agent/) | `app` | `developing` | Runs AI agents inside Forgejo issues, freezes approved documents as the execution basis, and drives isolated work instances through the compute contract. |
-| [`authentik`](/en/reference/modules/authentik/) | `identity` | `deprecated` | Identity provider serving OIDC and SAML with per-application endpoints. |
 | [`casdoor`](/en/reference/modules/casdoor/) | `identity` | `developing` | IAM provider serving OIDC and SAML with Samba AD-backed sign-in. |
 | [`collabora`](/en/reference/modules/collabora/) | `app` | `release` | Online document editing backend for Nextcloud. |
 | [`ddns_go`](/en/reference/modules/ddns_go/) | `network` | `release` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
@@ -240,6 +239,7 @@ a placeholder contract that has not been migrated.
 | [`samba_dc`](/en/reference/modules/samba_dc/) | `identity` | `release` | Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server. |
 | [`samba_fs`](/en/reference/modules/samba_fs/) | `storage` | `release` | File sharing service joined to the Samba domain. |
 | [`traefik`](/en/reference/modules/traefik/) | `network` | `release` | HTTPS reverse proxy and dashboard for all web-facing services. |
+| [`user_portal`](/en/reference/modules/user_portal/) | `identity` | `developing` | Authorized applications, personal accounts and delegated directory administration. |
 | [`versitygw`](/en/reference/modules/versitygw/) | `storage` | `developing` | S3-compatible API backed by a dedicated POSIX directory. |
 | [`vikunja`](/en/reference/modules/vikunja/) | `app` | `developing` | Task and project management with OIDC-only authentication, multiple views, API, webhooks, and CalDAV. |
 <!-- generated:builtin-module-inventory:end -->

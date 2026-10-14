@@ -121,7 +121,7 @@ sh ./test-env/scripts/test-container-config.sh
 ### Vikunja 发布 E2E
 
 Vikunja 的服务器发布门禁使用 `server-vikunja-e2e.sh`（runtime、数据库重启、API v2、附件、
-CalDAV、webhook、轮换）和 `server-vikunja-oidc-e2e.sh`（Authentik 授权码与应用组矩阵）。
+CalDAV、webhook、轮换）和 `server-vikunja-oidc-e2e.sh`（LLNG 授权码与应用组矩阵）。
 webhook 接收端固定使用 `server-vikunja-webhook-receiver.py`，在隔离 network namespace 内验证
 原始 body 的 HMAC-SHA256；错误签名必须返回 401，接收端不得记录 Secret。
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real ANAS/AD/Authentik/Immich workspace round trip on a guarded Linux host.
+"""Shared guarded Linux workspace helpers for native Casdoor/Immich acceptance.
 
 No SSH targets, host provisioning, hand-written Compose, fake IAM, or SQL-created
 Immich accounts. The shell entry point supplies the existing daemon/netns guards.
@@ -26,7 +26,7 @@ import urllib.parse
 import uuid
 import zlib
 
-FIXED_MODULES = {"postgres": ("18.4.0", 4), "immich": ("3.2.4", 1), "authentik": ("2026.5.6", 15)}
+FIXED_MODULES = {"postgres": ("18.4.0", 5), "immich": ("3.2.4", 2), "casdoor": ("3.143.0", 12)}
 EXTENSIONS = {"cube": "1.5", "earthdistance": "1.2", "vector": "0.8.2"}
 OLD_VECTOR_SOURCE = "a9094dfb85ccdde3cbb295f1086d4c71a20db1d26bf1d6c39f07a7d164033eb4"
 
@@ -119,8 +119,8 @@ def postgres_fixture_sources(modules, *, fail_after_maintenance=False, pause_aft
         raise Blocked("audited real pgvector 0.8.1 fixture source checksum changed")
     replacements = {
         "postgres/postgres/Dockerfile": [("ADD --checksum=sha256:69f4019389af05dc1c9548deb8628e62878e6e207c03907f2b8af2016472cdaa https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.2.tar.gz /tmp/vector.tar.gz", old_add)],
-        "postgres/module.yml": [("\nrevision: 4\n", "\nrevision: 3\n")],
-        "postgres/localization.yml": [("\nmodule_revision: 4\n", "\nmodule_revision: 3\n")],
+        "postgres/module.yml": [("\nrevision: 5\n", "\nrevision: 3\n")],
+        "postgres/localization.yml": [("\nmodule_revision: 5\n", "\nmodule_revision: 3\n")],
         "postgres/postgres/extensions.sh": [
             ("        vector) echo 0.8.2 ;;", "        vector) echo 0.8.1 ;;"),
             ("                vector:0.8.2|cube:1.5|earthdistance:1.2) ;;", "                vector:0.8.1|cube:1.5|earthdistance:1.2) ;;"),
@@ -136,9 +136,9 @@ def postgres_fixture_sources(modules, *, fail_after_maintenance=False, pause_aft
         prepared[path] = source
     path = "postgres/docker-compose.yml"
     source = (modules / path).read_text()
-    if source.count("/anas-postgres:18.4.0-r4") != 2:
+    if source.count("/anas-postgres:18.4.0-r5") != 2:
         raise Blocked("fixed server/provision image anchors changed")
-    prepared[path] = source.replace("/anas-postgres:18.4.0-r4", "/anas-postgres:18.4.0-r3")
+    prepared[path] = source.replace("/anas-postgres:18.4.0-r5", "/anas-postgres:18.4.0-r3")
     return prepared
 
 
@@ -373,7 +373,7 @@ def preflight(args):
 
 
 class Suite:
-    iam = "authentik"
+    iam = "casdoor"
 
     def __init__(self, args, workspace, modules):
         self.args, self.workspace, self.modules = args, workspace, modules
@@ -381,12 +381,12 @@ class Suite:
         self.backups = pathlib.Path(str(workspace) + ".backups")
         self.prefix = "anas_iw_" + workspace.name.rsplit("-", 1)[-1][:12] + "_"
         self.domain = "iw" + secrets.token_hex(4) + ".immich.test"
-        self.report = {"environment": "real ANAS workspace, Samba AD and Authentik on caller-selected isolated Linux/Btrfs host",
+        self.report = {"environment": "real ANAS workspace, Samba AD and Casdoor on caller-selected isolated Linux/Btrfs host",
                        "status": "running", "checks": {}, "fixed_modules": FIXED_MODULES,
                        "workspace": str(workspace), "docker_host": os.environ["DOCKER_HOST"]}
         self.phase, self.initialized = "preflight", False
         self.envs = {}
-        self.iam = "authentik"
+        self.iam = "casdoor"
         self.vector_version = "0.8.1"
 
     def module_fixture(self, name, *, fail_after_maintenance=False, pause_after_maintenance=None):
@@ -435,19 +435,7 @@ class Suite:
         return destination
 
     def docker(self, *args, data=None):
-        argv = list(args)
-        shell = next((i for i in range(len(argv) - 1) if argv[i:i + 2] == ["ak", "shell"]), None)
-        if shell is not None:
-            argv[shell + 2:shell + 2] = ["--verbosity", "0"]
-        result = command(["docker", *argv], data=data)
-        if shell is not None:
-            # The pinned Authentik command prints two unconditional banner
-            # lines even at verbosity 0. Preserve every other stdout byte.
-            lines = result.splitlines(keepends=True)
-            if len(lines) < 2 or not lines[0].startswith(b"### authentik shell (2026.5.6)") or not lines[1].startswith(b"### Node "):
-                raise RuntimeError("fixed Authentik shell banner changed")
-            return b"".join(lines[2:])
-        return result
+        return command(["docker", *args], data=data)
 
     def anas_result(self, name, *args):
         self.phase = name
@@ -858,75 +846,11 @@ printf "username = %s\\npassword = %s\\n" "$SAMBA_DC_ADMIN_NAME" "$SAMBA_DC_ADMI
 samba-tool "$@" -H ldap://127.0.0.1 -A "$auth_file"'''
         return self.docker("exec", self.prefix + "samba_dc", "bash", "-lc", script, "immich-workspace-e2e", *args).decode()
 
-    def directory_sync(self):
-        self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c",
-                    "from authentik.tasks.schedules.models import Schedule; [s.send() for s in Schedule.objects.filter(actor_name='authentik.sources.ldap.tasks.ldap_sync') if getattr(s.rel_obj,'slug',None)=='samba-ad']")
+    def directory_sync(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
-    def login(self, username, password, *, cookie=None, allow_denied=False):
-        verifier, state = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
-        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
-        code, body, _ = self.http(self.app + "/api/oauth/authorize", {"redirectUri": self.app + "/auth/login", "state": state, "codeChallenge": challenge})
-        self.report["native_authorize_probe"] = {"http_status": code, "body_kind": type(body).__name__}
-        assert code in (200, 201), "Immich did not begin native OIDC authorization"
-        own_cookie = cookie is None
-        cookie = cookie or self.reports / ("cookie-" + uuid.uuid4().hex)
-        authorize_url = body["url"]
-        code, _, flow = self.http(authorize_url, cookie=cookie, follow=True)
-        parts = urllib.parse.urlsplit(flow)
-        assert "/if/flow/" in parts.path, "OIDC did not reach real Authentik"
-        api = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path.replace("/if/flow/", "/api/v3/flows/executor/", 1), urllib.parse.urlencode({"query": parts.query}), ""))
-        code, body, _ = self.http(api, cookie=cookie)
-        assert body["component"] == "ak-stage-identification"
-        code, body, _ = self.http(api, {"uid_field": username}, cookie=cookie, follow=True)
-        assert body["component"] == "ak-stage-password"
-        code, body, _ = self.http(api, {"password": password}, cookie=cookie, follow=True)
-        if allow_denied and code in (200, 400) and body.get("component") == "ak-stage-password":
-            if own_cookie:
-                cookie.unlink(missing_ok=True)
-            return 401, {"directory_outcome": "credential-denied"}
-        assert body["component"] == "xak-flow-redirect", "AD credential login failed"
-        code, authorization_body, callback = self.http(urllib.parse.urljoin(api, body["to"]), cookie=cookie, follow=True, headers={"Accept-Language": "en"})
-        if allow_denied and code == 200 and native_policy_denied_page(callback, authorization_body, authorize_url, state):
-            if own_cookie:
-                cookie.unlink(missing_ok=True)
-            return 403, {"directory_outcome": "native-policy-denied-page"}
-        if allow_denied and code in (403, 404):
-            if own_cookie:
-                cookie.unlink(missing_ok=True)
-            return code, {"directory_outcome": "application-policy-denied"}
-        # Auto-authorize is normally configured. Explicitly handle an upstream
-        # consent stage as the existing Authentik authorization-code E2E does.
-        if "/if/flow/" in urllib.parse.urlsplit(callback).path:
-            p = urllib.parse.urlsplit(callback)
-            consent_api = urllib.parse.urlunsplit((p.scheme, p.netloc, p.path.replace("/if/flow/", "/api/v3/flows/executor/", 1), urllib.parse.urlencode({"query": p.query}), ""))
-            _, body, _ = self.http(consent_api, cookie=cookie)
-            if allow_denied and body.get("component") == "ak-stage-access-denied":
-                if own_cookie:
-                    cookie.unlink(missing_ok=True)
-                return 403, {"directory_outcome": "application-policy-denied"}
-            if body["component"] == "ak-stage-consent":
-                _, body, _ = self.http(consent_api, {"component": "ak-stage-consent", "token": body["token"]}, cookie=cookie)
-            assert body["component"] == "xak-flow-redirect", "application authorization failed"
-            _, _, callback = self.http(urllib.parse.urljoin(consent_api, body["to"]), cookie=cookie, follow=True)
-        if allow_denied and directory_denied_callback(callback, self.app, state):
-            if own_cookie:
-                cookie.unlink(missing_ok=True)
-            return 403, {"directory_outcome": "native-oidc-access-denied"}
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(callback).query)
-        if not (query.get("code") and query.get("state") == [state]):
-            parts = urllib.parse.urlsplit(callback)
-            expected = urllib.parse.urlsplit(self.app)
-            known_errors = {"access_denied", "server_error", "invalid_request", "login_required", "interaction_required"}
-            error_kind = query.get("error", ["absent"])[0]
-            diagnosis = {"matching_app_origin": (parts.scheme, parts.netloc) == (expected.scheme, expected.netloc),
-                         "callback_path": parts.path if parts.path in ("/auth/login", "/photos", "/") else "other",
-                         "has_code": bool(query.get("code")), "state_matches": query.get("state") == [state],
-                         "error_kind": error_kind if error_kind in known_errors else "absent-or-other"}
-            raise AssertionError("real IdP did not return an OIDC code/state: " + json.dumps(diagnosis, sort_keys=True))
-        response = self.http(self.app + "/api/oauth/callback", {"url": callback, "state": state, "codeVerifier": verifier}, cookie=cookie)[:2]
-        if own_cookie:
-            cookie.unlink(missing_ok=True)
-        return response
+    def login(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
     def verify_entry_restrictions(self, state):
         """Exercise native controllers with real OIDC roles, retaining bindings."""
@@ -997,380 +921,14 @@ samba-tool "$@" -H ldap://127.0.0.1 -A "$auth_file"'''
         # into a spurious fresh-login acceptance failure.
         self.wait(lambda: int(self.sql("immich", "SELECT floor(EXTRACT(EPOCH FROM clock_timestamp()))::bigint;")) > cutoff)
 
-    def identity_lifecycle(self, state):
-        """Use private AD identities; keep the core restore users and media intact."""
-        import concurrent.futures
-        import threading
+    def identity_lifecycle(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
-        self.phase = "identity-lifecycle"
-        users = {case: "iwid" + case[0] + secrets.token_hex(5) for case in ("email", "conflict", "parallel", "deleted")}
-        emails = {name: name + "@" + self.domain for name in users.values()}
-        anchors = {}
-        evidence = {"retention": "private directory users and application identity rows remain until scoped workspace cleanup; native soft deletion is not forced erasure"}
-        self.report["identity_lifecycle"] = evidence
-        for name in users.values():
-            self.samba("user", "add", name, state["password"], "--userou=OU=People", "--mail-address=" + emails[name])
-            self.samba("group", "addmembers", "APP_immich", name)
-            def anchor_ready():
-                found = re.search(r"^anasIdentityAnchor: ([a-f0-9-]+)$", self.samba("user", "show", name, "--attributes=anasIdentityAnchor"), re.M)
-                if found:
-                    anchors[name] = str(uuid.UUID(found.group(1)))
-                return name in anchors
-            self.wait(anchor_ready)
+    def directory_revocation(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
-        def synced():
-            # The fixed source's default-mail mapping writes User.email. Read
-            # actual source connections, rather than treating enqueue as sync.
-            self.directory_sync()
-            observed = {}
-            probe = f'''import json
-from authentik.core.models import UserSourceConnection
-from authentik.sources.ldap.models import LDAPSource
-s=LDAPSource.objects.get(slug='samba-ad')
-expected={emails!r}
-anchors={anchors!r}
-connections={{n:UserSourceConnection.objects.get(source=s,user__username=n) for n in expected}}
-assert len({{c.user_id for c in connections.values()}})==len(expected)
-for n,c in connections.items():
-    assert c.identifier==anchors[n] and c.user.email==expected[n] and c.user.is_active
-    assert c.user.all_groups().filter(name='APP_immich').exists()
-print(json.dumps({{n:c.user_id for n,c in connections.items()}}))'''
-            def ready():
-                observed.update(json.loads(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", probe).decode()))
-                return True
-            self.wait(ready)
-            return observed
-
-        directory_ids = synced()
-
-        def rows(name):
-            # SELECT only: every identity mutation goes through LDAP or the
-            # native HTTP controller, including the soft-delete tombstone.
-            return json.loads(self.sql("immich", f'''SELECT COALESCE(json_agg(json_build_object('id',id,'oauthId',"oauthId",'email',email,'deletedAt',"deletedAt") ORDER BY id),'[]'::json)::text FROM "user" WHERE "oauthId"='{anchors[name]}';'''))
-
-        def change_email(name, email):
-            self.samba("user", "rename", name, "--mail-address=" + email)
-            row = self.samba("user", "show", name, "--attributes=anasIdentityAnchor,mail")
-            assert re.search(r"^mail: " + re.escape(email) + r"$", row, re.M), "native AD mail change was not persisted"
-            assert re.search(r"^anasIdentityAnchor: " + re.escape(anchors[name]) + r"$", row, re.M), "mail edit changed the directory anchor"
-            emails[name] = email
-            assert synced() == directory_ids, "mail edit merged or replaced a real directory identity"
-
-        name = users["email"]
-        code, owner = self.login(name, state["password"])
-        assert code in (200, 201) and not owner["isAdmin"]
-        baseline = rows(name)
-        assert len(baseline) == 1 and baseline[0]["id"] == owner["userId"] and baseline[0]["deletedAt"] is None
-        original_email = emails[name]
-        change_email(name, "changed-" + name + "@" + self.domain)
-        code, renamed = self.login(name, state["password"])
-        assert code in (200, 201) and renamed["userId"] == owner["userId"] and not renamed["isAdmin"]
-        assert rows(name) == baseline, "same-sub mail change rebound the account"
-        # v3.2.4 keeps an existing account's application email; this checks
-        # identity continuity, without claiming automatic email replication.
-        assert self.http(self.app + "/api/users/me", token=owner["accessToken"])[0] == 200
-        evidence["email_change"] = {"anchor": anchors[name], "user_id": owner["userId"], "directory_email": emails[name], "application_email": baseline[0]["email"], "callback_status": code}
-        self.mark("real AD mail change and LDAP synchronization preserve OIDC anchor and internal user.id")
-
-        conflict = users["conflict"]
-        change_email(conflict, original_email)
-        code, denied = self.login(conflict, state["password"])
-        assert code == 400 and "accessToken" not in denied, "different directory sub acquired an already-bound email"
-        assert not rows(conflict) and rows(name) == baseline, "email conflict created an account or changed the owner binding"
-        evidence["email_conflict"] = {"owner_anchor": anchors[name], "conflicting_anchor": anchors[conflict], "distinct_directory_user_ids": [directory_ids[name], directory_ids[conflict]], "callback_status": code}
-        self.mark("real distinct AD identities cannot claim the same bound Immich email")
-
-        parallel = users["parallel"]
-        assert not rows(parallel), "parallel identity was already registered"
-        callback_barrier = threading.Barrier(2, timeout=180)
-        native_http = self.http
-        def simultaneous_callback(url, *args, **kwargs):
-            if url == self.app + "/api/oauth/callback":
-                callback_barrier.wait()
-            return native_http(url, *args, **kwargs)
-        self.http = simultaneous_callback
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-                results = list(pool.map(lambda _: self.login(parallel, state["password"]), range(2)))
-        finally:
-            self.http = native_http
-        successful = [account for code, account in results if code in (200, 201)]
-        assert successful and all(code in (200, 201, 400, 500) for code, _ in results), "concurrent native callback did not yield a usable account"
-        account_rows = rows(parallel)
-        assert len(account_rows) == 1 and account_rows[0]["deletedAt"] is None
-        assert all(account["userId"] == account_rows[0]["id"] and not account["isAdmin"] for account in successful)
-        assert all(code in (200, 201) or "accessToken" not in account for code, account in results)
-        evidence["concurrent_callbacks"] = {"anchor": anchors[parallel], "user_id": account_rows[0]["id"], "callback_statuses": [code for code, _ in results], "account_rows": len(account_rows), "independent_grants_waited_before_callback": True}
-        self.mark("real independent OIDC grants enter concurrent callbacks and retain one same-sub account")
-
-        deleted = users["deleted"]
-        code, account = self.login(deleted, state["password"])
-        assert code in (200, 201) and not account["isAdmin"]
-        deleted_id = account["userId"]
-        code, admin = self.login(state["admin"]["username"], state["password"])
-        assert code in (200, 201) and admin["isAdmin"] and admin["userId"] == state["admin"]["user_id"]
-        code, tombstone, _ = self.http(self.app + "/api/admin/users/" + deleted_id, {"force": False}, token=admin["accessToken"], method="DELETE")
-        assert code == 200 and tombstone["id"] == deleted_id and tombstone["status"] == "deleted"
-        before_retry = rows(deleted)
-        assert len(before_retry) == 1 and before_retry[0]["id"] == deleted_id and before_retry[0]["deletedAt"] is not None
-        # A new email prevents an email uniqueness failure from masking an
-        # absent oauthId constraint on a retained native soft-delete row.
-        change_email(deleted, "after-delete-" + deleted + "@" + self.domain)
-        retry_code, denied = self.login(deleted, state["password"])
-        assert 400 <= retry_code < 600 and "accessToken" not in denied, "native soft-deleted anchor was registered again"
-        assert rows(deleted) == before_retry, "soft-delete retry created or rebound an identity"
-        assert self.http(self.app + "/api/users/me", token=account["accessToken"])[0] == 401
-        evidence["native_soft_delete"] = {"anchor": anchors[deleted], "user_id": deleted_id, "delete_status": code, "callback_status": retry_code, "account_rows": 1, "retained_deletedAt": before_retry[0]["deletedAt"], "directory_identity_still_active": True}
-        self.mark("native administrator soft deletion retains the anchor and refuses fresh-email re-registration")
-        for role in ("admin", "user"):
-            code, protected = self.login(state[role]["username"], state["password"])
-            assert code in (200, 201) and protected["userId"] == state[role]["user_id"] and protected["isAdmin"] == (role == "admin")
-            assert self.sql("immich", f'''SELECT "oauthId" FROM "user" WHERE id='{state[role]["user_id"]}';''') == state[role]["anchor"]
-        self.mark("private identity lifecycle leaves primary administrator and restore-user bindings intact")
-
-    def directory_revocation(self, state, photo):
-        """Real LDAP sync and native task delivery, never a fabricated JWT."""
-        self.phase = "directory-revocation"
-        code, protected = self.login(state["user"]["username"], state["password"])
-        assert code in (200, 201)
-        protected_credentials = self.create_credentials(protected, next(iter(state["assets"])), "protected-workspace-user")
-        assert all(status == 200 for status in self.credential_status(protected_credentials).values())
-        observations = {}
-        self.report["directory_revocation_http_statuses"] = observations
-        provider_pk = int(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c",
-                                      "from authentik.providers.oauth2.models import OAuth2Provider; print(OAuth2Provider.objects.get(name='immich').pk)").decode().strip())
-        issuer = self.issuer
-        for mode in ("disable", "remove-app-group", "delete", "logout-first", "admin-role-loss"):
-            username = "iwrev" + secrets.token_hex(5)
-            self.samba("user", "add", username, state["password"], "--userou=OU=People", "--mail-address=" + username + "@" + self.domain)
-            self.samba("group", "addmembers", "APP_immich", username)
-            if mode == "admin-role-loss":
-                self.samba("group", "addmembers", "Admins", username)
-            anchors = {}
-            def anchor_ready():
-                found = re.search(r"^anasIdentityAnchor: ([a-f0-9-]+)$", self.samba("user", "show", username, "--attributes=anasIdentityAnchor"), re.M)
-                if found:
-                    anchors[username] = str(uuid.UUID(found.group(1)))
-                return username in anchors
-            self.wait(anchor_ready)
-            self.directory_sync()
-            probe = "from authentik.core.models import UserSourceConnection; from authentik.sources.ldap.models import LDAPSource; s=LDAPSource.objects.get(slug='samba-ad'); c=UserSourceConnection.objects.get(source=s,user__username=" + repr(username) + "); assert c.user.all_groups().filter(name='APP_immich').exists()"
-            if mode == "admin-role-loss":
-                probe += "; assert c.user.all_groups().filter(name='Admins').exists()"
-            self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", probe) or True))
-            cookie = self.reports / ("revocation-cookie-" + uuid.uuid4().hex)
-            code, account = self.login(username, state["password"], cookie=cookie)
-            assert code in (200, 201) and account["isAdmin"] == (mode == "admin-role-loss")
-            user_id = str(uuid.UUID(account["userId"]))
-            asset_id = self.upload(account["accessToken"], "revocation-" + mode + ".png", photo, "image/png")
-            self.wait(lambda: self.http(self.app + "/api/assets/" + asset_id + "/thumbnail?size=thumbnail", token=account["accessToken"], raw=True)[0] == 200)
-            credentials = self.create_credentials(account, asset_id, "revocation-" + mode)
-            assert all(status == 200 for status in self.credential_status(credentials).values())
-            if mode == "logout-first":
-                token_probe = "from authentik.providers.oauth2.models import AccessToken; from django.utils import timezone; assert AccessToken.objects.filter(user__username=" + repr(username) + ",provider__name='immich',expires__gt=timezone.now()).exists()"
-                self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", token_probe)
-                assert self.http(self.idp + "/api/v3/core/users/me/", cookie=cookie)[0] == 200, "ordinary IAM session was not authenticated before logout"
-                code, out, _ = self.http(self.app + "/api/auth/logout", {}, cookie=cookie)
-                self.report["ordinary_rp_logout_probe"] = {"http_status": code, "body_kind": type(out).__name__}
-                assert code == 200 and out["successful"] is True
-                assert out["redirectUri"].startswith(self.idp + "/"), "ordinary logout did not return the native IAM end-session URL"
-                _, _, redirect = self.http(out["redirectUri"], cookie=cookie, follow=True)
-                parts = urllib.parse.urlsplit(redirect)
-                if "/if/flow/" in parts.path:
-                    api = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path.replace("/if/flow/", "/api/v3/flows/executor/", 1), urllib.parse.urlencode({"query": parts.query}), ""))
-                    flow_status, flow, flow_url = self.http(api, cookie=cookie)
-                    self.report["ordinary_iam_flow_probe"] = {"http_status": flow_status, "body_kind": type(flow).__name__,
-                                                              "same_iam_origin": urllib.parse.urlsplit(flow_url).netloc == urllib.parse.urlsplit(self.idp).netloc}
-                    if flow_status == 200:
-                        assert isinstance(flow, dict) and flow.get("component") == "xak-flow-redirect", "IAM end-session flow did not complete"
-                        self.http(urllib.parse.urljoin(api, flow["to"]), cookie=cookie, follow=True)
-                    else:
-                        # Native SessionDelete can finish with an empty HTTP
-                        # redirect instead of the frontend's JSON challenge.
-                        assert flow_status == 302 and flow is None and flow_url == api, "unexpected native IAM end-session response"
-                self.wait(lambda: self.http(self.idp + "/api/v3/core/users/me/", cookie=cookie)[0] in (401, 403))
-                self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", token_probe.replace("assert AccessToken", "assert not AccessToken")) or True))
-                after_logout = self.credential_status(credentials)
-                assert after_logout == {"bearer": 401, "cookie": 401, "api_key": 200, "share": 200}, "ordinary logout changed independent API key/share behavior"
-                self.mark("ordinary real RP/IAM logout removes active OAuth grant but retains independent API key/share")
-            cookie.unlink(missing_ok=True)
-            sync_started = time.time()
-            if mode == "disable":
-                self.samba("user", "disable", username)
-            elif mode == "delete":
-                self.samba("user", "delete", username)
-            elif mode == "admin-role-loss":
-                self.samba("group", "removemembers", "Admins", username)
-            else:
-                self.samba("group", "removemembers", "APP_immich", username)
-            self.directory_sync()
-            status_capture = {}
-            def revoked():
-                assert all(status == 200 for status in self.credential_status(protected_credentials).values()), "directory notification revoked an unrelated user credential"
-                statuses = self.credential_status(credentials)
-                status_capture["last"] = statuses
-                return statuses["bearer"] == statuses["cookie"] == statuses["api_key"] == 401 and statuses["share"] in (400, 401, 403, 404)
-            self.wait(revoked)
-            # DONE native tasks clear message. These IDs/times are window
-            # evidence only; the signed receiver ledger identifies this sub,
-            # and the real HTTP checks establish credential invalidation.
-            delivery_probe = f'''import datetime,json
-from authentik.tasks.models import Task
-from django_dramatiq_postgres.models import TaskState
-from authentik.core.models import User,UserSourceConnection
-from authentik.sources.ldap.models import LDAPSource
-source=LDAPSource.objects.get(slug='samba-ad')
-started=datetime.datetime.fromtimestamp({sync_started!r},datetime.timezone.utc)
-assert Task.objects.filter(actor_name='authentik.sources.ldap.tasks.ldap_sync',state=TaskState.DONE,mtime__gte=started).exists()
-rows=[{{'message_id':str(row.message_id),'retries':row.retries,'mtime':row.mtime.isoformat()}} for row in Task.objects.filter(actor_name='authentik.providers.oauth2.tasks.send_backchannel_logout_request',state=TaskState.DONE,mtime__gte=started)]
-assert rows
-user=User.objects.filter(username={username!r}).first()
-if {mode!r}=='delete':
-    assert not UserSourceConnection.objects.filter(source=source,user__username={username!r}).exists()
-elif {mode!r}=='disable':
-    assert user is not None and not user.is_active
-elif {mode!r}=='admin-role-loss':
-    assert user is not None and user.is_active and user.all_groups().filter(name='APP_immich').exists() and not user.all_groups().filter(name='Admins').exists()
-else:
-    assert user is not None and not user.all_groups().filter(name='APP_immich').exists()
-print(json.dumps(rows))'''
-            delivery = {}
-            def delivered():
-                delivery[mode] = json.loads(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", delivery_probe))
-                return True
-            self.wait(delivered)
-            signed_cutoff = self.receiver_signed_cutoff(anchors[username])
-            observations[mode] = {"http_statuses": status_capture["last"], "sender_tasks_done_window": delivery[mode],
-                                  "receiver_signed_cutoff": signed_cutoff}
-            if mode == "admin-role-loss":
-                self.wait_later_oidc_issuance(signed_cutoff["epoch"])
-                code, demoted = self.login(username, state["password"])
-                assert code in (200, 201) and demoted["userId"] == user_id and demoted["isAdmin"] is False, "admitted role loss did not retain identity and demote fresh native login"
-                demoted_credentials = self.create_credentials(demoted, asset_id, "demoted-user")
-                assert all(status == 200 for status in self.credential_status(demoted_credentials).values())
-                assert revoked(), "fresh ordinary login resurrected old administrator credentials"
-                observations[mode]["fresh_native_login"] = {"user_id": user_id, "is_admin": False}
-                self.mark("real Admins loss retains APP_immich admission and demotes the same identity on fresh native OIDC login")
-            else:
-                code, _ = self.login(username, state["password"], allow_denied=True)
-                assert code in (400, 401, 403, 404), "directory-revoked user obtained a new application session"
-            assert self.sql("immich", f'''SELECT "oauthId" FROM "user" WHERE id='{user_id}';''') == anchors[username], "revocation removed or rebound the internal account"
-            assert self.sql("immich", f"SELECT count(*) FROM asset WHERE id='{asset_id}' AND \"ownerId\"='{user_id}';") == "1", "revocation removed managed media"
-            media_path = self.sql("immich", f'''SELECT "originalPath" FROM asset WHERE id='{asset_id}';''')
-            assert digest(checked_media_path(self.workspace, media_path)) == hashlib.sha256(photo).hexdigest(), "revocation changed the managed original"
-            self.mark("real LDAP " + mode + " invalidates old Bearer/Cookie/API key/share and protects unrelated user")
-            if mode == "remove-app-group":
-                # Retry the same native delivery after access is re-admitted.
-                # The provider creates a fresh signed iat/jti, retaining the
-                # original event_timestamp. New credentials must survive it.
-                self.samba("group", "addmembers", "APP_immich", username)
-                self.directory_sync()
-                admitted_probe = "from authentik.core.models import User; assert User.objects.get(username=" + repr(username) + ").all_groups().filter(name='APP_immich').exists()"
-                self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", admitted_probe) or True))
-                self.wait_later_oidc_issuance(signed_cutoff["epoch"])
-                code, renewed = self.login(username, state["password"])
-                assert code in (200, 201) and renewed["userId"] == user_id
-                fresh_credentials = self.create_credentials(renewed, asset_id, "readmitted-user")
-                assert all(status == 200 for status in self.credential_status(fresh_credentials).values())
-                revoked_at = signed_cutoff["epoch"]
-                retry_probe = f'''from authentik.tasks.models import Task
-from authentik.providers.oauth2.models import OAuth2Provider
-from authentik.providers.oauth2.tasks import send_backchannel_logout_request
-p=OAuth2Provider.objects.get(pk={provider_pk!r},name='immich')
-args=(p.pk,{issuer!r},{anchors[username]!r},None,{revoked_at!r})
-print(send_backchannel_logout_request.send_with_options(args=args,rel_obj=p).message_id)'''
-                retry_id = self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", retry_probe).decode().strip()
-                retry_done = "from authentik.tasks.models import Task; from django_dramatiq_postgres.models import TaskState; assert Task.objects.filter(message_id=" + repr(retry_id) + ",state=TaskState.DONE).exists()"
-                self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", retry_done) or True))
-                assert all(status == 200 for status in self.credential_status(fresh_credentials).values()), "old directory-event retry revoked post-readmission credentials"
-                assert all(status == 200 for status in self.credential_status(protected_credentials).values()), "old directory-event retry revoked unrelated credentials"
-                assert revoked(), "readmission resurrected an old credential"
-                observations[mode]["retry_task_done"] = retry_id
-                observations[mode]["after_retry_http_statuses"] = status_capture["last"]
-                self.mark("native directory retry preserves post-readmission session/API key/share and never resurrects old credentials")
-        self.report["directory_revocation_http_statuses"] = observations
-        self.verify_state(state)
-
-    def verify_directory_event_delivery(self, state, photo):
-        """Prove the journal path without manually triggering the tested sync."""
-        self.phase = "directory-event-delivery"
-        username = "iwevent" + secrets.token_hex(5)
-        self.samba("user", "add", username, state["password"], "--userou=OU=People", "--mail-address=" + username + "@" + self.domain)
-        self.samba("group", "addmembers", "APP_immich", username)
-        anchor = {}
-        def anchored():
-            found = re.search(r"^anasIdentityAnchor: ([a-f0-9-]+)$", self.samba("user", "show", username, "--attributes=anasIdentityAnchor"), re.M)
-            if found:
-                anchor["value"] = str(uuid.UUID(found.group(1)))
-            return bool(anchor)
-        self.wait(anchored)
-        # Only fixture preparation uses an explicit sync. After the mutation
-        # below, the existing subscriber/scheduler is the sole trigger path.
-        self.directory_sync()
-        admitted = "from authentik.core.models import User; assert User.objects.get(username=" + repr(username) + ").all_groups().filter(name='APP_immich').exists()"
-        self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", admitted) or True))
-        code, account = self.login(username, state["password"])
-        assert code in (200, 201) and account["isAdmin"] is False
-        asset = self.upload(account["accessToken"], "directory-event.png", photo, "image/png")
-        self.wait(lambda: self.http(self.app + "/api/assets/" + asset + "/thumbnail?size=thumbnail", token=account["accessToken"], raw=True)[0] == 200)
-        credentials = self.create_credentials(account, asset, "automatic-directory-event")
-        code, protected = self.login(state["user"]["username"], state["password"])
-        assert code in (200, 201)
-        protected_credentials = self.create_credentials(protected, next(iter(state["assets"])), "automatic-event-unrelated-user")
-        assert all(x == 200 for x in self.credential_status(credentials).values())
-        assert all(x == 200 for x in self.credential_status(protected_credentials).values())
-        journal = pathlib.Path(self.envs["authentik"]["AUTHENTIK_DIRWATCH_EVENTS_DIR"]) / "events.jsonl"
-        health_path = self.workspace / "data/authentik/data/anas-dirwatch/health.json"
-        for path in (journal, health_path):
-            assert path.is_file() and path.resolve().is_relative_to((self.workspace / "data").resolve()), "event evidence escaped this workspace"
-        def events():
-            return [json.loads(line) for line in journal.read_text().splitlines() if line.strip()]
-        before_seq = max((x["seq"] for x in events()), default=0)
-        group = re.search(r"^dn:\s*(.+)$", self.samba("group", "show", "APP_immich"), re.M)
-        assert group, "native group DN missing"
-        started_wall, started = time.time(), time.monotonic()
-        self.samba("group", "removemembers", "APP_immich", username)
-        observed = {}
-        def delivered():
-            assert all(x == 200 for x in self.credential_status(protected_credentials).values()), "automatic event revoked unrelated credentials"
-            statuses = self.credential_status(credentials)
-            matching = [x for x in events() if x["seq"] > before_seq and x.get("op") == "Modify" and x.get("dn", "").casefold() == group.group(1).casefold() and "member" in [v.casefold() for v in x.get("attributes", [])]]
-            health = json.loads(health_path.read_text())
-            observed.update(http_statuses=statuses, matching_event_sequences=[x["seq"] for x in matching], watcher_cursor=health["cursor"], watcher_trigger_at=health["last_trigger_at"])
-            self.report["automatic_directory_event_probe"] = {**observed, "elapsed_seconds": round(time.monotonic() - started, 3),
-                                                             "acceptance_bound_seconds": 300, "manual_sync_after_mutation": False}
-            return (bool(matching) and health["ready"] is True and not health["last_error"]
-                    and health["cursor"] >= max(x["seq"] for x in matching)
-                    and health["last_trigger_at"] >= int(started_wall)
-                    and statuses["bearer"] == statuses["cookie"] == statuses["api_key"] == 401
-                    and statuses["share"] in (400, 401, 403, 404))
-        self.wait(delivered, timeout=300)
-        elapsed = time.monotonic() - started
-        assert elapsed <= 300, "automatic directory delivery exceeded this host acceptance bound"
-        observed.update(elapsed_seconds=round(elapsed, 3), acceptance_bound_seconds=300, manual_sync_after_mutation=False,
-                        receiver_signed_cutoff=self.receiver_signed_cutoff(anchor["value"]))
-        native_probe = f'''from authentik.core.models import User
-from authentik.tasks.models import Task
-from django_dramatiq_postgres.models import TaskState
-import datetime,json
-started=datetime.datetime.fromtimestamp({started_wall!r},datetime.timezone.utc)
-assert not User.objects.get(username={username!r}).all_groups().filter(name='APP_immich').exists()
-counts={{name:Task.objects.filter(actor_name=actor,state=TaskState.DONE,mtime__gte=started).count() for name,actor in [('ldap_sync_done','authentik.sources.ldap.tasks.ldap_sync'),('signed_delivery_done','authentik.providers.oauth2.tasks.send_backchannel_logout_request')]}}
-assert all(counts.values())
-print(json.dumps(counts))'''
-        native = {}
-        def completed():
-            native.update(json.loads(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", native_probe)))
-            return True
-        self.wait(completed, timeout=300)
-        observed["native_tasks_done"] = native
-        assert self.sql("immich", f'''SELECT "oauthId" FROM "user" WHERE id='{account["userId"]}';''') == anchor["value"]
-        assert self.sql("immich", f"SELECT count(*) FROM asset WHERE id='{asset}' AND \"ownerId\"='{account['userId']}';") == "1"
-        original = self.sql("immich", f'''SELECT "originalPath" FROM asset WHERE id='{asset}';''')
-        assert digest(checked_media_path(self.workspace, original)) == hashlib.sha256(photo).hexdigest()
-        self.report["automatic_directory_event"] = observed
-        self.mark("automatic Samba journal/subscriber/native sync/signed notification revokes old credentials within the 300-second host acceptance bound")
-        self.verify_state(state)
+    def verify_directory_event_delivery(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
     def upload(self, token, name, content, mime):
         path = self.reports / name
@@ -1469,111 +1027,8 @@ print(json.dumps(counts))'''
         assert set(x["id"] for x in result["assets"]["items"]) == set(state["assets"])
 
 
-    def run(self):
-        self.reports.mkdir(mode=0o700)
-        self.backups.mkdir(mode=0o700)
-        old_modules = self.module_fixture("pgvector-0.8.1-test-only")
-        failed_modules = self.module_fixture("pgvector-0.8.2-failure-test-only", fail_after_maintenance=True)
-        self.report["test_only_postgres_baseline"] = {"module_version": "18.4.0", "revision": 3, "vector": "0.8.1", "source_sha256": OLD_VECTOR_SOURCE, "published_release": False}
-        self.report["binary_sha256"] = {"anas": digest(self.args.anas), "anas-helper": digest(pathlib.Path(self.args.anas).parent / "anas-helper")}
-        config = {"modules": {"samba_dc": {"config": {"domain": "ad." + self.domain, "application_dns_mode": "separate_zone", "anchor_scan_interval": "30"}},
-                              "postgres": {}, "authentik": {}, "immich": {"config": {"machine_learning": False}}, "traefik": {"config": {"base_port": self.args.port}}},
-                  "identity": {"iam": {"provider": "authentik"}}, "rollback": {"snapshot": {"backend": "btrfs"}},
-                  "global": {"base_domain": self.domain, "email": "admin@" + self.domain, "virtual_domain": True, "timezone": "Etc/UTC",
-                             "container_prefix": self.prefix, "network_prefix": self.prefix, "host_ip": self.args.host_ip,
-                             "host_lan_ip": self.args.host_lan_ip, "host_lan_bridge_ip": self.args.host_lan_bridge_ip,
-                             "chinese_speedup": False, "chinese_build_speedup": False},
-                  "env": {"ANAS_IMAGE_REGISTRY": self.args.image_registry}}
-        config_path = self.reports / "input-config.json"
-        write_json(config_path, config)
-        # PostgreSQL's published Module image is built by the repository image
-        # workflow rather than a Compose build service. Build that exact source
-        # image explicitly; all deployment/application operations still use ANAS.
-        self.phase = "prepare-fixed-immich-mirrors"
-        self.prepare_immich_mirrors()
-        self.phase = "build-postgres-module-image"
-        self.docker("build", "--build-arg", "ANAS_IMAGE_REGISTRY=" + self.args.image_registry,
-                    "--tag", self.args.image_registry + "/anas-postgres:18.4.0-r4", self.modules / "postgres/postgres")
-        self.docker("build", "--build-arg", "ANAS_IMAGE_REGISTRY=" + self.args.image_registry,
-                    "--tag", self.args.image_registry + "/anas-postgres:18.4.0-r3", old_modules / "postgres/postgres")
-        self.anas("new-init", "init", self.workspace, "-c", config_path, "--module-root", old_modules, "-y")
-        self.initialized = True
-        self.anas("new-apply", "apply", "-w", self.workspace, "--module-root", old_modules, "--update-lock", "--build", "-y")
-        self.load_envs()
-        self.wait(lambda: self.http(self.app + "/api/server/ping")[0] == 200)
-        self.phase = "cache-fixed-declared-images"
-        self.cache_declared_images()
-        app_image = self.runtime()[("immich", "anas_immich")]["image"]
-        self.docker("run", "--rm", "--network", "none", "--label", "anas.test.immich-workspace=" + self.prefix,
-                    "--entrypoint", "node", app_image, "-e",
-                    "const c=require('/usr/src/app/server/dist/constants.js'),s=require('/usr/src/app/server/node_modules/semver'); if(!s.satisfies('0.8.1',c.VECTOR_VERSION_RANGE))throw new Error('fixed Immich no longer accepts genuine pgvector0.8.1');")
-        self.mark("real ANAS new apply starts fixed Immich/PostgreSQL and shared Authentik")
-        baseline = self.runtime()
-        before_secret = digest(self.workspace / ".anas/secrets.yml")
-        self.anas("repeat-apply", "apply", "-w", self.workspace, "--module-root", old_modules, "--update-lock", "-y")
-        self.load_envs()
-        assert self.runtime() == baseline, "repeat ANAS apply recreated an unchanged runtime container"
-        assert digest(self.workspace / ".anas/secrets.yml") == before_secret, "repeat apply changed generated secrets"
-        self.mark("real ANAS repeat apply preserves runtime containers and secrets")
-        self.phase = "directory-users"
-        password = "Anas-" + secrets.token_hex(12) + "-E2e9!"
-        users = {role: "iwe" + role[0] + secrets.token_hex(4) for role in ("admin", "user")}
-        for role, user in users.items():
-            self.samba("user", "add", user, password, "--userou=OU=People", "--mail-address=" + user + "@" + self.domain)
-            self.samba("group", "addmembers", "Admins" if role == "admin" else "APP_immich", user)
-        anchors = {}
-        for role, user in users.items():
-            def anchor_ready():
-                row = self.samba("user", "show", user, "--attributes=anasIdentityAnchor")
-                found = re.search(r"^anasIdentityAnchor: ([a-f0-9-]+)$", row, re.M)
-                if found:
-                    anchors[role] = str(uuid.UUID(found.group(1)))
-                return role in anchors
-            self.wait(anchor_ready)
-        self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c",
-                    "from authentik.tasks.schedules.models import Schedule; [s.send() for s in Schedule.objects.filter(actor_name='authentik.sources.ldap.tasks.ldap_sync') if getattr(s.rel_obj,'slug',None)=='samba-ad']")
-        names = list(users.values())
-        sync_probe = "from authentik.core.models import UserSourceConnection; from authentik.sources.ldap.models import LDAPSource; s=LDAPSource.objects.get(slug='samba-ad'); assert all(UserSourceConnection.objects.filter(source=s,user__username=n).exists() for n in " + repr(names) + ")"
-        self.wait(lambda: bool(self.docker("exec", self.prefix + "authentik", "ak", "shell", "-c", sync_probe) or True))
-        assert self.sql("immich", 'SELECT count(*) FROM "user";') == "0"
-        code, _ = self.login(users["user"], password)
-        assert code == 400 and self.sql("immich", 'SELECT count(*) FROM "user";') == "0", "first ordinary login created an account"
-        state = {"password": password}
-        for role in ("admin", "user"):
-            code, account = self.login(users[role], password)
-            assert code in (200, 201) and account["isAdmin"] == (role == "admin")
-            state[role] = {"username": users[role], "anchor": anchors[role], "user_id": account["userId"]}
-            if role == "user":
-                token = account["accessToken"]
-        self.mark("native real AD/Authentik OIDC creates roleClaim administrator and ordinary anchored account")
-        self.identity_lifecycle(state)
-        self.verify_entry_restrictions(state)
-        for path, body in (("/api/auth/admin-sign-up", {"email": "local@" + self.domain, "password": "Forbidden1!", "name": "local"}), ("/api/oauth/unlink", {})):
-            code, _, _ = self.http(self.app + path, body, token=token)
-            assert code in (400, 403), "a local or unbind account entry point was accepted"
-        chunk = lambda kind, body: struct.pack("!I", len(body)) + kind + body + struct.pack("!I", zlib.crc32(kind + body) & 0xffffffff)
-        photo = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack("!2I5B", 16, 16, 8, 2, 0, 0, 0)) + chunk(b"IDAT", zlib.compress((b"\0" + bytes([32, 96, 160]) * 16) * 16)) + chunk(b"IEND", b"")
-        photo_id = self.upload(token, "seed.png", photo, "image/png")
-        app_image = self.runtime()[("immich", "anas_immich")]["image"]
-        self.docker("run", "--rm", "--network", "none", "--label", "anas.test.immich-workspace=" + self.prefix,
-                    "--entrypoint", "ffmpeg", "--volume", str(self.reports) + ":/fixture", app_image,
-                    "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=10", "-t", "1", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "/fixture/seed.mp4")
-        video = (self.reports / "seed.mp4").read_bytes()
-        video_id = self.upload(token, "video.mp4", video, "video/mp4")
-        state["assets"] = {photo_id: hashlib.sha256(photo).hexdigest(), video_id: hashlib.sha256(video).hexdigest()}
-        state["vector_media_hash"] = hashlib.sha256(photo).hexdigest()
-        self.sql("immich", "CREATE TABLE anas_workspace_vectors(id integer PRIMARY KEY,embedding vector(3),media_hash text); INSERT INTO anas_workspace_vectors VALUES(1,'[1,2,3]', '" + hashlib.sha256(photo).hexdigest() + "'); CREATE INDEX anas_workspace_vectors_hnsw ON anas_workspace_vectors USING hnsw(embedding vector_l2_ops);")
-        self.wait(lambda: all(self.http(self.app + "/api/assets/" + asset + "/thumbnail?size=thumbnail", token=token, raw=True)[0] == 200 for asset in state["assets"]))
-        code, album, _ = self.http(self.app + "/api/albums", {"albumName": "ANAS recovery album", "assetIds": list(state["assets"])}, token=token)
-        assert code in (200, 201)
-        state["album_id"] = album["id"]
-        self.sql(self.iam, "CREATE TABLE anas_workspace_recovery(id integer PRIMARY KEY,value text NOT NULL); INSERT INTO anas_workspace_recovery VALUES(1,'before-backup');")
-        assert self.docker("exec", self.prefix + "immich_valkey", "valkey-cli", "SET", "anas:workspace:e2e", "before-backup").decode().strip() == "OK"
-        write_json(self.reports / "private-state.json", state)
-        self.verify_state(state)
-        self.mark("actual ordinary-role TCP connections, extension/preload, photo/video hashes and album verified")
-        self.verify_seed_lifecycle(state, old_modules)
-        self.verify_recovery_lifecycle(state, old_modules, failed_modules, photo)
+    def run(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
     def verify_seed_lifecycle(self, state, old_modules):
         """Check unchanged apply and restart before a version transition."""
@@ -1661,13 +1116,8 @@ print(json.dumps(counts))'''
         self.report["restored_image_ids"] = sorted(set(expected_images.values()))
         return backup_id, expected_images
 
-    def verify_post_restore_lifecycle(self, state, old_point, old_images, failed_modules, backup_id, expected_images, photo):
-        """Verify failure recovery, interrupted maintenance and native revocation."""
-        self.extension_failure_restore(state, old_point, old_images, failed_modules, backup_id, expected_images)
-        self.extension_crash_retry(state, old_point, old_images, backup_id, expected_images)
-        self.directory_revocation(state, photo)
-        self.verify_directory_event_delivery(state, photo)
-        self.report["status"] = "passed"
+    def verify_post_restore_lifecycle(self, *args, **kwargs):
+        raise NotImplementedError("use immich-casdoor-workspace-e2e.py and its native provider checks")
 
     def preserve_failure_evidence(self):
         # Only lifecycle state from this freshly allocated workspace is kept.
@@ -1765,49 +1215,6 @@ print(json.dumps(counts))'''
         self.report["cleanup"]["workspace_removed"] = not self.workspace.exists()
 
 
-def main():
-    os.umask(0o077)
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--anas", required=True, help="same-source built anas, with anas-helper beside it")
-    parser.add_argument("--modules", required=True)
-    parser.add_argument("--workspace", required=True)
-    parser.add_argument("--host-ip", required=True)
-    parser.add_argument("--host-lan-ip", required=True)
-    parser.add_argument("--host-lan-bridge-ip", required=True)
-    parser.add_argument("--port", required=True, type=int)
-    parser.add_argument("--image-registry", default="ghcr.io/anas-project")
-    parser.add_argument("--keep-workspace", action="store_true")
-    parser.add_argument("--preflight-only", action="store_true")
-    args = parser.parse_args()
-    try:
-        workspace, modules = preflight(args)
-    except (Blocked, OSError, RuntimeError, ValueError) as error:
-        print(json.dumps({"status": "blocked", "phase": "preflight", "reason": str(error), "workspace_mutated": False}), file=sys.stderr)
-        return 2
-    if args.preflight_only:
-        print(json.dumps({"status": "preflight_passed", "workspace_mutated": False}))
-        return 0
-    suite = Suite(args, workspace, modules)
-    exit_code = 0
-    try:
-        suite.run()
-    except BaseException as error:
-        exit_code = 1
-        suite.report.update(status="failed", failed_phase=suite.phase, reason=str(error), error_type=type(error).__name__, failure_origin=failure_origin(error))
-    finally:
-        try:
-            suite.cleanup()
-        except BaseException:
-            suite.report["cleanup"] = {"error": "scoped cleanup failed; workspace retained"}
-            exit_code = 1
-        if suite.report.get("cleanup", {}).get("error"):
-            suite.report["status"] = "failed"
-            exit_code = 1
-        if suite.reports.exists():
-            write_json(suite.reports / "report.json", suite.report)
-    print(json.dumps({"status": suite.report["status"], "report": str(suite.reports / "report.json")}))
-    return exit_code
-
-
+# Executable acceptance entry point: immich-casdoor-workspace-e2e.py.
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit("Use immich-casdoor-workspace-e2e.py; this file only provides shared harness helpers.")

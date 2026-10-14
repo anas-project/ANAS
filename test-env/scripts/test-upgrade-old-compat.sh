@@ -8,7 +8,6 @@ runner=$script_dir/server-module-upgrade-e2e.sh
 
 grep -Fq '[[ "$version" != 4.23.6 || "$revision" != 5 ]]' "$helper"
 grep -Fq 'prepare-old-start-retry' "$helper"
-grep -Fq 'release=authentik-2026.5.6-r8' "$helper"
 grep -Fq 'old_apply_attempt -ge 3' "$runner"
 grep -Fq '"$old_apply_error" != start_failed' "$runner"
 grep -Fq 'reason=samba-fs-not-selected' "$helper"

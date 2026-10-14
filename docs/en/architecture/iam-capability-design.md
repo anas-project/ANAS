@@ -1,5 +1,8 @@
 # IAM multi-implementation and protocol capability design
 
+> Current scope (2026-10-10): Authentik has been removed. Casdoor is primary and LLNG remains available. Authentik comparisons, commands and acceptance records below describe historical baselines; removed commands are not executable and do not demonstrate Casdoor acceptance.
+
+
 ## 1. Goals and hard constraints
 
 ANAS should let application modules integrate with different IAM
@@ -503,6 +506,10 @@ notification endpoint. Environment ownership continues to belong to the consumer
 and only the selected provider, which consumes `ANAS_IAM_CLIENT_*` explicitly,
 receives these fields at render time.
 
+Public PKCE consumers may publish `PUBLIC_CLIENT=true` and omit `CLIENT_SECRET`. The current Casdoor Hook implements this; support is not implied for other providers. No application API secret is delivered to the consumer. Casdoor may generate its own secret during native import, while the portal exchanges codes using PKCE only. Native `tokenFields` explicitly includes `Groups` for UserInfo; JWT custom attributes alone do not select UserInfo groups.
+
+The portal also publishes `REAUTHENTICATION_CLIENT_ID` and `REAUTHENTICATION_REDIRECT_URI`. Casdoor creates a separate native application with automatic sign-in and signin session disabled. The client IDs must differ. The portal still verifies signed `auth_time` and the same identity. This configuration adds no upstream Casdoor patch.
+
 ## 7. The lock file and switching semantics
 
 The provider is deployment-level and unique, so the lock file records it once and
@@ -768,3 +775,5 @@ docker tag  <mirror>/goauthentik/server:2024.10.5 ghcr.io/goauthentik/server:202
 
 The images that currently need this: `linuxserver/baseimage-ubuntu` (both noble
 and jammy), `ylianst/meshcentral`, and `goauthentik/server`.
+
+An OIDC provider may publish `OIDC_SELF_ACCOUNT_API_SCHEMA` per binding to identify the native self-account response contract. The current `casdoor-account/v1` profile names the existing `/api/userinfo` and `/api/get-account` format, including anas organization state, groups and policies; it adds no API. user_portal rejects absent or unknown profiles and reads only its own binding.

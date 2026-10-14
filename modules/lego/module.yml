@@ -11,6 +11,7 @@ title: Lego ACME certificates
 description: Issues and stores wildcard certificates used by Traefik and domain services.
 category: certificate
 status: release
+applications_not_published: "Certificate automation has no personnel UI."
 runtime:
   type: compose
   compose_file: docker-compose.yml

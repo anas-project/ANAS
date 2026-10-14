@@ -1,0 +1,96 @@
+api_version: anas.module/v1
+kind: Module
+name: user_portal
+version: 0.1.0
+revision: 1
+app_version: 0.1.0
+abi:
+  supports: [anas.module-hook/v1]
+title: ANAS User Portal
+description: Authorized applications, personal accounts and delegated directory administration.
+category: identity
+status: developing
+applications_not_published: "The application directory does not publish a self-link."
+application_catalog:
+  consumes: true
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires: [traefik, samba_dc, casdoor]
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of: [oidc]
+        prefer: [oidc]
+identity:
+  interfaces: [ldaps]
+upgrade:
+  data_breaking: []
+features:
+  domain: true
+config:
+  defaults:
+    domain_prefix: portal
+    iam_protocol: oidc
+    delegation_rules: "[]"
+    protected_users: "[]"
+    protected_groups: "[]"
+    password_bind_dn: ""
+    password_bind_password: ""
+    group_bind_dn: ""
+    group_bind_password: ""
+    recent_window_seconds: 300
+    audit_capacity_mb: 64
+  types:
+    domain_prefix: string
+    iam_protocol:
+      enum: [oidc]
+    delegation_rules: string
+    protected_users: string
+    protected_groups: string
+    password_bind_dn: string
+    password_bind_password: string
+    group_bind_dn: string
+    group_bind_password: string
+    recent_window_seconds:
+      kind: int
+      constraints: {minimum: 5, maximum: 900}
+    audit_capacity_mb:
+      kind: int
+      constraints: {minimum: 1, maximum: 1024}
+    language:
+      kind: string
+      default_source: inherited
+  must_resolve: [language]
+  changes:
+    password_bind_password:
+      effect: container_recreate
+      sensitive: true
+    group_bind_password:
+      effect: container_recreate
+      sensitive: true
+  exports:
+    - ANAS_IAM_CLIENT__USER_PORTAL__*
+  consumes:
+    - ANAS_IAM_BINDING__USER_PORTAL__*
+    - ANAS_APP_CATALOG_DIR
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_TRUST_BUNDLE_NAME
+    - SAMBA_DC_LDAPS_SERVER_URL_PORT
+    - SAMBA_DC_LDAP_BIND_DN
+    - SAMBA_DC_LDAP_BIND_PASSWORD
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_BASE_GROUPS_DN
+    - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_FS_ADMIN_GROUP_NAME
+    - TRAEFIK_BASE_PORT
+    - TRAEFIK_HOSTNAME
+    - TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS
+logic:
+  hook:
+    command: [go, run, ./hook]
+    phases: [calculate, render_env, validate]

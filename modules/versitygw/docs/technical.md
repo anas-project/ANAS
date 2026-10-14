@@ -144,3 +144,7 @@ rollback 只能回到带匹配 Secret Store 与数据快照的 deployment，不�
 Resource Consumer 使用独立 bucket/长期凭据，但无 STS、quota 或细粒度 policy。WebUI、公网 Admin API、versioning、
 object lock、notification、replication、virtual-host style 和真实 HA 均不在首期；真实客户端、
 恢复与升级未完成前保持 `developing`。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

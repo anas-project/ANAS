@@ -53,6 +53,11 @@ func TestGateFollowsTheDirectoryAdministratorGroup(t *testing.T) {
 	if got := env["ANAS_PROXY_PLATFORM_ADMIN_GROUP"]; got != "NAS Admins" {
 		t.Fatalf("proxy assertion group = %q, want the resolved administrator group", got)
 	}
+	for _, claim := range []string{"groups:groups:1", "email:email:1", "preferred_username:sAMAccountName:1"} {
+		if !strings.Contains(","+env[iamClientPrefix+"ATTRIBUTES"]+",", ","+claim+",") {
+			t.Fatalf("the gate must request the claim consumed by its upstream or identity bridge: %s", claim)
+		}
+	}
 }
 
 func TestGateFallsBackToTheRoleGroupNameWithoutADirectory(t *testing.T) {

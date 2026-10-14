@@ -11,6 +11,30 @@ title: MeshCentral
 description: Remote device management with OIDC-only authentication and LDAP directory synchronization.
 category: app
 status: release
+applications:
+  - name: meshcentral
+    display_name:
+      zh-CN: MeshCentral
+      en: MeshCentral
+    url_from: MESHCENTRAL_DOMAIN_FULL
+    summary:
+      zh-CN: "远程设备管理"
+      en: "Remote device management"
+    description:
+      zh-CN: "远程设备管理。"
+      en: "Remote device management."
+    documentation_url:
+      zh-CN: https://meshcentral.com/
+      en: https://meshcentral.com/
+    weight: 100
+    kind: user
+    categories:
+      - network
+    access:
+      mode: iam
+      client: meshcentral
+    visibility:
+      mode: access
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -72,7 +96,6 @@ config:
       enum: [auto, oidc, saml]
   exports:
     - ANAS_IAM_CLIENT__MESHCENTRAL__*
-    - APPS_LIST*
   # The container connects to the resolved database and binds to LDAP with
   # these real credentials directly. Its entrypoint derives config.json in
   # /run/anas.

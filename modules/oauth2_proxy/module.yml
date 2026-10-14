@@ -11,6 +11,7 @@ title: OAuth2 Proxy
 description: Authenticated gate in front of services that have no login of their own.
 category: identity
 status: release
+applications_not_published: "ForwardAuth gateway has no independent application UI."
 runtime:
   type: compose
   compose_file: docker-compose.yml

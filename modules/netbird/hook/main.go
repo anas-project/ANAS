@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -181,12 +180,6 @@ func calcNetbird(e map[string]string, workdir string, secrets *secretStore) erro
 	e[client+"ATTRIBUTES"] = "name:displayName:1,cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
 	e[client+"ALLOW_GROUPS"] = allowGroups
 	e[client+"DOMAIN"] = e["NETBIRD_DOMAIN"]
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "netbird")
-	e["APPS_LIST__NETBIRD__NAME"] = defaultValue(e["APPS_LIST__NETBIRD__NAME"], "Netbird")
-	e["APPS_LIST__NETBIRD__DESC"] = defaultValue(e["APPS_LIST__NETBIRD__DESC"], "Connect and Secure Your IT Infrastructure in Minutes")
-	e["APPS_LIST__NETBIRD__LOGO_PATH"] = defaultValue(e["APPS_LIST__NETBIRD__LOGO_PATH"], filepath.Join(workdir, "assets", "netbird.png"))
-	e["APPS_LIST__NETBIRD__URI"] = e["NETBIRD_DOMAIN_FULL"]
-	e["APPS_LIST__NETBIRD__ALLOW_GROUPS"] = allowGroups
 	if !validBase64Secret(e["NETBIRD_DATASTORE_ENC_KEY"], 32) {
 		value, err := randomBase64Err(32)
 		if err != nil {

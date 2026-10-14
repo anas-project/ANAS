@@ -14,7 +14,8 @@ services:
       timeout: 5s
       retries: 20
     networks:
-      - mariadb
+      mariadb:
+        aliases: [mariadb]
 
   anas_mariadb_provision:
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-mariadb:12.3.2
@@ -41,6 +42,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      ADMINER_DEFAULT_SERVER: mariadb
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

@@ -15,7 +15,7 @@
 | `VIK-T-002` | e2e | `VIK-R-017` | test-env/scripts/server-vikunja-e2e.sh |
 | `VIK-T-003` | e2e | `VIK-R-018` | test-env/scripts/server-vikunja-e2e.sh |
 | `VIK-T-004` | e2e | `VIK-R-019` | test-env/scripts/server-vikunja-e2e.sh |
-| `VIK-T-005` | e2e | `VIK-R-020` | test-env/scripts/server-vikunja-oidc-e2e.sh<br>test-env/playwright/vikunja-authentik-matrix-browser.spec.mjs |
+| `VIK-T-005` | 已废弃 | — |  |
 | `VIK-T-006` | e2e | `VIK-R-021` | test-env/scripts/server-vikunja-oidc-e2e.sh<br>test-env/playwright/vikunja-llng-browser.spec.mjs |
 | `VIK-T-007` | e2e | `VIK-R-022` | test-env/playwright/vikunja-browser.spec.mjs |
 | `VIK-T-008` | e2e | `VIK-R-023` | test-env/scripts/server-vikunja-e2e.sh |
@@ -29,7 +29,7 @@
 - 级别：`unit`
 - 覆盖需求：`VIK-R-001`、`VIK-R-002`、`VIK-R-003`、`VIK-R-004`、`VIK-R-005`、`VIK-R-006`、`VIK-R-007`、`VIK-R-008`、`VIK-R-009`、`VIK-R-010`、`VIK-R-011`、`VIK-R-012`、`VIK-R-013`、`VIK-R-014`、`VIK-R-015`、`VIK-R-016`、`VIK-R-028`
 - 需求复核摘要：`sha256:4e6ab7db4302d264c32e0ecc479254154a12cc6e58c306a9bb5a9ea8af71a809`
-- 实现复核摘要：`sha256:bf278c2fc7265dc0a77fe83e5621a7b57b324092e79675b1a8402bb6776aaeb8`
+- 实现复核摘要：`sha256:7765d277a27fcefdfe63a4ba49a9a50fc6f2ed786b3ffc894e07ff497c909dd9`
 - Fixture：Vikunja Module manifest、Hook 输入和入口临时目录
 - 目标能力：`go`、`shell`、`module-manifest`
 - Oracle 来源：`return-value`、`filesystem`、`error-contract`
@@ -223,63 +223,16 @@ bash test-env/scripts/server-vikunja-e2e.sh mariadb
 bash test-env/scripts/server-vikunja-e2e.sh upgrade
 ```
 
-## `VIK-T-005` Authentik OIDC 五账号浏览器矩阵
+## `VIK-T-005` Authentik 专属用例（2026-10-10 随模块移除退役）
 
-- 级别：`e2e`
-- 覆盖需求：`VIK-R-020`
-- 需求复核摘要：`sha256:deea37b29ff56047ad3576787db389708738067935fc721792000e3d07957d05`
-- 实现复核摘要：`sha256:6536fd7349c46d4fab59d4f2341989dbaf5c2653e22d6097eb7587ef51707574`
-- Fixture：Samba AD、Authentik、PostgreSQL、Vikunja 与 Chromium
-- 目标能力：`docker`、`authentik`、`playwright`、`chromium`
-- Oracle 来源：`ui`、`api`、`database`
-- 有效性证明：`counterexample`
-- 有效性证据：两类无授权账号真实完成浏览器流程并证明拒绝且数据库没有 JIT 用户
-- 超时：`30m`
-- 敏感数据：使用一次性账号；截图、trace、video 关闭；报告 mode 0600
-
-前置条件：
-
-- 一次性目录账号可创建且浏览器通过测试服务器隧道访问
-
-执行步骤：
-
-- 创建五类一次性目录账号并执行 Authentik 授权码矩阵
-- 用五个隔离 Chromium context 验证允许、拒绝和 JIT
-
-可观察断言：
-
-- 直接组、APP_all 和管理员账号允许并完成 JIT
-- 无组与禁用账号拒绝且不创建本地用户
-- 本地登录和开放注册保持关闭
-
-反例与故障路径：
-
-- 无应用组和禁用目录账号分别验证授权拒绝
-
-清理：
-
-- 删除五个一次性目录账号、浏览器 session 和脱敏报告之外的临时文件
-
-执行入口：
-
-```bash
-bash test-env/scripts/server-vikunja-oidc-e2e.sh authentik
-npm run e2e:vikunja-authentik-matrix-browser
-```
-
-有效性验证入口：
-
-```bash
-bash test-env/scripts/server-vikunja-oidc-e2e.sh authentik
-npm run e2e:vikunja-authentik-matrix-browser
-```
+- 状态：已废弃；替代用例：`VIK-T-006`
 
 ## `VIK-T-006` LLNG OIDC 五账号浏览器矩阵
 
 - 级别：`e2e`
 - 覆盖需求：`VIK-R-021`
 - 需求复核摘要：`sha256:1d00bb4f40bb6d3f384cfb4431526261f53a4366ff600f4e6426927477c61309`
-- 实现复核摘要：`sha256:36be9e4bdaca703ec7e4fe0ef4f341cb1a2e1ba1f26e6483cfdfd8e33b039ede`
+- 实现复核摘要：`sha256:1c2bd0e3c3cd9ab78cacd2ce45ff477d358f4bcb56769eacb2a8231930b16408`
 - Fixture：Samba AD、LLNG、MariaDB、Vikunja 与 Chromium
 - 目标能力：`docker`、`llng`、`playwright`、`chromium`
 - Oracle 来源：`ui`、`api`、`database`
@@ -329,7 +282,7 @@ npm run e2e:vikunja-llng-browser
 - 级别：`e2e`
 - 覆盖需求：`VIK-R-022`
 - 需求复核摘要：`sha256:4f63d65543e6c0d7fe4603c90337135df424db79c384f1a4fd356f4cdf2fe785`
-- 实现复核摘要：`sha256:cfc148b4d615c936554afc80e8a32161b166c23ca3924e42251207d29689ade6`
+- 实现复核摘要：`sha256:00962499669458a4d71ba082bfddd88f6fad740b3dcf25c80efe8760b0e8a74e`
 - Fixture：Authentik、Vikunja 与两个隔离 Chromium context
 - 目标能力：`docker`、`authentik`、`playwright`、`chromium`
 - Oracle 来源：`ui`、`network`、`runtime`

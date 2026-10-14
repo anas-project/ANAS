@@ -350,13 +350,13 @@ func TestManagedConfigSetRejectsEquivalentRuntimeAddresses(t *testing.T) {
 	}{
 		{
 			name:     "raw env then structured",
-			existing: "modules:\n  authentik: {}\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\nenv:\n  AUTHENTIK_LDAP_ENABLED: true\n",
-			target:   "authentik.ldap_enabled",
+			existing: "modules:\n  llng: {}\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\nenv:\n  LLNG_ENABLE_TEST: true\n",
+			target:   "llng.enable_test",
 		},
 		{
 			name:     "structured then raw env",
-			existing: "modules:\n  authentik:\n    config:\n      ldap_enabled: true\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n",
-			target:   "env.AUTHENTIK_LDAP_ENABLED",
+			existing: "modules:\n  llng:\n    config:\n      enable_test: true\nglobal:\n  base_domain: nas.test\n  email: admin@nas.test\n",
+			target:   "env.LLNG_ENABLE_TEST",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -380,7 +380,7 @@ func TestManagedConfigSetRejectsEquivalentRuntimeAddresses(t *testing.T) {
 				t.Fatal(err)
 			}
 			err = setManagedConfigScalar(workspace, configPath, target.YAMLPath, "false", true, reg)
-			if err == nil || !strings.Contains(err.Error(), "both resolve to runtime key AUTHENTIK_LDAP_ENABLED") {
+			if err == nil || !strings.Contains(err.Error(), "both resolve to runtime key LLNG_ENABLE_TEST") {
 				t.Fatalf("collision error = %v", err)
 			}
 			after, readErr := os.ReadFile(configPath)

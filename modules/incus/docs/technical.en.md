@@ -1006,3 +1006,7 @@ incomplete revisions remain protected against implicit rebuilding. The default R
 resolver symlink through a guest-boot tmpfiles rule, not a build-chroot replacement, and declares the
 systemd init package explicitly. See the
 [image supply design](../../../docs/architecture/incus-image-supply.md).
+
+## Application catalog
+
+No personnel card is published: Compute API provider; host administration belongs to ANAS management.

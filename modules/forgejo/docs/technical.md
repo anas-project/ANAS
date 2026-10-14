@@ -477,3 +477,10 @@ Forgejo 工作流测试。镜像原生门禁新增 35 秒独立就绪观察和�
 
 该变更进入新配方后须使用新 revision 构建；已归档的 `lab-r4` 字节保持不变。本轮指定主机
 SSH 未能完成握手，尚未执行增强后的原生门禁，也没有把旧 engine 退出 125 的问题标为修复。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

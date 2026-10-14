@@ -128,3 +128,7 @@ password. Verification currently proves the running configuration and container
 availability, not a complete TURN authentication exchange. Resource
 credentials, Samba, and local administrators have not yet migrated to this
 unified executor.
+
+## Application catalog
+
+No personnel card is published: STUN/TURN endpoints have no personnel UI.

@@ -11,6 +11,31 @@ title: MariaDB
 description: MariaDB database service with optional Adminer UI.
 category: database
 status: release
+applications:
+  - name: mariadb-adminer
+    display_name:
+      zh-CN: "MariaDB Adminer"
+      en: "MariaDB Adminer"
+    url_from: MARIADB_ADMINER_URL
+    summary:
+      zh-CN: "MariaDB 数据库管理"
+      en: "MariaDB database administration"
+    description:
+      zh-CN: "MariaDB 数据库管理。"
+      en: "MariaDB database administration."
+    documentation_url:
+      zh-CN: https://www.adminer.org/
+      en: https://www.adminer.org/
+    weight: 100
+    kind: admin
+    categories:
+      - database
+    enabled_by: adminer_enabled
+    access:
+      mode: forward_auth
+      role: platform_admin
+    visibility:
+      mode: access
 runtime:
   type: compose
   compose_file: docker-compose.yml

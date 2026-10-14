@@ -1,5 +1,8 @@
 # Collabora Online 技术实现
 
+管理入口 `COLLABORA_ADMIN_URL` 在 Hook 的 calculate 阶段生成，应用目录聚合前即可读取。
+链接沿用已计算的 HTTPS 域名与端口，指向 `/browser/dist/admin/admin.html`；登录继续使用 Collabora 本地管理账号。
+
 本文面向 Module 维护者，记录 `collabora` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
@@ -97,3 +100,10 @@ Compose 健康检查执行同一冻结 Go Hook 的 `/usr/local/bin/anas-collabor
 ## 当前限制
 
 管理员密码变更需要按配置项声明的重建流程处理；不要把它当作已验证的在线轮换。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

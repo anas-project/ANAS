@@ -1,5 +1,5 @@
-# Casdoor is a developing IAM provider. This render matrix validates the common
-# OIDC registration path without claiming production directory semantics.
+# Casdoor is the primary IAM provider. This render matrix validates native
+# catalog objects and OIDC registration without claiming browser acceptance.
 modules:
   samba_dc: {}
   postgres: {}

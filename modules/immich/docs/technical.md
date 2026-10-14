@@ -1,10 +1,19 @@
 # Immich 技术实现
 
+2026-10-10 已移除 Authentik，当前选择 Casdoor。下文 Authentik 证据保留为历史；更新后的 Casdoor harness 不等于新基线实机通过。
+
+
 用户操作见[README](../README.md)。本页描述已落地代码；真实主机未验收的结论保持开放。
 
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `3.2.4-r2` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
+
+## 应用目录
+
+`module.yml` 的 `applications` 声明中英文图库入口，分类为 `media`，可见权限来自 Immich
+实际 OIDC 注册的允许组。Runner 生成七档 PNG；当前未提供应用图标，使用确定性占位图。
+目录展示语言不改变 Immich 自身的语言偏好。原生 IAM 限制见[目录设计](/architecture/app-catalog-design)。
 
 ## Compose 拓扑
 
@@ -105,7 +114,7 @@ ML 关闭后照片/视频上传仍保留，依赖 ML 的搜索/识别功能关�
 OIDC_LOGOUT 注册。API key/分享的独立验证不被普通或 backchannel logout 撤销。
 
 目录准入丧失通过现有注册的 `OIDC_CAEP_EVENTS=session-revoked` 协商；Runner 检查 Provider 支持、
-backchannel 与 subject-wide 语义，当前固定 Authentik `2026.5.6-r15` 支持，其他组合拒绝。
+backchannel 与 subject-wide 语义，当前保留的 Casdoor 发布此能力，LLNG 不支持并拒绝启用。
 发送端复用 LDAP 全量/事件触发同步、删除事务和原生持久任务，使用目录 anchor 与共享 PG 检测时间，
 不依赖仍存在的 AccessToken。受信 Admins 角色丧失在原生 membership/组更新和删除事务内立即持久入队；准入仍允许也撤销旧授权，下一次原生 callback 更新角色。普通 logout 不含策略成员。接收端验证签名、issuer/audience、sub_id
 及 [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html) 的 policy/事件时间，保留原生 OIDC
@@ -148,7 +157,9 @@ DB_VECTOR_EXTENSION=pgvector 避免镜像扩展候选改变自动路线。Provid
 
 `valkey-e2e.py` 读取实际 Compose 探针，在有界临时文件系统执行满盘反例。
 `test-env/scripts/server-immich-workspace-e2e.sh` 执行真实 ANAS CLI 新装、重复 apply、重启及全 workspace
-备份/恢复，使用 Samba AD/Authentik 和第二 PG 消费者；须调用者指定 Linux/Btrfs、独立 daemon/netns。
+备份/恢复；当前入口使用 Samba AD/Casdoor 和第二 PG 消费者，须调用者指定 Linux/Btrfs、独立 daemon/netns。
+Authentik 专属流程已退役，共用 Python 文件仅供 Casdoor harness 导入。下文实机记录属于各自历史制品，
+新 Casdoor/Immich/PostgreSQL revision 组合仍须独立复验。
 
 本机 arm64 镜像构建、编译服务回归、真实 PG 的并发/软删除保护、照片/视频原件 hash 和缩略图任务通过。
 真实暂停的 metadataExtraction job 从 Valkey AOF 重启恢复，应用启动后原生 bootstrap 恢复处理并完成缩略图。

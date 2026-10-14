@@ -52,15 +52,12 @@ func casdoorTestEnv() map[string]string {
 		"ANAS_IAM_CLIENT__PAPERLESS__ACS_URL":                   "https://paper.example/acs",
 		"ANAS_IAM_CLIENT__PAPERLESS__ATTRIBUTES":                "uid:sAMAccountName:1,email:mail:1,anchor:anasIdentityAnchor:1,groups:groups:0",
 		"ANAS_IAM_CLIENT__PAPERLESS__ALLOW_GROUPS":              "APP_paperless",
-		"APPS_LIST__NEXTCLOUD__NAME":                            "Nextcloud",
-		"APPS_LIST__NEXTCLOUD__URI":                             "https://cloud.example",
-		"APPS_LIST__PAPERLESS__NAME":                            "Paperless",
-		"APPS_LIST__PAPERLESS__URI":                             "https://paper.example",
 	}
 }
 
 func TestPublishIAMEndpointsDoesNotInventSAMLLogout(t *testing.T) {
 	e := casdoorTestEnv()
+	e["ANAS_IAM_BINDING__PAPERLESS__OIDC_SELF_ACCOUNT_API_SCHEMA"] = "stale-schema"
 	if err := publishIAMEndpoints(e); err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +69,9 @@ func TestPublishIAMEndpointsDoesNotInventSAMLLogout(t *testing.T) {
 	}
 	if got := e["ANAS_IAM_BINDING__PAPERLESS__SAML_SLO_URL"]; got != "" {
 		t.Fatalf("unexpected SAML SLO endpoint %q", got)
+	}
+	if e["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_SELF_ACCOUNT_API_SCHEMA"] != "casdoor-account/v1" || e["ANAS_IAM_BINDING__PAPERLESS__OIDC_SELF_ACCOUNT_API_SCHEMA"] != "" {
+		t.Fatal("self-account API schema missing or retained across a protocol switch")
 	}
 }
 
@@ -251,5 +251,27 @@ func TestOptionalCAEPRegistrationRequiresVerifiedSubjectWideReceiver(t *testing.
 	e[p+"OIDC_CAEP_EVENTS"] = "unknown"
 	if _, err := oidcApplication(e, "nextcloud"); err == nil {
 		t.Fatal("unknown event accepted")
+	}
+}
+
+func TestPublicClientAndNativeReauthenticationApplication(t *testing.T) {
+	e := map[string]string{"ANAS_IAM_CLIENT__TEST__CLIENT_ID": "public-test", "ANAS_IAM_CLIENT__TEST__PUBLIC_CLIENT": "true", "ANAS_IAM_CLIENT__TEST__REDIRECT_URIS": "https://portal.example.net/oidc/callback", "ANAS_IAM_CLIENT__TEST__REAUTHENTICATION_CLIENT_ID": "public-test-reauth", "ANAS_IAM_CLIENT__TEST__REAUTHENTICATION_REDIRECT_URI": "https://portal.example.net/oidc/reauth-callback"}
+	app, err := oidcApplication(e, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app["clientSecret"] != "" {
+		t.Fatal("public client owns an API secret")
+	}
+	reauth, err := oidcReauthenticationApplication(e, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reauth["clientId"] != "public-test-reauth" || reauth["enableAutoSignin"] != false || reauth["enableSigninSession"] != false {
+		t.Fatal("native reauthentication configuration incorrect")
+	}
+	e["ANAS_IAM_CLIENT__TEST__PUBLIC_CLIENT"] = "false"
+	if _, err := oidcApplication(e, "test"); err == nil {
+		t.Fatal("confidential client accepted without secret")
 	}
 }

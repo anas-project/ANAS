@@ -2,12 +2,13 @@
 # portable render fixture, host-network facts are explicit because the daemon
 # runs in a network namespace and must not inherit the physical host's
 # interface name or address.
+# Current Casdoor + NetBird render is blocked by DIRKEY-R-013.
 modules:
   samba_dc: {}
   samba_fs: {}
   postgres: {}
   mariadb: {}
-  authentik: {}
+  casdoor: {}
   nextcloud: {}
   collabora: {}
   meshcentral: {}
@@ -25,7 +26,7 @@ modules:
   traefik: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   chinese_speedup: true
   chinese_build_speedup: true

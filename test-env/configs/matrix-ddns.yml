@@ -7,7 +7,7 @@ modules:
   lego: {}
   samba_dc: {}
   postgres: {}
-  authentik: {}
+  casdoor: {}
   ddns_updater:
     config:
       dns_provider: cloudflare
@@ -17,7 +17,7 @@ modules:
       dns_provider: tencentcloud
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   base_domain: nas.test
   email: admin@nas.test

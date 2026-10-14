@@ -81,16 +81,6 @@ for config in "$CONFIG_DIR"/*.yml; do
         exit 1
       fi
       ;;
-    iam-saml-authentik)
-      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS=redirect' \
-        "$latest/modules/nextcloud/.env"
-      grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_URL=https://nc.saml-authentik.example.test:9000/index.php/apps/user_saml/saml/sls' \
-        "$latest/modules/authentik/.env"
-      grep -Fq 'sls_binding: redirect' "$latest/modules/authentik/blueprints/anas-clients.yaml"
-      grep -Fq 'logout_method: frontchannel_native' "$latest/modules/authentik/blueprints/anas-clients.yaml"
-      grep -Fq 'sign_logout_request: true' "$latest/modules/authentik/blueprints/anas-clients.yaml"
-      grep -Fq 'sign_logout_response: true' "$latest/modules/authentik/blueprints/anas-clients.yaml"
-      ;;
     iam-saml-llng)
       grep -Fq 'ANAS_IAM_CLIENT__NEXTCLOUD__SAML_SLS_BINDINGS=redirect' \
         "$latest/modules/nextcloud/.env"
@@ -135,11 +125,14 @@ assert fs["SAMBA_DC_DNS_SEARCH"] == ad_domain
 for module, web_key, web_host in (
     ("lam", "LAM_DOMAIN", "lam." + base_domain),
     ("nextcloud", "NEXTCLOUD_DOMAIN", "nc." + base_domain),
-    ("authentik", "AUTHENTIK_DOMAIN", "auth." + base_domain),
+    ("casdoor", "CASDOOR_DOMAIN", "auth." + base_domain),
 ):
     values = env(module)
     assert values[web_key] == web_host
-    assert values["SAMBA_DC_BASE_DN"] == "DC=test,DC=example"
+    if module == "casdoor":
+        assert values["CASDOOR_LDAP_BASE_DN"] == dc["SAMBA_DC_BASE_USERS_DN"]
+    else:
+        assert values["SAMBA_DC_BASE_DN"] == "DC=test,DC=example"
 PY
       ;;
     domain-separation-separate-zone)

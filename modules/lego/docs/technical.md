@@ -88,3 +88,7 @@ Manifest 没有声明跨 Module 密码/Secret 消费或托管本地管理员。
 ## 当前限制
 
 不要用环境变量手工复制 DNS Secret；应使用结构化 `secrets` 配置和 Module 作用域。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

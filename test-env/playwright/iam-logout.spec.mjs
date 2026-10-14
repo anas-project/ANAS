@@ -23,7 +23,7 @@ function requireEnvironment() {
   for (const [name, value] of Object.entries({ ANAS_TEST_IAM_PROVIDER: provider, ANAS_TEST_APP: app, ANAS_TEST_USERNAME: username, ANAS_TEST_PASSWORD: password })) {
     if (!value) throw new Error(`${name} is required`);
   }
-  if (!["authentik", "llng", "casdoor"].includes(provider)) throw new Error(`unsupported IAM provider ${provider}`);
+  if (!["llng", "casdoor"].includes(provider)) throw new Error(`unsupported IAM provider ${provider}`);
   if (!["oidc", "saml"].includes(protocol)) throw new Error(`unsupported IAM protocol ${protocol}`);
   if (!bases[app]) throw new Error(`unsupported application ${app}`);
 }
@@ -62,16 +62,7 @@ async function submit(page) {
 }
 
 async function loginProvider(page) {
-  if (provider === "authentik") {
-    const user = await firstVisible(page, ['input[name="uidField"]', 'input[name="uid_field"]', 'input[name="username"]']);
-    if (!user) throw new Error("authentik identification field was not visible");
-    await user.fill(username);
-    await submit(page);
-    const pass = await firstVisible(page, ['input[name="password"]', 'input[type="password"]']);
-    if (!pass) throw new Error("authentik password field was not visible");
-    await pass.fill(password);
-    await submit(page);
-  } else if (provider === "llng") {
+  if (provider === "llng") {
     await page.locator('input[name="user"]').fill(username);
     await page.locator('input[name="password"]').fill(password);
     await submit(page);
@@ -147,8 +138,7 @@ async function moduleLogout(page) {
 }
 
 async function providerLogout(page) {
-  if (provider === "authentik") await page.goto(`${bases.iam}/if/flow/default-invalidation-flow/`);
-  else if (provider === "llng") await page.goto(`${bases.iam}/?logout=1`);
+  if (provider === "llng") await page.goto(`${bases.iam}/?logout=1`);
   else await page.goto(`${bases.iam}/api/logout`);
 }
 

@@ -59,8 +59,7 @@ func TestCalculatePublishesOIDCRegistrationAndApplicationGroup(t *testing.T) {
 		"ANAS_IAM_CLIENT__VIKUNJA__REDIRECT_URIS":             "https://tasks.nas.test:9443/auth/openid/anas",
 		"ANAS_IAM_CLIENT__VIKUNJA__POST_LOGOUT_REDIRECT_URIS": "https://tasks.nas.test:9443/",
 		"ANAS_IAM_CLIENT__VIKUNJA__ALLOW_GROUPS":              "APP_vikunja,APP_all,Directory Admins",
-		"APPS_LIST__VIKUNJA__ALLOW_GROUPS":                    "APP_vikunja,APP_all,Directory Admins",
-		"APPS_LIST__VIKUNJA__URI":                             "https://tasks.nas.test:9443/login?redirectToProvider=anas",
+		"VIKUNJA_APPLICATION_URL":                             "https://tasks.nas.test:9443/login?redirectToProvider=anas",
 	}
 	for key, want := range wants {
 		if got := env[key]; got != want {

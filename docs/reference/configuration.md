@@ -7,10 +7,10 @@
 
 <!-- generated:configuration-summary:start -->
 - 内置 Module：`25`
-- 已声明参数：共 `200` 个（全局 `18` 个、Module 所有 `182` 个；结构化 Module 参数 `178` 个、裸 `env.*` 参数 `4` 个）
-- 解析阶段：`input_required` `2` 个、`must_resolve` `33` 个、未知类型 `0` 个
-- 类型分布：`bool` `28`、`enum` `29`、`int` `32`、`string` `111`
-- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `8`、`none` `9`、`runtime` `5`、`static` `160`
+- 已声明参数：共 `206` 个（全局 `18` 个、Module 所有 `188` 个；结构化 Module 参数 `184` 个、裸 `env.*` 参数 `4` 个）
+- 解析阶段：`input_required` `2` 个、`must_resolve` `34` 个、未知类型 `0` 个
+- 类型分布：`bool` `26`、`enum` `29`、`int` `34`、`string` `117`
+- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `9`、`none` `9`、`runtime` `5`、`static` `165`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -109,6 +109,27 @@ Compose project name，同时以该前缀生成容器名；例如默认配置下
 的前缀会生成另一组 project、容器名和跨容器地址，属于静态部署变更，不是现有资源的原地
 重命名；修改前必须先完成显式迁移或清理旧部署。
 
+## 应用目录
+
+application_catalog 是原生结构化配置，不是环境变量命名空间。categories 配置分类的中英文名称、
+描述与权重；overrides 按稳定条目名覆盖 Module 展示字段；entries 添加外部入口。
+条目字段包括 name、display_name、url、summary、description、documentation_url、weight、
+categories、kind、icons、access 和 visibility。展示字段的语言映射只接受 zh-CN/en，
+未知语言键或空译文拒绝配置；所选语言不支持时使用英文。Module 覆盖按语言键合并，
+不能改变用途、链接或权限事实。
+
+外部条目必须使用 access.mode: external 和明确的 HTTPS URL。管理入口的可见规则为
+visibility.mode: subjects、any_of: [{role: platform_admin}]。这只过滤目录，目标仍使用自身认证。
+自定义 icons.source 是配置文件目录内的方形 PNG，512–2048px、单文件最多 2MiB；
+自动生成 16/32/48/64/128/256/512 七档。icons.sizes 可提供相应尺寸的本地 PNG；
+拒绝符号链接、越界及 Secret/data 路径。直接编辑源 YAML 的 application_catalog，再用
+`anas config import SOURCE -w WORKSPACE` 导入，随后 apply 同步原生目录对象；无需操作 IAM 后台。
+workspace/config.yml 仍受 CLI 管理，不能直接手改。图标相对路径以导入后 workspace 配置目录为准，
+自定义源图须放在该目录内。
+
+第一阶段按部署默认语言投射到 IAM 原生界面，完整门户功能放到第二阶段。
+plan 会列出 Provider 原生限制与使用占位图的条目；细节见[目录设计](/architecture/app-catalog-design)。
+
 ## 临时存储根
 
 `global.temp_path` 是可选绝对路径；省略时使用 `<workspace>/tmp`。它只影响 Module 显式
@@ -158,7 +179,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`37` 项。
+当前显式可移植约束：`39` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
@@ -194,6 +215,8 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
 | `samba_dc.max_log_size` | <code>minimum=1</code> |
 | `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
+| `user_portal.audit_capacity_mb` | <code>minimum=1; maximum=1024</code> |
+| `user_portal.recent_window_seconds` | <code>minimum=5; maximum=900</code> |
 | `versitygw.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `versitygw.region` | <code>min_length=1; max_length=64; pattern=&#34;^[A-Za-z0-9][A-Za-z0-9._-]*$&#34;</code> |
 | `versitygw.root_access_key` | <code>min_length=3; max_length=64; pattern=&#34;^[A-Za-z0-9._-]+$&#34;</code> |
@@ -206,7 +229,6 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | --- | ---: | --- |
 | `global` | 18 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.temp_path`<br>`global.timezone`<br>`global.virtual_domain` |
 | `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
-| `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
 | `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
 | `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
@@ -227,6 +249,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
 | `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
+| `user_portal` | 12 | `user_portal.audit_capacity_mb`<br>`user_portal.delegation_rules`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
 | `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
 | `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
 <!-- generated:configuration-owners:end -->
@@ -260,12 +283,12 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 <!-- generated:configuration-effects:start -->
 | Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 114 | 重新渲染，并重建受影响容器或 Compose project |
+| `container_recreate` | 122 | 重新渲染，并重建受影响容器或 Compose project |
 | `credential_rotate` | 9 | 通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 19 | 激活前迁移持久数据、数据库或成员身份 |
+| `data_migrate` | 18 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
 | `immutable` | 3 | 使用替换或专用迁移流程 |
-| `reconcile` | 21 | 通过 Module 生命周期调和应用、API 或文件状态 |
+| `reconcile` | 20 | 通过 Module 生命周期调和应用、API 或文件状态 |
 <!-- generated:configuration-effects:end -->
 
 ### 当前版本的实际执行边界
@@ -307,7 +330,7 @@ deployment 记录，但不会选择容器执行 `down/up`；若 activation 失�
 | `nextcloud.language`, `nextcloud.locale` | 可以 | `occ` 写入的实际系统配置可立即读回，容器 ID 不变 |
 | `samba_fs.share_access_mode`, `samba_fs.share_guest_read_only` | 可以，但需新 handler | `smbcontrol all reload-config` 使运行中 `smbd` 发布新配置，ACL 同时在线修改；现有 `fix_perm.sh` 还不能接收新 deployment 的显式输入 |
 | `nextcloud.memories_enabled` | 有条件可以 | Nextcloud 支持在线 app enable/disable；启用时还可能下载固定版本、修改数据库并启动 places 初始化，必须实现事务、进度与 verify，不能只执行一个 `occ app:enable` |
-| `authentik.domain_prefix`, `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | 不可以 | 完整效果包含 Traefik Docker label；Docker 24.0.7 的 `docker update` 不支持修改容器 label，必须至少重建带路由的容器，并同步 IAM client/metadata |
+| `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | 不可以 | 完整效果包含 Traefik Docker label；Docker 24.0.7 的 `docker update` 不支持修改容器 label，必须至少重建带路由的容器，并同步 IAM client/metadata |
 | `lego.dns_provider` | 不可以 | 可以为一次 `docker exec` 临时传入新 provider，但 PID 1 的 cron 环境仍保留旧值，后续续期会退回旧 provider |
 | `global.virtual_domain` | 不可以 | Lego 长期进程仍持有旧模式，而且证书替换后各 TLS 消费者还需各自 reload/recreate；不能靠一次证书脚本完成全局效果 |
 
@@ -328,7 +351,6 @@ Collabora、Nextcloud 和数据库镜像的保留设置都在 Hook、容器脚�
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | 固定 host-LAN 容器与宿主桥地址，并控制地址占用探测；三项均为可选，未关闭探测时默认执行 ARP 检查 |
 | `global` | `timezone`, `default_language`, `default_locale` | 生成最终 `TZ`/BCP 47 默认值；只下发给声明支持的应用 |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | 分别切换运行时镜像/下载源和构建期镜像/包源；后者要求重建镜像 |
-| `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | 选择数据库资源，生成 IAM URL/Blueprint、LDAP source/writeback 和日志级别 |
 | `casdoor` | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` | 选择 PostgreSQL Resource，生成 IAM URL、OIDC/SAML Application、LDAPS 导入配置和同步周期 |
 | `collabora` | `admin_username`, `admin_password`, `auto_save`, `domain_prefix`, `log_level` | 显式映射到上游 `username`/`password`，并生成 `extra_params`、server name 和 Traefik route |
 | `ddns_go` | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` | 生成 ddns-go desired-state 文件、轮询参数、地址发现方式、本地登录和 host-network 路由 |

@@ -7,6 +7,9 @@ updated: 2026-09-09
 
 # Vikunja Module 实施计划
 
+> 历史边界（2026-10-10）：Authentik 已从当前版本移除，本文 Authentik 通过记录保留原版本与日期；对应专属需求/用例已废弃，移除的脚本不再可执行。Casdoor 或调整后的 LLNG fixture 不继承这些通过结论。
+
+
 验收依据是[Vikunja Module 集成要求](../../requirements/vikunja-module.md)的需求矩阵。M1—M4 已完成。
 服务器地址与连接信息只登记在 Git 忽略的 `docs/private/test-servers.md`；测试使用
 独立 network namespace、containerd、Docker socket、data-root 和 workspace，不接触宿主现有容器。
@@ -16,7 +19,7 @@ updated: 2026-09-09
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M1：Module、Contract/IAM/Secret、文档与静态门禁 | R-001—R-016、R-028 | 已完成 |
-| M2：多架构构建、PostgreSQL、Authentik 与登出 | R-017—R-018、R-020、R-022 | 已完成 |
+| M2：多架构构建、PostgreSQL、Authentik 与登出 | R-017—R-018、R-022 | 已完成 |
 | M3：MariaDB 与 LLNG | R-019、R-021 | 已完成 |
 | M4：恢复、API/Webhook/CalDAV、轮换与负载 | R-023—R-027 | 已完成 |
 

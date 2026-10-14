@@ -37,14 +37,22 @@ This page records the current implementation, security boundaries, and verificat
 
 It stores no human users. It is an OIDC consumer of the selected IAM and admits only members of the
 administrator group.
+Registration explicitly requests `email`, `preferred_username` and `groups`: the upstream consumes the first two
+to create a login session, while the bridge verifies the resolved administrator group.
+Providers must derive these claims from their native user and group facts.
+All three managed IAM adapters release the required claims in the signed ID token, which is
+the gateway's fixed source; optional userinfo fallback is disabled. The upstream still requires
+a nonempty email and rejects an explicitly unverified email in the token. Signature, issuer,
+nonce and the bridge's group/authentication-time checks remain enabled; missing required claims fail closed.
 
 **Which groups pass is not a parameter.** Everything behind this gate is an administrative interface,
 so the answer is fixed to the `platform_admin` role, which the hook resolves to the directory's real
 administrator group name (`SAMBA_DC_ADMIN_GROUP_NAME`, falling back to the contract name `Admins`
 when no directory module is deployed). Making it configurable would let one edit widen every service
-behind the gate at once -- Adminer included -- with nothing to announce it. To open an entry to
-non-administrators, extend the application catalogue's `audience` vocabulary instead of widening
-this gate.
+behind the gate at once -- Adminer included -- with nothing to announce it. User-facing entries can
+use their own catalogue visibility rules; this administrative gate still accepts only `platform_admin`.
+
+The login return allowlist binds subdomains of `BASE_DOMAIN` to `TRAEFIK_BASE_PORT`, preserving the application's actual HTTPS port. Upstream `7.15.3` rejects explicit ports when its allowlist omits the port, causing callbacks to land on the gateway home page. The deployment port must not be replaced with a wildcard allowing every port.
 
 ### Logout boundary
 
@@ -161,8 +169,12 @@ The dependency closure does not grant every environment value. Sensitive values 
 
 oauth2-proxy binds loopback port `4181`; the wrapper uses `4180` for ordinary browser/callback traffic and `4182` for Traefik ForwardAuth. Both bridges first delete caller-supplied fixed identity headers and response Authorization. Only `4182`, after a 2xx upstream result, parses oauth2-proxy's verified ID token and requires the issuer, stable subject, numeric `auth_time`/`exp`, and resolved `platform_admin` directory group before overwriting seven fixed headers. The raw bearer assertion exists only in the request chain to bind sessions and step-up; it is neither persisted nor logged.
 
-The ANAS wrapper image resolves Traefik at startup, appends its exact `/32` as `--trusted-proxy-ip`, and validates optional upstream proxy IPs or CIDRs. It no longer trusts all three RFC1918 ranges. Resolution or validation failure keeps the gate closed, preventing forged forwarded headers from changing redirects or authentication context.
+The ANAS wrapper resolves Traefik at startup, trusts its exact address and the internal `127.0.0.1/32` bridge, and validates optional upstream proxy IPs or CIDRs. In r7, both outer bridges accept only the resolved Traefik TCP caller; the public bridge also permits local `GET /ping` readiness checks. Trusting the internal loopback lets the pinned upstream read the original forwarded URL and return to the application after login. Direct requests from other containers receive 403. Resolution or validation failure keeps the gate closed; entire RFC1918 ranges are not trusted.
 
 ## Current limitations
 
 It controls the entry gate, not authorization inside the protected application.
+
+## Application catalog
+
+No personnel card is published: ForwardAuth gateway has no independent application UI.

@@ -167,9 +167,8 @@ func publishConsoleRoute(e map[string]string) error {
 
 // registerIAMClient publishes this module's OIDC client request. Access control
 // is expressed here, as group membership, and enforced by the IAM: a user
-// outside the allowed groups never completes the flow, so the gate needs no
-// group logic of its own and cannot disagree with the IAM about who is an
-// administrator.
+// outside the allowed groups never completes the flow. The bridge also checks
+// the resulting group claim before emitting the platform_admin assertion.
 func registerIAMClient(e map[string]string, secrets *secretStore) error {
 	e[iamClientPrefix+"CLIENT_ID"] = "oauth2-proxy"
 	secret, err := secrets.Ensure("OAUTH2_PROXY_CLIENT_SECRET", func() (string, error) {
@@ -185,7 +184,7 @@ func registerIAMClient(e map[string]string, secrets *secretStore) error {
 	e[iamClientPrefix+"REDIRECT_URIS"] = e["OAUTH2_PROXY_REDIRECT_URL"]
 	e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] = e["OAUTH2_PROXY_DOMAIN_FULL"]
 	e[iamClientPrefix+"SCOPES"] = "openid,profile,email"
-	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,email:email:1"
+	e[iamClientPrefix+"ATTRIBUTES"] = "cn:cn:1,sAMAccountName:sAMAccountName:1,preferred_username:sAMAccountName:1,email:email:1,groups:groups:1"
 	e[iamClientPrefix+"DOMAIN"] = e["OAUTH2_PROXY_DOMAIN"]
 
 	groups, err := platformAdminGroup(e)

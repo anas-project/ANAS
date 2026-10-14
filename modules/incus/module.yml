@@ -16,6 +16,7 @@ category: compute
 # full real-host matrix in the requirement's section 8.2 has evidence this stays
 # developing (INCUS-R-001).
 status: developing
+applications_not_published: "Compute API provider; host administration belongs to ANAS management."
 runtime:
   type: compose
   compose_file: docker-compose.yml

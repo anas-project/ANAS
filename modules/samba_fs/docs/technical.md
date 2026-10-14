@@ -191,3 +191,7 @@ SMB 客户端直接使用目录身份。`FS Share RW`/`FS Admins` 等 Group 控�
 修改主机名需要重新加入当前 `SAMBA_DC_DOMAIN`；修改共享目录名需要迁移文件，普通 apply
 不会搬运数据。已有 AD 不支持原地换域，且已有 workspace 的应用域/内部 DNS zone 迁移器
 尚未交付。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

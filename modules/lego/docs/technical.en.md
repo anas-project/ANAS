@@ -88,3 +88,7 @@ The internal certificate and private key remain under `ANAS_TLS_CERTS_DIR` as `a
 ## Current limitations
 
 Do not copy DNS secrets through ad-hoc environment variables; use structured secrets and module scoping.
+
+## Application catalog
+
+No personnel card is published: Certificate automation has no personnel UI.

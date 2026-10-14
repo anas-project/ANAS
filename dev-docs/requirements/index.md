@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | [relational_database 扩展生命周期要求](relational-database-extensions.md) | 最小 PostgreSQL 扩展声明、固定版本、权限和就绪、受控升级与 ANAS 恢复 | 19/19 已完成 |
 | [项目审查整改要求](project-quality-hardening.md) | 共享 Agent 规则、补偿失败、索引语义与前端门禁 | 6/6 已完成 |
-| [应用目录要求](app-catalog.md) | 非 IAM/多入口、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer 与 Casdoor 优先 | 0/35 已完成 |
+| [应用目录要求](app-catalog.md) | 非 IAM/多入口、用户与管理两级分组、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer、Casdoor 优先与独立门户交付 | 0/39 已完成 |
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
 | [Changelog 要求](changelog.md) | Core 与 Module 变更记录的位置、写入时机、发布改名与门禁 | 0/33 已完成 |
 | [Compose 执行边界要求](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 子进程失败归因与补偿输出边界 | 2/17 已完成 |
@@ -15,7 +15,7 @@
 | [无序 Capability 依赖要求](weak-capability-dependency.md) | 存在性强制但不参与排序的依赖、calculate 与渲染两阶段边界、守门人成环的解法 | 14/15 已完成 |
 | [Samba 目录事件订阅与实时同步要求](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的事件订阅、可靠消费、全量兜底、准入丧失会话撤销与 LDAP+OIDC 双接入验收 | 0/14 已完成 |
 | [目录身份键要求](directory-identity-key.md) | anchor 是唯一持久身份键,标签只用于登录/搜索/显示;主体标识符取 anchor、Module 与 Provider 两侧义务与缺口声明 | 7/13 已完成 |
-| [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 20/42 已完成 |
+| [使用 OIDC/SAML 的 Module 双向登出要求](module-iam-bidirectional-logout.md) | RP/SP 发起登出、IAM 发起登出、通用注册、安全和真实会话 E2E | 14/28 已完成 |
 | [Web API 与管理前端要求](web-api-admin-console.md) | 管理控制台的范围、访问与证书、认证与角色、安全和验收 | 155/155 已完成 |
 | [共享应用层迁移要求](application-layer-migration.md) | 把三个共享服务实现迁出 CLI 包、按类型而非运行时开关表达子进程边界 | 0/10 已完成 |
 | [LLM Gateway 要求（待讨论）](llm-gateway.md) | 模型凭据集中、虚拟 key、预算执行点、用量归因与审计；问题域已锁定，矩阵待讨论后补 | 无矩阵（未采用 ID） |

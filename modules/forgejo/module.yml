@@ -11,6 +11,30 @@ title: Forgejo
 description: Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication.
 category: app
 status: developing
+applications:
+  - name: forgejo
+    display_name:
+      zh-CN: Forgejo
+      en: Forgejo
+    url_from: FORGEJO_APPLICATION_URL
+    summary:
+      zh-CN: "代码仓库与协作"
+      en: "Git repositories and collaboration"
+    description:
+      zh-CN: "代码仓库与协作。"
+      en: "Git repositories and collaboration."
+    documentation_url:
+      zh-CN: https://forgejo.org/docs/latest/
+      en: https://forgejo.org/docs/latest/
+    weight: 100
+    kind: user
+    categories:
+      - development
+    access:
+      mode: iam
+      client: forgejo
+    visibility:
+      mode: access
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -147,7 +171,6 @@ config:
         maximum: 65535
   exports:
     - ANAS_IAM_CLIENT__FORGEJO__*
-    - APPS_LIST*
   consumes:
     - ANAS_IAM_BINDING__FORGEJO__*
     - ANAS_TLS_CERTS_DIR

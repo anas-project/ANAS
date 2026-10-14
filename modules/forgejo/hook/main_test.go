@@ -39,7 +39,7 @@ func TestCalculatePublishesForgejoOIDCAndLauncher(t *testing.T) {
 	if got := env[iamClientPrefix+"ALLOW_GROUPS"]; got != "APP_forgejo,APP_all,Admins" {
 		t.Fatalf("allow groups = %q", got)
 	}
-	if got := env["APPS_LIST__FORGEJO__URI"]; got != "https://git.example.test:443/user/oauth2/anas" {
+	if got := env["FORGEJO_APPLICATION_URL"]; got != "https://git.example.test:443/user/oauth2/anas" {
 		t.Fatalf("launcher URI = %q", got)
 	}
 	if env["FORGEJO_OIDC_CLIENT_SECRET"] == "" || env["FORGEJO_SECRET_KEY"] == "" || env["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] == "" {

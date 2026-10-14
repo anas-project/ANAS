@@ -1,5 +1,8 @@
 # MeshCentral technical implementation
 
+Authentik was removed on 2026-10-10. Its runtime results below are historical and the scripts are retired. LLNG checks remain; Casdoor combinations require independent acceptance.
+
+
 This page records the current implementation, security boundaries, and verification entry points for `meshcentral`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
@@ -151,7 +154,6 @@ The runner creates a dedicated database, principal, and stable generated credent
 ### Exports
 
 - `ANAS_IAM_CLIENT__MESHCENTRAL__*`
-- `APPS_LIST*`
 
 ### Explicit consumes
 
@@ -205,3 +207,11 @@ The startup script resolves Traefik's current address and writes it to MeshCentr
 ## Current limitations
 
 Do not describe LDAPS provisioning as browser LDAPS login.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

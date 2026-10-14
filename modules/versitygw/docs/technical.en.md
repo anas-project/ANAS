@@ -152,3 +152,7 @@ credential. Resource consumers have an isolated bucket and long-lived credential
 or fine-grained policy. WebUI, public Admin API,
 versioning, object lock, notifications, replication, virtual-host style, and real HA are outside the
 first release. Status remains `developing` until real client, recovery, and upgrade evidence exists.
+
+## Application catalog
+
+No personnel card is published: S3 API endpoint has no independent browser UI.

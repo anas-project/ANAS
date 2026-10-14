@@ -36,11 +36,18 @@
 ## 身份与授权数据流
 
 自身不保存人员用户。它作为 OIDC Consumer 登录所选 IAM，只放行管理员组的成员。
+注册请求显式要求 `email`、`preferred_username` 和 `groups` 声明；前两者供上游创建登录 session，后者供 bridge
+校验解析后的管理员组。Provider 必须从其原生用户/组事实生成这些声明。
+三个受管 IAM Adapter 均在签名 ID token 中发布所需声明，网关固定使用这些声明，
+关闭可选 userinfo 补查。上游仍要求非空邮箱并拒绝 token 中明确未验证的邮箱；签名、
+issuer、nonce 及 bridge 的组和认证时间校验保持启用，缺少必要声明仍拒绝。
 
 **放行哪些 Group 不是参数。** 这道门后面全是管理界面，所以答案固定为 `platform_admin` 角色，
 Hook 把它解析成目录里管理员组的真实名称（`SAMBA_DC_ADMIN_GROUP_NAME`，没有目录 Module 时回落到
 契约名 `Admins`）。做成可配置意味着一次修改同时放宽所有受这道门保护的服务——包括 Adminer——而且
-没有任何提示。要让某个入口对非管理员开放，应扩展应用目录的 `audience` 词汇，而不是改宽这道门。
+没有任何提示。用户入口可以使用自身的目录可见规则；这道管理网关仍只接受 platform_admin。
+
+登录回跳白名单绑定 `BASE_DOMAIN` 的子域和 `TRAEFIK_BASE_PORT`，保留原应用的实际 HTTPS 端口。上游 `7.15.3` 的无端口白名单会拒绝显式端口，导致回调落到网关首页；不能用任意端口通配符替代部署端口。
 
 ### 登出边界
 
@@ -147,8 +154,12 @@ URL 路径里。入口：`internal/consoleauth/job_owner_test.go` 的
 
 oauth2-proxy 进程绑定 loopback `4181`；包装进程在 `4180` 处理普通浏览器/callback，在 `4182` 处理 Traefik ForwardAuth。两条 bridge 先删除调用方提交的固定身份头和响应 Authorization。只有 `4182` 在上游返回 2xx 后解析 oauth2-proxy 提供的已验证 ID token，要求 issuer、稳定 subject、数值 `auth_time`/`exp` 和解析后的 `platform_admin` 目录组，再覆盖七个固定 Header。原 bearer assertion 只在请求链内用于绑定 session/step-up，不落盘、不写日志。
 
-ANAS 包装镜像在启动时解析 Traefik 地址，为 oauth2-proxy 追加精确的 `--trusted-proxy-ip=/32`，并校验可选上游代理 IP/CIDR。它不再信任三个完整 RFC1918 范围；解析或校验失败时门禁保持关闭，防止伪造转发 Header 影响回跳地址和认证上下文。
+ANAS 包装镜像在启动时解析 Traefik 地址，为 oauth2-proxy 信任列表加入精确的 Traefik 地址与内部 `127.0.0.1/32` bridge，并校验可选上游代理 IP/CIDR。r7 的两条外部 bridge 只接受解析出的 Traefik TCP 来源，公开 bridge 另允许本地 `GET /ping` 健康检查。内部回环必须受信，才能让固定上游读取原始转发地址并在登录后回到目标应用；其他容器直接提交转发 Header 会收到 403。解析或校验失败时门禁保持关闭，不信任完整 RFC1918 范围。
 
 ## 当前限制
 
 它只负责入口门禁，不负责被保护应用内部的角色授权。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

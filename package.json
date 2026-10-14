@@ -35,11 +35,9 @@
     "test-upgrades:cleanup": "bash test-env/scripts/test-upgrade-workspace-cleanup.sh",
     "test-upgrades:old-compat": "bash test-env/scripts/test-upgrade-old-compat.sh",
     "test-upgrades:suite-targets": "bash test-env/scripts/test-upgrade-suite-targets.sh",
-    "test-upgrades:authentik-probes": "bash test-env/scripts/test-authentik-upgrade-probes.sh",
     "test-upgrades:proxy-boundary": "bash test-env/scripts/test-upgrade-proxy-boundary.sh",
     "e2e:vikunja-browser": "playwright test --config test-env/playwright/vikunja-browser.config.mjs",
     "e2e:vikunja-llng-browser": "playwright test --config test-env/playwright/vikunja-llng-browser.config.mjs",
-    "e2e:vikunja-authentik-matrix-browser": "playwright test --config test-env/playwright/vikunja-authentik-matrix-browser.config.mjs",
     "e2e:vikunja-load-browser": "playwright test --config test-env/playwright/vikunja-load-browser.config.mjs",
     "e2e:immich-browser": "playwright test --config test-env/playwright/immich-browser.config.mjs"
   },

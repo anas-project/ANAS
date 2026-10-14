@@ -1,4 +1,4 @@
-# The llng identity path. authentik is exercised by full.yml and the other
+# The LLNG identity path. Casdoor is exercised by full.yml and the other
 # matrices, so this is where the alternative provider stays covered.
 modules:
   samba_dc: {}

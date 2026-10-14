@@ -25,7 +25,7 @@
 ```yaml
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 modules:
   immich:
     config:
@@ -34,9 +34,9 @@ modules:
       video_concurrency: 1
 ```
 
-默认入口 `https://photos.<BASE_DOMAIN>:<TRAEFIK_BASE_PORT>`。本版选定 Authentik `2026.5.6-r15`：
-已有受信管理员 roleClaim 和目录撤权事件接线，真实登录/目录同步验收仍待执行。LLNG 仅有角色映射，
-未发布所需撤权事件能力；Casdoor 尚不能表达该角色映射，未支持的组合在配置阶段拒绝。
+默认入口 `https://photos.<BASE_DOMAIN>:<TRAEFIK_BASE_PORT>`。本版选定 Casdoor，当前 Module 已发布所需
+受信管理员 roleClaim 和目录策略撤权能力。固定 r11 的历史 Immich 验收与 r12 目录/网关验收
+范围不同，当前 Immich 镜像组合仍需独立复验。LLNG 未发布所需策略撤权能力，配置阶段拒绝。
 不开启本地密码登录或本地管理员 setup。首个登录者必须属于受信管理员组并取得 `anas_role=admin`；
 普通首访客不会变成管理员。没有应用内应急密码账号，IAM 故障时应恢复 IAM/目录/DNS/CA。
 
@@ -50,7 +50,7 @@ OIDC sub 请求 Samba 永久 anchor，并保存为 Immich oauthId。内部 user.
 | --- | --- |
 | 登录名、邮箱、显示名改变 | sub 应保持 anchor；同 sub 命中原 id。资料不保证自动刷新，真实 IAM 改名待验收 |
 | 组改变 | IAM 在新登录时判断 APP_immich/APP_all/管理员组；admin/user role 在 OIDC 回调更新 |
-| 账号停用、删除或撤销准入 | 固定 Authentik 完成 LDAP 同步/删除时发送已协商的签名策略事件；接收端撤销旧 session/API key/分享，真实目录链路仍待验收 |
+| 账号停用、删除或撤销准入 | 固定 Casdoor 完成 LDAP 同步/删除时发送已协商的签名策略事件；接收端撤销旧 session/API key/分享，真实目录链路仍待验收 |
 | anchor 回收或替换 | 不支持换绑；真实 PG fixture 已验证并发唯一和软删除后拒绝新绑定，真实 IAM/主机仍待验收 |
 
 上游支持普通 RP 退出和 `/api/oauth/backchannel-logout`；Module 已登记 backchannel URI。

@@ -17,19 +17,19 @@ updated: 2026-09-13
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M0：已知不支持方向与降级边界 | R-006—R-008、R-010、R-012、R-014、R-020—R-022、R-024、R-026、R-028、R-031—R-032、R-034—R-036、R-038、R-040、R-042 | 已完成 |
-| M1：Nextcloud OIDC/SAML 双向登出复验 | R-001—R-004、R-015—R-018、R-029—R-030 | 实施中；历史路径已有证据，统一固定版本矩阵待重跑 |
-| M2：只有应用发起或本地登出的 Consumer | R-005、R-009、R-011、R-013、R-019、R-023、R-025、R-027、R-033、R-037、R-039、R-041 | 实施中；Vikunja Authentik 已通过，其余统一矩阵待跑 |
+| M0：已知不支持方向与降级边界 | R-020—R-022、R-024、R-026、R-028、R-031—R-032、R-034—R-036、R-038、R-040、R-042 | 已完成 |
+| M1：Nextcloud OIDC/SAML 双向登出复验 | R-015—R-018、R-029—R-030 | 实施中；历史路径已有证据，统一固定版本矩阵待重跑 |
+| M2：只有应用发起或本地登出的 Consumer | R-019、R-023、R-025、R-027、R-033、R-037、R-039、R-041 | 实施中；保留的 Provider 统一矩阵待跑；旧 Authentik 证据只保留历史边界 |
 
 ## 2. 实施检查表
 
 - [x] Runner 校验 HTTPS URL、成对字段、枚举、布尔值和当前协议字段，拒绝 OIDC/SAML 遗留字段。
-- [x] Authentik、LLNG、Casdoor adapter 在声明消失、协议切换、域名变化和重复 apply 后收敛旧配置。
+- [x] LLNG、Casdoor adapter 在声明消失、协议切换、域名变化和重复 apply 后收敛旧配置。
 - [x] Nextcloud OIDC/SAML、MeshCentral、NetBird 和 oauth2-proxy 固定版本 endpoint 与降级语义落地。
 - [x] 后续接入的 Forgejo、Vikunja 纳入完整组合空间；不支持方向逐格明示。
 - [x] 中英文 Module 文档与支持清单区分本地、应用发起、浏览器双向和后台双向登出。
 - [x] 统一 Playwright 入口、脱敏 reporter、`0600` 报告权限及非空/fixture/结果/泄密报告门禁已实现。
-- [ ] 在专用隔离 Docker fixture 重跑 Authentik × OIDC/SAML 矩阵并归档非空报告。
+- [x] 2026-10-10 按用户要求移除 Authentik，并废弃专属 R-001—R-014；不重新分配旧 ID。
 - [ ] 在专用隔离 Docker fixture 重跑 LLNG × OIDC/SAML 矩阵并归档非空报告。
 - [ ] 在专用隔离 Docker fixture 重跑 Casdoor × OIDC 矩阵及 SAML no-SLO 本地降级并归档非空报告。
 - [ ] 对每个声称支持的组合核对原应用会话、IAM 中央会话、静默恢复、会话隔离和安全负例。
@@ -48,14 +48,6 @@ updated: 2026-09-13
 
 | 需求 ID | 脚本 | 环境 | 执行日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-001 | `server-iam-logout-matrix-e2e.sh` | Authentik + Nextcloud OIDC + Chromium | — | 待重跑：Module→IAM、原 Cookie 与静默恢复 |
-| R-002 | `server-authentik-oidc-login-e2e.sh`、统一 logout matrix | Authentik + Nextcloud OIDC | 历史 2026-08-21；本轮待重跑 | 历史浏览器/管理员撤销已有结论；当前统一报告缺少非空 fixture 证据 |
-| R-003 | `server-authentik-nextcloud-login-e2e.sh`、统一 logout matrix | Authentik + Nextcloud SAML Redirect | 历史已通过；本轮待重跑 | 历史 SP/IdP Redirect 路径已有会话断言；本轮报告待归档 |
-| R-004 | `server-authentik-nextcloud-login-e2e.sh`、统一 logout matrix | Authentik + Nextcloud SAML Redirect + Chromium | 历史已通过；本轮待重跑 | 浏览器 SLO；不覆盖管理员无浏览器撤销 |
-| R-005 | `server-iam-logout-matrix-e2e.sh` | Authentik + MeshCentral `1.2.4` | — | 待执行：通过前保持“上游支持、待接入” |
-| R-009 | `server-vikunja-e2e.sh`、`vikunja-browser.spec.mjs` | Authentik + Vikunja `2.4.0` | 2026-08-24 | 通过：正常 RP logout 与 IAM-down 本地优先失效 2/2 |
-| R-011 | `server-iam-logout-matrix-e2e.sh` | Authentik + NetBird Dashboard `2.90.9` | — | 待执行：通过前保持“上游支持、待接入” |
-| R-013 | `server-iam-logout-matrix-e2e.sh` | Authentik + oauth2-proxy `7.15.3` | — | 待执行：暂停 IAM 后验证网关 Cookie 清理 |
 | R-015 | `server-iam-logout-matrix-e2e.sh` | LLNG + Nextcloud OIDC + Chromium | — | 待重跑：Module→IAM、原 Cookie 与静默恢复 |
 | R-016 | `server-llng-oidc-login-e2e.sh`、统一 logout matrix | LLNG + Nextcloud OIDC | 历史已通过；本轮待重跑 | 历史 Portal 浏览器登出已有会话断言；管理员无浏览器结果待明确 |
 | R-017 | `server-iam-logout-matrix-e2e.sh` | LLNG + Nextcloud SAML Redirect | — | 待执行：SP-Initiated SLO |
@@ -106,3 +98,17 @@ bash -n test-env/scripts/server-iam-logout-matrix-e2e.sh
 
 远端恢复可达后，必须显式使用专用 test Docker socket，并从 `0600` session artifact 读取一次性测试
 账号；不得把凭据写入命令、计划或报告。完整矩阵通过前，M1/M2 保持“实施中”。
+
+## 8. 已移除 Provider 的历史记录（2026-10-10）
+
+Authentik 的专属需求与用例已经废弃，原脚本已移除、不可执行。以下仅保全此前执行边界，
+不进入保留 Provider 的验收覆盖；Casdoor 不继承旧通过结果。
+
+- 原记录： /  R-001  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + Nextcloud OIDC + Chromium  /  —  /  待重跑：Module→IAM、原 Cookie 与静默恢复  /
+- 原记录： /  R-002  /  `server-authentik-oidc-login-e2e.sh`、统一 logout matrix  /  Authentik + Nextcloud OIDC  /  历史 2026-08-21；本轮待重跑  /  历史浏览器/管理员撤销已有结论；当前统一报告缺少非空 fixture 证据  /
+- 原记录： /  R-003  /  `server-authentik-nextcloud-login-e2e.sh`、统一 logout matrix  /  Authentik + Nextcloud SAML Redirect  /  历史已通过；本轮待重跑  /  历史 SP/IdP Redirect 路径已有会话断言；本轮报告待归档  /
+- 原记录： /  R-004  /  `server-authentik-nextcloud-login-e2e.sh`、统一 logout matrix  /  Authentik + Nextcloud SAML Redirect + Chromium  /  历史已通过；本轮待重跑  /  浏览器 SLO；不覆盖管理员无浏览器撤销  /
+- 原记录： /  R-005  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + MeshCentral `1.2.4`  /  —  /  待执行：通过前保持“上游支持、待接入”  /
+- 原记录： /  R-009  /  `server-vikunja-e2e.sh`、`vikunja-browser.spec.mjs`  /  Authentik + Vikunja `2.4.0`  /  2026-08-24  /  通过：正常 RP logout 与 IAM-down 本地优先失效 2/2  /
+- 原记录： /  R-011  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + NetBird Dashboard `2.90.9`  /  —  /  待执行：通过前保持“上游支持、待接入”  /
+- 原记录： /  R-013  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + oauth2-proxy `7.15.3`  /  —  /  待执行：暂停 IAM 后验证网关 Cookie 清理  /

@@ -44,7 +44,8 @@ lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
 config_version=$( $lemonldap_ng_cli info | grep -oP 'Num\s+:\s+\K\d+' )
 
 cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
-  | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps", .ldapExportedVars.anasRole)' \
+  | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps", .applicationList."1sample", .applicationList."2administration", .applicationList."3documentation", .ldapExportedVars.anasRole) | .applicationList |= with_entries(select(.key | test("^[0-9]+anas-") | not))' \
+  | jq --slurpfile apps /opt/anas/application-list.json '.applicationList += $apps[0]' \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
   > /tmp/config_new.json
 mv /tmp/config_new.json /var/lib/lemonldap-ng/conf/lmConf-$config_version.json
@@ -110,52 +111,7 @@ $lemonldap_ng_cli_delkey \
         globalStorageOptions Directory \
         globalStorageOptions LockDirectory
 
-$lemonldap_ng_cli_addkey \
-        applicationList/1apps catname "Applications" \
-        applicationList/1apps type "category"
-
 traefik_ip=$( ping -c 1 $TRAEFIK_HOSTNAME | sed '1{s/[^(]*(//;s/).*//;q}' )
-
-IFS=','
-for app in $APPS_LIST; do
-  (
-    IFS=' '
-    echo "Configuring app_list $app"
-    name="APPS_LIST__${app^^}__NAME"
-    uri="APPS_LIST__${app^^}__URI"
-    logo="APPS_LIST__${app^^}__LOGO_NAME"
-    desc="APPS_LIST__${app^^}__DESC"
-    allow_groups_name="APPS_LIST__${app^^}__ALLOW_GROUPS"
-    allow_groups="${!allow_groups_name}"
-
-    if [ -n "$allow_groups" ]; then
-      groups=($(echo "$allow_groups" | tr ',' ' '))
-      has_admin_group=false
-      for group in "${groups[@]}"; do
-          app_function_call="inGroup('$group')"
-          app_function_calls+=("$app_function_call")
-          if [ "$group" = "$SAMBA_DC_ADMIN_GROUP_NAME" ]; then
-            has_admin_group=true
-          fi
-      done
-      groups_filter=$(IFS='|'; echo "${app_function_calls[*]}")
-      if [ "$has_admin_group" != true ]; then
-        groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
-      fi
-    else
-      groups_filter="on"
-    fi
-
-    $lemonldap_ng_cli_addkey \
-          applicationList/1apps/$app type "application" \
-          applicationList/1apps/$app/options name "${!name}" \
-          applicationList/1apps/$app/options description "${!desc}" \
-          applicationList/1apps/$app/options tooltip "${!desc}" \
-          applicationList/1apps/$app/options display "$groups_filter" \
-          applicationList/1apps/$app/options logo "${!logo}" \
-          applicationList/1apps/$app/options uri "${!uri}"
-  )
-done
 
 saml_get_var() { # $1 app name, $2 key name
   local app_name="$1"
@@ -325,8 +281,7 @@ for app in $OIDC_RP_APPS; do
         # OIDC consumers require a stable JSON type.  LLNG's default "auto"
         # mode emits a scalar when the user belongs to exactly one group and
         # an array for several groups.  Declare groups as an always-array
-        # claim so every IAM consumer receives the same contract as it does
-        # from Authentik.
+        # claim so every IAM consumer receives the same groups contract.
         if [ "$attr" = "groups" ]; then
           oidc_attr="$attr;string;always"
         fi

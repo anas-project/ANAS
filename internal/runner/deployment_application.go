@@ -195,6 +195,39 @@ func (service *workspaceDeploymentPlanApplication) planLocked(ctx context.Contex
 		return application.PlanResult{}, configServiceBoundaryError("config_state_invalid", err)
 	}
 	result := deploymentPlanResult(a)
+	result.ApplicationCatalogDigest, err = a.planApplicationCatalog()
+	if err != nil {
+		return application.PlanResult{}, deploymentApplicationErrorFromCLI(preconditionErrorf("application_catalog_invalid", "%s", err.Error()))
+	}
+	for _, name := range a.order {
+		consumer := a.reg[name].ApplicationCatalog
+		if !consumer.Consumes {
+			continue
+		}
+		if result.ModulePlans == nil {
+			result.ModulePlans = map[string]map[string]string{}
+		}
+		if result.ModulePlans[name] == nil {
+			result.ModulePlans[name] = map[string]string{}
+		}
+		result.ModulePlans[name]["application_catalog_mode"] = "native"
+		result.ModulePlans[name]["application_catalog_language"] = "deployment default; unsupported languages use en"
+		result.ModulePlans[name]["application_catalog_limitations"] = strings.Join(consumer.Limitations, "; ")
+		missing := []string{}
+		for _, publisher := range a.order {
+			for _, entry := range a.reg[publisher].Applications {
+				if entry.Icons.Source == "" {
+					missing = append(missing, entry.Name)
+				}
+			}
+		}
+		for _, entry := range a.cfg.ApplicationCatalog.Entries {
+			if entry.Icons.Source == "" {
+				missing = append(missing, entry.Name)
+			}
+		}
+		result.ModulePlans[name]["application_catalog_placeholder_icons"] = strings.Join(missing, ",")
+	}
 	desiredRoot, err := resolveTemporaryRoot(service.workspace, cfg.Global.TempPath)
 	if err != nil {
 		return application.PlanResult{}, deploymentApplicationError("temp_path_invalid", err)
@@ -753,6 +786,7 @@ func applicationNullableString(value string) *string {
 func deploymentPlanDigest(result application.PlanResult) (string, error) {
 	body, err := json.Marshal(struct {
 		ConfigValidator            string                                       `json:"config_validator"`
+		ApplicationCatalogDigest   string                                       `json:"application_catalog_digest,omitempty"`
 		Modules                    []string                                     `json:"modules"`
 		IAM                        application.PlanIAM                          `json:"iam"`
 		ModulePlans                map[string]map[string]string                 `json:"module_plans"`
@@ -764,7 +798,8 @@ func deploymentPlanDigest(result application.PlanResult) (string, error) {
 		TempSwitch                 *application.TempSwitchPlan                  `json:"temp_switch"`
 	}{
 		ConfigValidator: result.ConfigValidator, Modules: result.Modules, IAM: result.IAM,
-		ModulePlans: result.ModulePlans, CapabilityBindings: result.CapabilityBindings,
+		ApplicationCatalogDigest: result.ApplicationCatalogDigest,
+		ModulePlans:              result.ModulePlans, CapabilityBindings: result.CapabilityBindings,
 		DNSPlatforms: result.DNSPlatforms, DNSCredentialCompatibility: result.DNSCredentialCompatibility,
 		DynamicDNS: result.DynamicDNS, ModuleLifecycles: result.ModuleLifecycles,
 		TempSwitch: result.TempSwitch,

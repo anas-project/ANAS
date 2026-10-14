@@ -19,7 +19,6 @@ mkdir -p "$report_dir"
 umask 077
 
 case "$provider" in
-  authentik) provider_version=2026.5.6 ;;
   llng) provider_version=2.23.2 ;;
   casdoor) provider_version=3.143.0 ;;
   *) printf 'unsupported IAM provider: %s\n' "$provider" >&2; exit 2 ;;

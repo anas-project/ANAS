@@ -190,7 +190,6 @@ network. Attachments live in `${DATA_PATH}/vikunja/files`; other durable state l
 ### Exports
 
 - `ANAS_IAM_CLIENT__VIKUNJA__*`
-- `APPS_LIST*`
 
 ### Explicit consumers
 
@@ -231,7 +230,7 @@ passwords nor another consumer binding.
 - [`docker-compose.yml`](../docker-compose.yml)
 - [Vikunja module integration requirements](../dev-docs/requirements/vikunja-module.md)
 
-Release promotion still requires PostgreSQL/MariaDB, amd64/arm64, Authentik/LLNG real-browser login/logout,
+Release promotion still requires PostgreSQL/MariaDB, amd64/arm64, LLNG real-browser login/logout,
 IAM-down, backup/restore, API/webhook, and previous patch/minor upgrade/rollback E2E.
 
 ## Current limitations
@@ -239,3 +238,11 @@ IAM-down, backup/restore, API/webhook, and previous patch/minor upgrade/rollback
 SMTP, S3, Redis, search, Pro, bot users, and an AI/MCP sidecar are outside the first automated scope. The
 upstream mobile app remains early-stage. The application has neither a local recovery account nor an
 IAM-initiated session revocation receiver.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

@@ -120,7 +120,6 @@ HTTPS entrypoint 默认不信任请求自带的 `X-Forwarded-*`。只有 `traefi
 
 | 处理方式 | Module / 入口 |
 | --- | --- |
-| 应用还原 | Authentik、LAM、LLNG、MeshCentral Web、NetBird Management、Nextcloud 主站、OAuth2 Proxy |
 | 边缘记录 | Traefik Dashboard、Collabora、DDNS Updater、DDNS Go 动态路由、MariaDB/Postgres Adminer、NetBird Dashboard/Signal/Relay、Nextcloud Push/Talk |
 | 非 HTTP / 不适用 | Eturnal、FreeRADIUS、Lego、MariaDB/Postgres 数据库、MeshCentral MPS、Samba DC、Samba FS |
 
@@ -129,3 +128,10 @@ HTTPS entrypoint 默认不信任请求自带的 `X-Forwarded-*`。只有 `traefi
 ## 当前限制
 
 Traefik 本地账号只保护 Dashboard，不代表下游应用管理员。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

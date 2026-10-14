@@ -313,7 +313,7 @@ PY
   anas config import "$CONFIG_DIR/matrix-apps.yml" -w "$full_ws" >/dev/null
   anas render -w "$full_ws" --update-lock >/dev/null
   mark_rendered_running "$full_ws"
-  run_fallback_case "$full_ws" authentik.domain_prefix auth2 reconcile authentik AUTHENTIK_DOMAIN_PREFIX auth2
+  run_fallback_case "$full_ws" casdoor.domain_prefix auth2 reconcile casdoor CASDOOR_DOMAIN_PREFIX auth2
   run_fallback_case "$full_ws" nextcloud.domain_prefix files2 reconcile nextcloud NEXTCLOUD_DOMAIN_PREFIX files2
   run_fallback_case "$full_ws" nextcloud.language de-DE reconcile nextcloud NEXTCLOUD_LANGUAGE de_DE
   run_fallback_case "$full_ws" nextcloud.locale de-DE reconcile nextcloud NEXTCLOUD_LOCALE de_DE

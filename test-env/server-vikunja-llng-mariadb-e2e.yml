@@ -1,5 +1,5 @@
 # Dedicated MariaDB + LLNG half of the Vikunja release gate. It reuses the
-# isolated daemon only after the Authentik fixture has been stopped.
+# isolated daemon only after the Casdoor fixture has been stopped.
 modules:
   samba_dc:
     config:

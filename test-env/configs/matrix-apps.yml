@@ -4,7 +4,7 @@ modules:
   postgres: {}
   mariadb: {}
   samba_dc: {}
-  authentik: {}
+  casdoor: {}
   nextcloud: {}
   collabora: {}
   forgejo: {}
@@ -12,7 +12,7 @@ modules:
   vikunja: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   base_domain: nas.test
   email: admin@nas.test

@@ -176,6 +176,7 @@ func calcLAM(e map[string]string, _ string, secrets *secretStore) ([]string, err
 	}
 	e["LAM_LANGUAGE"] = languageValue
 	e["LAM_DOMAIN"] = e["LAM_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["LAM_APPLICATION_URL"] = "https://" + e["LAM_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	password, err := ensureLAMPassword(e["LAM_ADMIN_PASSWORD"], secrets)
 	if err != nil {
 		return nil, err

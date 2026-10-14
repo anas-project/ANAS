@@ -689,7 +689,7 @@ func TestManifestEnvPatternsUseStrictEnvironmentKeySyntax(t *testing.T) {
 		{name: "single word", value: "TZ", want: "TZ", valid: true},
 		{name: "leading underscore", value: "_PRIVATE", want: "_PRIVATE", valid: true},
 		{name: "trailing wildcard", value: "ANAS_IAM_BINDING_*", want: "ANAS_IAM_BINDING_*", valid: true},
-		{name: "wildcard without separator", value: "APPS_LIST*", want: "APPS_LIST*", valid: true},
+		{name: "wildcard without separator", value: "ANAS_APP_CATALOG_DIR*", want: "ANAS_APP_CATALOG_DIR*", valid: true},
 		{name: "leading wildcard", value: "*_DB_NAME", want: "*_DB_NAME", valid: true},
 		{name: "trimmed", value: "  ANAS_TLS_*  ", want: "ANAS_TLS_*", valid: true},
 		{name: "empty"},

@@ -11,6 +11,7 @@ title: Eturnal TURN
 description: TURN service used by realtime communication modules.
 category: communication
 status: release
+applications_not_published: "STUN/TURN endpoints have no personnel UI."
 runtime:
   type: compose
   compose_file: docker-compose.yml

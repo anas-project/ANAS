@@ -115,21 +115,21 @@ func TestDeploymentIDRejectsPathTraversal(t *testing.T) {
 
 func TestChangedOrAddedModulesSkipsIdenticalRenderedModules(t *testing.T) {
 	current := &deploymentManifest{
-		ModuleOrder: []string{"postgres", "authentik"},
+		ModuleOrder: []string{"postgres", "casdoor"},
 		Modules: map[string]deploymentModule{
-			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
-			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-old"},
+			"postgres": {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"casdoor":  {Name: "casdoor", RenderDigest: "sha256:auth-old"},
 		},
 	}
 	target := &deploymentManifest{
-		ModuleOrder: []string{"postgres", "authentik", "nextcloud"},
+		ModuleOrder: []string{"postgres", "casdoor", "nextcloud"},
 		Modules: map[string]deploymentModule{
 			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
-			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-new"},
+			"casdoor":   {Name: "casdoor", RenderDigest: "sha256:auth-new"},
 			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
 		},
 	}
-	want := []string{"authentik", "nextcloud"}
+	want := []string{"casdoor", "nextcloud"}
 	if got := changedOrAddedModules(current, target); !reflect.DeepEqual(got, want) {
 		t.Fatalf("activation selection = %v, want %v", got, want)
 	}
@@ -137,22 +137,22 @@ func TestChangedOrAddedModulesSkipsIdenticalRenderedModules(t *testing.T) {
 
 func TestChangedOrRemovedModulesSelectsOldArtifactsInDependencyOrder(t *testing.T) {
 	current := &deploymentManifest{
-		ModuleOrder: []string{"postgres", "authentik", "legacy"},
+		ModuleOrder: []string{"postgres", "casdoor", "legacy"},
 		Modules: map[string]deploymentModule{
-			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
-			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-old"},
-			"legacy":    {Name: "legacy", RenderDigest: "sha256:legacy"},
+			"postgres": {Name: "postgres", RenderDigest: "sha256:postgres"},
+			"casdoor":  {Name: "casdoor", RenderDigest: "sha256:auth-old"},
+			"legacy":   {Name: "legacy", RenderDigest: "sha256:legacy"},
 		},
 	}
 	target := &deploymentManifest{
-		ModuleOrder: []string{"postgres", "authentik", "nextcloud"},
+		ModuleOrder: []string{"postgres", "casdoor", "nextcloud"},
 		Modules: map[string]deploymentModule{
 			"postgres":  {Name: "postgres", RenderDigest: "sha256:postgres"},
-			"authentik": {Name: "authentik", RenderDigest: "sha256:auth-new"},
+			"casdoor":   {Name: "casdoor", RenderDigest: "sha256:auth-new"},
 			"nextcloud": {Name: "nextcloud", RenderDigest: "sha256:nextcloud"},
 		},
 	}
-	want := []string{"authentik", "legacy"}
+	want := []string{"casdoor", "legacy"}
 	if got := changedOrRemovedModules(current, target); !reflect.DeepEqual(got, want) {
 		t.Fatalf("deactivation selection = %v, want %v", got, want)
 	}

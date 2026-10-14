@@ -92,9 +92,7 @@ func TestNetbirdPublishesTheCommonApplicationGroupContract(t *testing.T) {
 	if got := env["ANAS_IAM_CLIENT__NETBIRD__ALLOW_GROUPS"]; got != want {
 		t.Fatalf("allow groups = %q, want %q", got, want)
 	}
-	if got := env["APPS_LIST__NETBIRD__ALLOW_GROUPS"]; got != want {
-		t.Fatalf("launcher allow groups = %q, want %q", got, want)
-	}
+
 	if env["ANAS_IAM_CLIENT__NETBIRD__POST_LOGOUT_REDIRECT_URIS"] == "" {
 		t.Fatal("NetBird Dashboard must register its fixed-version RP post-logout URI")
 	}

@@ -67,23 +67,9 @@ if [[ "$action" == cleanup ]]; then
   exit 0
 fi
 
-# Authentik r8's cold-database health window is shorter than its full schema
-# migration on the supported low-resource server. The failed exact-old start
-# has already persisted completed migrations, so a bounded retry can resume the
-# same old image and data without changing or rebuilding the release artifact.
-# The runner invokes this only for a structured `start_failed` result.
+# No current suite needs a special retry for a removed IAM release.
 if [[ "$action" == prepare-old-start-retry ]]; then
-  manifest=$old_modules/authentik/module.yml
-  [[ -f "$manifest" && ! -L "$manifest" ]] || exit 3
-  version=$(awk '$1 == "version:" { print $2; exit }' "$manifest")
-  revision=$(awk '$1 == "revision:" { print $2; exit }' "$manifest")
-  [[ "$version" == 2026.5.6 && "$revision" == 8 ]] || exit 3
-  case "${ANAS_UPGRADE_SUITE:-}" in
-    modules-authentik|modules-ddns) ;;
-    *) exit 3 ;;
-  esac
-  printf 'upgrade_old_compat=active action=prepare-old-start-retry release=authentik-2026.5.6-r8 old_artifact_unchanged=true reason=cold-database-health-window\n'
-  exit 0
+  exit 3
 fi
 
 manifest=$old_modules/samba_fs/module.yml

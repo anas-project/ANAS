@@ -26,7 +26,7 @@ services:
 
   # Docker creates a bind-mount source as root, and the anchor worker runs
   # unprivileged, so the journal directory has to be handed over before it
-  # starts. Same shape as the authentik data init.
+  # starts. The init service prepares the private data tree.
   anas_samba_dc_events_init:
     container_name: ${CONTAINER_PREFIX}samba_dc_events_init
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43

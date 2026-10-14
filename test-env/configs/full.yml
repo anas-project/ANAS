@@ -1,12 +1,14 @@
-# The widest module set that can run together. It uses authentik because that
-# is what real deployments run; llng is covered by matrix-auth.yml. Only one
+# The widest module set that can run together. Casdoor is the primary IAM;
+# llng is covered by matrix-auth.yml. Only one
 # IAM can be active at a time, so the two providers cannot share a config.
+# Blocked at render: retained NetBird coverage violates DIRKEY-R-013 with
+# both remaining IAM providers. Keep the failure until its consumer is fixed.
 modules:
   samba_dc: {}
   samba_fs: {}
   postgres: {}
   mariadb: {}
-  authentik: {}
+  casdoor: {}
   nextcloud: {}
   collabora: {}
   meshcentral: {}
@@ -23,7 +25,7 @@ modules:
       dns_provider: cloudflare
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   # Runtime distribution and build-time mirrors are deliberately independent.
   chinese_speedup: true

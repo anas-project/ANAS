@@ -78,7 +78,7 @@ if [ "$status" -eq 0 ]; then
   done
 fi
 if [ "$status" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
-  for suite in modules/samba_dc/anchor_worker modules/authentik/authentik; do
+  for suite in modules/samba_dc/anchor_worker; do
     PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$suite" -p 'test_*.py' >>"$log" 2>&1 || status=$?
   done
 fi

@@ -20,7 +20,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r13` | `traefik, db` | 2 |
+| `anas_llng` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r13` | `traefik, db` | 5 |
 <!-- generated:compose-topology:end -->
 
 ## 配置契约
@@ -82,7 +82,10 @@ r12 的 `llng-config.sh` 在重建 RP 时明确设置
 每个 RP 的 Rule 都包含 `defined($anasIdentityAnchor) and $anasIdentityAnchor ne ""`，
 再与原应用组规则取交集；缺 anchor 的 SSO 会话不能取得授权码。`ldapExportedVars` 始终加载
 anchor，不依赖 Consumer 是否显式请求同名 claim。通用属性契约仍用于人类可读的用户名、
-姓名、邮箱与数组类型的组。Netbird 的 `sub` URL 投影在 `hook/iam.go` 的 calculate/render_env
+姓名、邮箱与数组类型的组。Adapter 将通用 `email` 来源映射到 Samba AD 的 `mail` 会话变量，
+OIDC/SAML 输出字段名保持 Consumer 的声明；不能把 `email` 当作 AD 属性读取，否则真实
+邮箱会缺失，要求邮箱的 OIDC Consumer 会拒绝登录。其他明确属性来源保持原值。
+Netbird 的 `sub` URL 投影在 `hook/iam.go` 的 calculate/render_env
 边界被拒绝；Nextcloud 的 anchor UID 遵守已确认的 `DIRKEY-R-010` 例外。
 
 验收入口为 `test-env/scripts/server-llng-nextcloud-identity-e2e.py`，使用测试主机已有
@@ -169,7 +172,6 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 - `ANAS_IDENTITY_OIDC_CLIENTS`
 - `ANAS_IDENTITY_SAML_CLIENTS`
 - `ANAS_IAM_CLIENT_*`
-- `APPS_LIST*`
 - `SAMBA_DC_PASSWORD_BIND_PASSWORD`
 
 依赖闭包不会自动授予全部环境变量。敏感值只有在所有权或 `config.consumes` 明确允许时才进入该 Module 的 Hook/容器作用域。
@@ -200,3 +202,14 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 通用 OIDC ATTRIBUTES 的保留来源 `anasRole` 使用 `inGroup` 宏从受信管理员组计算 admin/user，
 并删除同名 LDAP exported variable，防止用户属性冒充角色。其他普通目录 claims 仍按原逻辑导出。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+默认 Portal 模板只渲染一层 category；原生组名采用“用户应用 / 主分类”“后台管理 / 主分类”，
+应用直接放在该分类下，避免嵌套数据中的卡片被页面遗漏。完整两级布局属于第二阶段门户。
+启动时移除上游默认的示例应用、管理和文档分组，避免未部署的示例与旧地址混入列表；
+ANAS 的管理与文档入口仍按管理员组规则保留。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

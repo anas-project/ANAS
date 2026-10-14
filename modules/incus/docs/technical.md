@@ -821,3 +821,7 @@ masquerade；随后 guest 以静态邻居直送网桥、伪造子网外两族源
 隐式重烘焙。默认 Runner 的 resolver 链接由镜像内的 tmpfiles 规则在启动时建立，不在构建
 chroot 内替换；显式声明 systemd init 包。完整说明见
 [镜像供给设计](../../../docs/architecture/incus-image-supply.md)。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

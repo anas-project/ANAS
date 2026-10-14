@@ -11,6 +11,32 @@ title: Nextcloud
 description: File sync, sharing, office integration, memories, and Talk.
 category: app
 status: developing
+applications:
+  - name: nextcloud
+    display_name:
+      zh-CN: Nextcloud
+      en: Nextcloud
+    url_from: NEXTCLOUD_DOMAIN_FULL
+    summary:
+      zh-CN: "文件共享与协作"
+      en: "File sharing and collaboration"
+    description:
+      zh-CN: "文件共享与协作。"
+      en: "File sharing and collaboration."
+    documentation_url:
+      zh-CN: https://docs.nextcloud.com/
+      en: https://docs.nextcloud.com/
+    weight: 100
+    kind: user
+    categories:
+      - files
+    access:
+      mode: iam
+      client: nextcloud
+    visibility:
+      mode: access
+    icons:
+      source: assets/nextcloud.png
 runtime:
   type: compose
   compose_file: docker-compose.yml
@@ -104,7 +130,6 @@ config:
   # settings published for the selected IAM and the bundled Talk containers.
   exports:
     - ANAS_IAM_CLIENT__NEXTCLOUD__*
-    - APPS_LIST*
     - TALK_*
   # This module's own IAM binding plus the resolved database backend's real
   # connection password. No IAM-implementation variable is read.

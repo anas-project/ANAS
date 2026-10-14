@@ -555,7 +555,7 @@ func (a *app) checkSingleIAM() error {
 // IAM environment contract. Every value a consumer needs is published under
 // its own binding prefix rather than as a deployment-level singleton, because
 // whether IdP endpoints vary per application is an implementation difference
-// (LemonLDAP::NG and Keycloak share one issuer; authentik mints one per
+// (Some providers share one issuer; others mint one per
 // application) that the contract has to absorb. A singleton shape is a special
 // case of the per-consumer one, not the other way round.
 const (

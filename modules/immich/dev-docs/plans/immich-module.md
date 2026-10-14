@@ -7,6 +7,9 @@ updated: 2026-10-09
 
 # Immich Module 实施计划
 
+> 2026-10-10 当前范围：Authentik 已按用户要求从仓库移除；保留历史版本/证据，当前新部署选择 Casdoor。更新后的 PG r5 / Immich r2 / Casdoor r12 harness 只有本机验证，尚未实机重跑，不能继承下文不同制品的通过结论。
+
+
 验收依据是[需求矩阵](../requirements/immich-module.md)，实现见[技术文档](../../docs/technical.md)。
 固定 Immich 3.2.4、PG 18.4/pgvector 0.8.2、Valkey 9.1.1；版本变化须重审补丁锚点和上游行为。
 公共扩展三阶段计划中的主机维护/恢复验收与本计划共用证据，不重复定义要求。

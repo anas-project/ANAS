@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: user_portal
+module_version: 0.1.0
+module_revision: 1
+reviewed_at: 2026-10-14
+timezone:
+  status: container
+  mechanism: TZ is supplied to the process; audit timestamps use UTC and the browser displays local time.
+language:
+  status: supported
+  scope: All portal pages and catalog presentation
+  selection: application
+  global_default: applied
+  global_locale: not_consumed
+  upstream_format: BCP 47
+  fallback: Unsupported selected languages immediately use English. Individual catalog fields fall back to English then simplified Chinese.
+  supported: [en, zh-CN]
+  evidence:
+    - version: v0.1.0
+      url: https://github.com/anas-project/ANAS/blob/master/modules/user_portal/portal/ui/app.js
+      path: modules/user_portal/portal/ui/app.js
+  notes: Changing language does not replace the authenticated identity.

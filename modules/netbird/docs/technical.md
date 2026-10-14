@@ -106,7 +106,6 @@
 ### 导出
 
 - `ANAS_IAM_CLIENT__NETBIRD__*`
-- `APPS_LIST*`
 
 ### 显式消费
 
@@ -143,3 +142,10 @@ Management 容器启动时解析 Traefik 地址，把精确 `/32` 与显式上�
 ## 当前限制
 
 状态为 `developing`，不属于推荐部署。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

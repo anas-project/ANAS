@@ -11,6 +11,11 @@ title: Samba domain controller and DNS
 description: Active Directory compatible domain controller, LDAP source, and BIND9-DLZ DNS server.
 category: identity
 status: release
+applications_not_published: "Directory and DNS protocols only; administration is published by LAM."
+identity:
+  roles:
+    platform_admin: SAMBA_DC_ADMIN_GROUP_NAME
+  groups_from: SAMBA_DC_APPLICATION_CATALOG_GROUPS
 runtime:
   type: compose
   compose_file: docker-compose.yml

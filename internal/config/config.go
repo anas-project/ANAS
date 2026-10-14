@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	semver "github.com/Masterminds/semver/v3"
+	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/localization"
 	"github.com/anas-project/ANAS/internal/modulesource"
 	"gopkg.in/yaml.v3"
@@ -24,11 +25,12 @@ type File struct {
 	// ModuleSource selects a distribution profile. It is retrieval policy, not
 	// a container environment value; the exact artifact identity is frozen in
 	// the resolution lock after resolution.
-	ModuleSource   string          `yaml:"module_source"`
-	Modules        ModuleSelection `yaml:"modules"`
-	Global         Global          `yaml:"global"`
-	Administration Administration  `yaml:"administration"`
-	Identity       Identity        `yaml:"identity"`
+	ModuleSource       string            `yaml:"module_source"`
+	Modules            ModuleSelection   `yaml:"modules"`
+	Global             Global            `yaml:"global"`
+	Administration     Administration    `yaml:"administration"`
+	Identity           Identity          `yaml:"identity"`
+	ApplicationCatalog appcatalog.Config `yaml:"application_catalog"`
 	// IAM is the normalized runtime view of Identity.IAM. It is not a second
 	// accepted YAML spelling.
 	IAM        IAM            `yaml:"-"`
@@ -369,6 +371,9 @@ func Parse(b []byte) (*File, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, err
+	}
+	if err := cfg.ApplicationCatalog.Validate(); err != nil {
+		return nil, fmt.Errorf("application_catalog: %w", err)
 	}
 	if cfg.Modules.Values == nil {
 		cfg.Modules.Values = map[string]ModuleConfig{}

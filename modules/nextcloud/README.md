@@ -68,7 +68,7 @@ php /var/www/html/occ config:system:set trashbin_retention_obligation --type=str
 
 LDAPS provisioning 管理用户和 Group；OIDC 是默认登录协议，SAML 仍受支持。两条链路通过 `anasIdentityAnchor` 关联既有 LDAP 账号。Samba `Admins` 动态映射 Nextcloud 管理员权限。普通目录密码修改通过受限 password bind 服务账号回写，而不是数据库管理员账号。
 
-固定版本 `user_oidc 8.11.0` 声明 RP-Initiated Logout 与 session-required back-channel endpoint，并按 `sid` 撤销匹配的 Nextcloud 会话；只有 Provider 的管理员删 session/账号停用真实 E2E 产生通知时，才把对应 Provider 标为后台双向登出。`user_saml 8.2.0` 声明 HTTP-Redirect SLS：Authentik/LLNG 仅按浏览器 SLO 验收，Casdoor 不发布 SLO 时只执行本地登出。协议或域名切换会清掉相反协议和旧 endpoint。
+固定版本 `user_oidc 8.11.0` 声明 RP-Initiated Logout 与 session-required back-channel endpoint，并按 `sid` 撤销匹配的 Nextcloud 会话；只有 Provider 的管理员删 session/账号停用真实 E2E 产生通知时，才把对应 Provider 标为后台双向登出。`user_saml 8.2.0` 声明 HTTP-Redirect SLS：LLNG 仅按浏览器 SLO 验收，Casdoor 不发布 SLO 时只执行本地登出。协议或域名切换会清掉相反协议和旧 endpoint。
 
 r11 使用原样官方 OIDC 插件，启动时检查应用完整性；不再修改插件控制器。模块仍处于
 `developing`，其他 Provider、客户端体验与完整镜像生命周期仍需验收。

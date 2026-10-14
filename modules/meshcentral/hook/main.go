@@ -188,11 +188,6 @@ func calcMeshcentral(e map[string]string, _ string, secrets *secretStore) error 
 	if err := publishMeshcentralOIDCRegistration(e, allowGroups, secrets); err != nil {
 		return err
 	}
-	e["APPS_LIST"] = addCSV(e["APPS_LIST"], "meshcentral")
-	e["APPS_LIST__MESHCENTRAL__NAME"] = defaultValue(e["APPS_LIST__MESHCENTRAL__NAME"], "MeshCentral")
-	e["APPS_LIST__MESHCENTRAL__DESC"] = defaultValue(e["APPS_LIST__MESHCENTRAL__DESC"], "Remote device management")
-	e["APPS_LIST__MESHCENTRAL__URI"] = e["MESHCENTRAL_DOMAIN_FULL"]
-	e["APPS_LIST__MESHCENTRAL__ALLOW_GROUPS"] = allowGroups
 	return nil
 }
 func defaultValue(v, d string) string {

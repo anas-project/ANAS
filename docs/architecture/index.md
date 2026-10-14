@@ -15,7 +15,8 @@
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
 | [Samba AD identity anchor](samba-identity-anchor.md) | 当前实现与迁移规范 | 永久身份锚点、PEN OID、schema/ACL 契约与 legacy 单 DC 迁移 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
-| [应用目录](app-catalog-design.md) | 未发版重规划；实现提案 | 非 IAM 与多入口、中英文、七档图标和只读共享制品、外部配置、严格过滤；Casdoor 优先、Authentik 逐步弃用 |
+| [应用目录协议](app-catalog-design.md) | 部分实施；第二阶段提案 | Casdoor 主力、保留 LLNG、移除 Authentik；双语元数据与两级分组，第二阶段独立网站，账号首版已确认，另见用户门户设计 |
+| [独立用户门户](user-portal-design.md) | 首版已实现；审查后复验中 | 单服务门户、原生 OIDC/API、LDAPS 受限写入和持久审计；历史正式镜像 41 项通过基线见计划 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |
 | [Object Storage 能力](object-storage-capability-design.md) | 已实施设计 | `object_storage/s3` 自动绑定、统一配置投影与 Secret 边界 |
 | [Forgejo Module](forgejo-module-design.md) | 当前设计决策与 Runner 提案 | OIDC-only 身份边界、Actions 授权、Incus 单作业 VM Runner 与安全开关 |

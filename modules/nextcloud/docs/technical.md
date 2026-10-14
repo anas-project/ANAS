@@ -176,7 +176,6 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ### 导出
 
 - `ANAS_IAM_CLIENT__NEXTCLOUD__*`
-- `APPS_LIST*`
 - `TALK_*`
 
 ### 显式消费
@@ -253,3 +252,10 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 Hook 测试覆盖默认值、显式覆盖、occ 参数类型和写入失败。真实 E2E 入口为 `test-env/scripts/server-nextcloud-trashbin-e2e.sh`，已加入 domain-separation 的 `full` 测试级别。脚本先核对真实生效配置，再用唯一临时本地用户验证 WebDAV 单项删除、清空与还原，随后验证启用手动删除及关闭自动清理。结束或断言失败时恢复两项原配置、删除用户，报告权限为 0600。
 
 保留期边界使用容器真实服务计算合成时间戳，不代表 cron 长期运行验收。执行必须显式指定专用隔离 Docker socket、workspace、前缀和入口 IP。真实环境尚未执行，状态见[测试计划](../dev-docs/plans/nextcloud-trashbin.md)及[验收要求](../dev-docs/requirements/nextcloud-trashbin.md)。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

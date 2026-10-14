@@ -169,12 +169,12 @@ func TestComputeIngressForwardAuthNeedsItsBoundProvider(t *testing.T) {
 	declaration := map[string]any{"allowed_ports": []any{80}, "auth": "forward_auth", "domain": map[string]any{"mode": "named", "prefix": "ci"}}
 	setup := func(t *testing.T) *app {
 		a := ingressApp(t, map[string]map[string]any{"forgejo": declaration})
-		a.reg["authentik"] = Module{Name: "authentik", Provides: []ProvidedCapability{{Name: capabilityForwardAuth, Interfaces: []string{interfaceHTTP}}}}
-		a.order = append(a.order, "authentik")
-		a.resolvedBindings["forgejo"][capabilityForwardAuth] = "authentik"
+		a.reg["gateway"] = Module{Name: "gateway", Provides: []ProvidedCapability{{Name: capabilityForwardAuth, Interfaces: []string{interfaceHTTP}}}}
+		a.order = append(a.order, "gateway")
+		a.resolvedBindings["forgejo"][capabilityForwardAuth] = "gateway"
 		a.resolvedBindings["forgejo"][capabilityForwardAuth+".interface"] = interfaceHTTP
-		for key, value := range map[string]string{"ANAS_FORWARD_AUTH_MIDDLEWARE": "authentik-forward-auth@file", "ANAS_FORWARD_AUTH_PROVIDER": "authentik"} {
-			a.env[key], a.envOwner[key] = value, "authentik"
+		for key, value := range map[string]string{"ANAS_FORWARD_AUTH_MIDDLEWARE": "gateway-forward-auth@file", "ANAS_FORWARD_AUTH_PROVIDER": "gateway"} {
+			a.env[key], a.envOwner[key] = value, "gateway"
 		}
 		return a
 	}
@@ -182,13 +182,13 @@ func TestComputeIngressForwardAuthNeedsItsBoundProvider(t *testing.T) {
 	if err := a.prepareComputeIngress("dep-1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, grant := frozenIngress(t, a, "forgejo"); grant.ForwardAuth == nil || grant.ForwardAuth.Provider != "authentik" || grant.ForwardAuth.Middleware != "authentik-forward-auth@file" {
+	if _, grant := frozenIngress(t, a, "forgejo"); grant.ForwardAuth == nil || grant.ForwardAuth.Provider != "gateway" || grant.ForwardAuth.Middleware != "gateway-forward-auth@file" {
 		t.Fatalf("forward_auth was not frozen from the bound provider: %+v", grant.ForwardAuth)
 	}
 	for name, mutate := range map[string]func(*app){
 		"no binding":               func(a *app) { delete(a.resolvedBindings["forgejo"], capabilityForwardAuth) },
 		"provider not deployed":    func(a *app) { a.order = a.order[:len(a.order)-1] },
-		"provider lacks http":      func(a *app) { a.reg["authentik"].Provides[0].Interfaces = []string{"oidc"} },
+		"provider lacks http":      func(a *app) { a.reg["gateway"].Provides[0].Interfaces = []string{"oidc"} },
 		"middleware from consumer": func(a *app) { a.envOwner["ANAS_FORWARD_AUTH_MIDDLEWARE"] = "forgejo" },
 		"provider env from other":  func(a *app) { a.env["ANAS_FORWARD_AUTH_PROVIDER"] = "forgejo" },
 	} {

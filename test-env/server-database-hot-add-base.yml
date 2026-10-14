@@ -1,11 +1,11 @@
 modules:
   samba_dc: {}
   postgres: {}
-  authentik: {}
+  casdoor: {}
   traefik: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 global:
   base_domain: nas.test
   email: admin@nas.test

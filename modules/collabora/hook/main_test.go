@@ -2,6 +2,21 @@ package main
 
 import "testing"
 
+func TestCalculatePublishesCatalogAdminURLBeforeRender(t *testing.T) {
+	for _, port := range []string{"443", "9000"} {
+		t.Run(port, func(t *testing.T) {
+			env := map[string]string{"COLLABORA_DOMAIN_PREFIX": "office", "BASE_DOMAIN": "nas.test", "TRAEFIK_BASE_PORT": port, "CONTAINER_PREFIX": "anas_"}
+			response, err := handle(hookRequest{ABI: "anas.module-hook/v1", Phase: "calculate", Module: "collabora", Env: env, Secrets: map[string]string{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := response.Env["COLLABORA_ADMIN_URL"], "https://office.nas.test:"+port+"/browser/dist/admin/admin.html"; got != want {
+				t.Fatalf("calculate admin URL = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestCollaboraUsesRuleUsernameAndOwnStableRandomPassword(t *testing.T) {
 	secrets := &secretStore{values: map[string]string{}}
 	env := map[string]string{"COLLABORA_DOMAIN_PREFIX": "office", "BASE_DOMAIN": "nas.test", "TRAEFIK_BASE_PORT": "443", "CONTAINER_PREFIX": "anas_", "COLLABORA_ADMIN_USERNAME": "admin_collabora"}

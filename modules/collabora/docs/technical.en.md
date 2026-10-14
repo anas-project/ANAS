@@ -1,5 +1,8 @@
 # Collabora Online technical implementation
 
+The Hook publishes `COLLABORA_ADMIN_URL` during calculate, before application catalog aggregation.
+It uses the calculated HTTPS domain and port plus `/browser/dist/admin/admin.html`; login still uses the Collabora local administrator account.
+
 This page records the current implementation, security boundaries, and verification entry points for `collabora`. User instructions are in the [English README](../README.en.md).
 
 <!-- generated:module-identity:start -->
@@ -97,3 +100,11 @@ The Compose healthcheck invokes `/usr/local/bin/anas-collabora-start --container
 ## Current limitations
 
 Admin-password changes follow the declared configuration/recreate path and are not a verified online rotation.
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

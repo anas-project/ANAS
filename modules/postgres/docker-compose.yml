@@ -13,7 +13,8 @@ services:
       timeout: 5s
       retries: 20
     networks:
-      - postgres
+      postgres:
+        aliases: [postgres]
 
   anas_postgres_provision:
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-postgres:18.4.0-r5
@@ -41,6 +42,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
     labels:
       - "traefik.enable=true"
       - "anas.traefik.instance=${NETWORK_PREFIX}traefik"

@@ -180,6 +180,7 @@ func calcMariaDB(e map[string]string, _ string, secrets *secretStore) error {
 	e["MYSQL_PASSWORD"] = e["MARIADB_PASSWORD"]
 	e["MARIADB_ADMINER_DOMAIN_PREFIX"] = defaultValue(e["MARIADB_ADMINER_DOMAIN_PREFIX"], "mariadb_adminer")
 	e["MARIADB_ADMINER_DOMAIN"] = e["MARIADB_ADMINER_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
+	e["MARIADB_ADMINER_URL"] = "https://" + e["MARIADB_ADMINER_DOMAIN"] + ":" + e["TRAEFIK_BASE_PORT"]
 	return nil
 }
 

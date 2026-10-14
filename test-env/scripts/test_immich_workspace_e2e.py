@@ -20,22 +20,8 @@ harness = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 
 
-def native_probes():
-    probes = []
-    for node in ast.walk(ast.parse(path.read_text())):
-        if not isinstance(node, ast.JoinedStr) or not isinstance(node.values[0], ast.Constant):
-            continue
-        first = node.values[0].value
-        if isinstance(first, str) and first.startswith(("import datetime,json", "from authentik.tasks.models import Task")):
-            probes.append(node)
-    return probes
 
 
-def render_probe(node, mode="remove-app-group"):
-    variables = {"sync_started": 1788480000.25, "mode": mode, "username": "iwrevcafe", "provider_pk": 42,
-                 "issuer": "https://iam.test:9443/application/o/immich/",
-                 "anchors": {"iwrevcafe": "23a9ce49-41ed-4640-ac4a-a131535b153f"}, "revoked_at": 1788480001.5}
-    return eval(compile(ast.Expression(node), "native-probe", "eval"), {"__builtins__": {}}, variables)
 
 
 class HarnessTests(unittest.TestCase):
@@ -49,8 +35,8 @@ class HarnessTests(unittest.TestCase):
         suite.extension_failure_restore = calls.failure
         suite.extension_crash_retry = calls.crash
         suite.directory_cases = calls.casdoor
-        suite.directory_revocation = mock.Mock(side_effect=AssertionError("wrong Authentik probe"))
-        suite.verify_directory_event_delivery = mock.Mock(side_effect=AssertionError("wrong Authentik probe"))
+        suite.directory_revocation = mock.Mock(side_effect=AssertionError("provider-specific probe must not use the shared base"))
+        suite.verify_directory_event_delivery = mock.Mock(side_effect=AssertionError("provider-specific probe must not use the shared base"))
         suite.verify_post_restore_lifecycle({}, "point", {}, "failed", "backup", {}, b"photo")
         self.assertEqual([call[0] for call in calls.mock_calls], ["failure", "crash", "casdoor"])
         self.assertEqual(suite.report["status"], "passed")
@@ -90,14 +76,6 @@ class HarnessTests(unittest.TestCase):
             with mock.patch.object(pathlib.Path, "read_bytes", side_effect=AssertionError("unbounded archive read")):
                 self.assertEqual(harness.digest(archive), harness.hashlib.sha256(payload).hexdigest())
 
-    def test_fixed_native_shell_preserves_structured_output(self):
-        suite = object.__new__(harness.Suite)
-        output = b'### authentik shell (2026.5.6)\n### Node test | Arch x86_64\n\n{"actual": true}\n'
-        with mock.patch.object(harness, "command", return_value=output) as run:
-            self.assertEqual(json.loads(suite.docker("exec", "test-authentik", "ak", "shell", "-c", "probe")), {"actual": True})
-            run.assert_called_once_with(["docker", "exec", "test-authentik", "ak", "shell", "--verbosity", "0", "-c", "probe"], data=None)
-        with mock.patch.object(harness, "command", return_value=b"ordinary output\n"):
-            self.assertEqual(suite.docker("inspect", "test"), b"ordinary output\n")
 
     def test_native_http_200_policy_page_requires_origin_state_client_and_markers(self):
         url = "https://auth.private.test:9443/application/o/authorize/?client_id=immich&state=expected"
@@ -124,12 +102,6 @@ class HarnessTests(unittest.TestCase):
             with self.subTest(callback=bad):
                 self.assertFalse(harness.directory_denied_callback(bad, app, "expected"))
 
-    def test_native_shell_rejects_unverified_banner(self):
-        suite = object.__new__(harness.Suite)
-        for output in (b'{"actual":true}\n', b'### authentik shell (other)\n### Node test\n{}\n'):
-            with mock.patch.object(harness, "command", return_value=output):
-                with self.assertRaisesRegex(RuntimeError, "banner changed"):
-                    suite.docker("exec", "test-authentik", "ak", "shell", "-c", "probe")
 
     def test_fixed_album_membership_uses_metadata_query(self):
         suite = object.__new__(harness.Suite)
@@ -176,137 +148,8 @@ class HarnessTests(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 suite.verify_state(state)
 
-    def identity_fixture(self, *, rebound=False, duplicate=False, erased=False):
-        """Small stateful harness model; this is not AD/IdP host acceptance."""
-        import threading
-        suite = object.__new__(harness.Suite)
-        suite.app, suite.domain, suite.prefix = "https://photos.test", "private.test", "anas_iw_unit_"
-        suite.report = {"checks": {}}
-        state = {"password": "private-fixture-password"}
-        ad, application, syncs, calls = {}, {}, [], []
-        mutex = threading.Lock()
-        for role in ("admin", "user"):
-            name, anchor, user_id = "primary" + role, str(harness.uuid.uuid4()), str(harness.uuid.uuid4())
-            state[role] = {"username": name, "anchor": anchor, "user_id": user_id}
-            ad[name] = {"anchor": anchor, "email": name + "@private.test"}
-            application[anchor] = {"id": user_id, "oauthId": anchor, "email": ad[name]["email"], "deletedAt": None}
-        tokens = {}
-        arrivals = []
 
-        def samba(*args):
-            calls.append(("samba", args))
-            if args[:2] == ("group", "addmembers"):
-                return ""
-            action, name = args[1:3]
-            if action == "add":
-                ad[name] = {"anchor": str(harness.uuid.uuid4()), "email": next(x.split("=", 1)[1] for x in args if x.startswith("--mail-address="))}
-            elif action == "rename":
-                ad[name]["email"] = args[3].split("=", 1)[1]
-            return "anasIdentityAnchor: " + ad[name]["anchor"] + "\nmail: " + ad[name]["email"] + "\n"
 
-        def directory_sync():
-            syncs.append({name: row.copy() for name, row in ad.items()})
-
-        def docker(*args):
-            # Execute the actual generated ORM probe with its minimal read
-            # objects: wrong attrs/merged source IDs fail its native assertions.
-            self.assertEqual(args[:4], ("exec", suite.prefix + "authentik", "ak", "shell"))
-            groups = types.SimpleNamespace(filter=lambda **kw: types.SimpleNamespace(exists=lambda: kw == {"name": "APP_immich"}))
-            connections = {name: types.SimpleNamespace(identifier=row["anchor"], user_id=index,
-                           user=types.SimpleNamespace(email=row["email"], is_active=True, all_groups=lambda: groups))
-                           for index, (name, row) in enumerate(syncs[-1].items())}
-            core = types.ModuleType("authentik.core.models")
-            core.UserSourceConnection = types.SimpleNamespace(objects=types.SimpleNamespace(get=lambda **kw: connections[kw["user__username"]]))
-            ldap = types.ModuleType("authentik.sources.ldap.models")
-            ldap.LDAPSource = types.SimpleNamespace(objects=types.SimpleNamespace(get=lambda **kw: "actual-source"))
-            output = io.StringIO()
-            with mock.patch.dict(sys.modules, {core.__name__: core, ldap.__name__: ldap}), contextlib.redirect_stdout(output):
-                exec(compile(args[-1], "identity-native-sync-probe", "exec"), {})
-            return output.getvalue().encode()
-
-        def sql(consumer, statement):
-            calls.append(("sql", statement))
-            self.assertEqual(consumer, "immich")
-            self.assertTrue(statement.startswith("SELECT "), "identity workflow must never create/change a binding via SQL")
-            if statement.startswith('SELECT "oauthId"'):
-                user_id = statement.split("'")[1]
-                return next(row["oauthId"] for row in application.values() if row["id"] == user_id)
-            anchor = statement.rsplit("'", 2)[1]
-            value = [row for row in application.values() if row["oauthId"] == anchor]
-            if duplicate and any(name.startswith("iwidp") and item["anchor"] == anchor for name, item in ad.items()) and value:
-                value.append(dict(value[0], id=str(harness.uuid.uuid4())))
-            return json.dumps(value)
-
-        def http(url, body=None, token=None, *, method=None, **kwargs):
-            calls.append(("http", url, body, method))
-            with mutex:
-                if url.endswith("/api/oauth/callback"):
-                    name = body["username"]
-                    anchor = ad[name]["anchor"]
-                    if name.startswith("iwidp"):
-                        self.assertEqual(arrivals.count(name), 2, "both independent grants must reach the callback barrier")
-                    row = application.get(anchor)
-                    if row and row["deletedAt"]:
-                        return 500, {"error": "unique retained oauthId"}, url
-                    if not row:
-                        if any(value["email"] == ad[name]["email"] for value in application.values()):
-                            return 400, {"error": "email conflict"}, url
-                        row = application[anchor] = {"id": str(harness.uuid.uuid4()), "oauthId": anchor, "email": ad[name]["email"], "deletedAt": None}
-                    elif rebound and name.startswith("iwide") and ad[name]["email"].startswith("changed-"):
-                        row["id"] = str(harness.uuid.uuid4())
-                    secret = "private-token-" + str(harness.uuid.uuid4())
-                    tokens[secret] = row
-                    return 201, {"userId": row["id"], "isAdmin": name == "primaryadmin", "accessToken": secret}, url
-                if method == "DELETE":
-                    self.assertEqual(body, {"force": False})
-                    self.assertEqual(tokens[token]["id"], state["admin"]["user_id"])
-                    row = next(row for row in application.values() if row["id"] == url.rsplit("/", 1)[1])
-                    row["deletedAt"] = "2026-10-03T00:00:00.000Z"
-                    if erased:
-                        del application[row["oauthId"]]
-                    return 200, {"id": row["id"], "status": "deleted"}, url
-                return (401 if tokens[token]["deletedAt"] else 200), {}, url
-
-        def login(name, password):
-            self.assertEqual(password, state["password"])
-            with mutex:
-                arrivals.append(name)
-            return suite.http(suite.app + "/api/oauth/callback", {"username": name})[:2]
-
-        suite.samba, suite.directory_sync, suite.docker, suite.sql, suite.http, suite.login = samba, directory_sync, docker, sql, http, login
-        suite.wait = lambda callback: self.assertTrue(callback())
-        suite.mark = lambda name: suite.report["checks"].__setitem__(name, True)
-        return suite, state, calls
-
-    def test_identity_lifecycle_uses_native_mutations_and_independent_callback_grants(self):
-        suite, state, calls = self.identity_fixture()
-        original = json.loads(json.dumps(state))
-        native_http = suite.http
-        suite.identity_lifecycle(state)
-        self.assertEqual(state, original, "private acceptance users must not replace persistent restore users")
-        self.assertIs(suite.http, native_http)
-        evidence = suite.report["identity_lifecycle"]
-        self.assertEqual(evidence["email_conflict"]["callback_status"], 400)
-        self.assertEqual(len(set(evidence["email_conflict"]["distinct_directory_user_ids"])), 2)
-        self.assertEqual(evidence["concurrent_callbacks"]["callback_statuses"], [201, 201])
-        self.assertEqual(evidence["concurrent_callbacks"]["account_rows"], 1)
-        self.assertEqual(evidence["native_soft_delete"]["callback_status"], 500)
-        self.assertIn("not forced erasure", evidence["retention"])
-        self.assertEqual(len(suite.report["checks"]), 5)
-        self.assertEqual(sum(call[0] == "samba" and call[1][:2] == ("user", "rename") for call in calls), 3)
-        deletes = [call for call in calls if call[0] == "http" and call[3] == "DELETE"]
-        self.assertEqual(len(deletes), 1)
-        self.assertIn("/api/admin/users/", deletes[0][1])
-
-    def test_identity_lifecycle_rejects_binding_drift_duplicates_and_hard_deletion(self):
-        for options in ({"rebound": True}, {"duplicate": True}, {"erased": True}):
-            with self.subTest(options=options):
-                suite, state, _ = self.identity_fixture(**options)
-                native_http = suite.http
-                with self.assertRaises(AssertionError):
-                    suite.identity_lifecycle(state)
-                self.assertIs(suite.http, native_http)
-                self.assertNotIn("private identity lifecycle leaves primary administrator and restore-user bindings intact", suite.report["checks"])
 
     def test_non_linux_preflight_never_invokes_a_command(self):
         with mock.patch.object(harness.platform, "system", return_value="Darwin"), mock.patch.object(harness, "command") as command:
@@ -483,36 +326,7 @@ class HarnessTests(unittest.TestCase):
             self.assertTrue(sentinel.exists())
             self.assertIn("containers remain", suite.report["cleanup"]["error"])
 
-    def test_embedded_native_task_probes_have_valid_python_syntax(self):
-        # These scripts execute in the actual fixed-version IAM container.
-        # Check their generated syntax without inventing task/HTTP acceptance.
-        probes = native_probes()
-        self.assertEqual(len(probes), 2)
-        for node in probes:
-            ast.parse(render_probe(node))
 
-    def test_done_task_window_accepts_cleared_messages_without_inventing_target_evidence(self):
-        # Fixed native workers erase a DONE message. Even an unrelated DONE
-        # task supplies only window evidence, never a recipient/event epoch.
-        task = types.SimpleNamespace(message_id="unknown-recipient-task", retries=1,
-                                     mtime=datetime.datetime(2026, 10, 3, tzinfo=datetime.timezone.utc), message=b"")
-        task_manager = mock.Mock()
-        task_manager.filter.side_effect = lambda **kw: ([task] if kw["actor_name"].endswith("send_backchannel_logout_request") else types.SimpleNamespace(exists=lambda: True))
-        user = types.SimpleNamespace(is_active=True, all_groups=lambda: types.SimpleNamespace(filter=lambda **kw: types.SimpleNamespace(exists=lambda: kw["name"] == "APP_immich")))
-        modules = {
-            "authentik.tasks.models": types.SimpleNamespace(Task=types.SimpleNamespace(objects=task_manager)),
-            "django_dramatiq_postgres.models": types.SimpleNamespace(TaskState=types.SimpleNamespace(DONE="done")),
-            "authentik.core.models": types.SimpleNamespace(User=types.SimpleNamespace(objects=mock.Mock()), UserSourceConnection=mock.Mock()),
-            "authentik.sources.ldap.models": types.SimpleNamespace(LDAPSource=mock.Mock()),
-        }
-        modules["authentik.core.models"].User.objects.filter.return_value.first.return_value = user
-        out = io.StringIO()
-        with mock.patch.dict(sys.modules, modules), contextlib.redirect_stdout(out):
-            exec(render_probe(native_probes()[0], "admin-role-loss"), {})
-        evidence = json.loads(out.getvalue())
-        self.assertEqual(evidence, [{"message_id": task.message_id, "retries": 1, "mtime": task.mtime.isoformat()}])
-        self.assertNotIn("event_timestamp", evidence[0])
-        self.assertNotIn("oauthId", evidence[0])
 
     def test_receiver_cutoff_is_read_only_and_rejects_invalid_epochs(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(harness.os.environ, {"DOCKER_HOST": "unix:///run/anas-workspace-e2e.sock"}):
@@ -527,23 +341,6 @@ class HarnessTests(unittest.TestCase):
                 with self.subTest(epoch=invalid), mock.patch.object(suite, "sql", return_value=invalid), self.assertRaises(ValueError):
                     suite.receiver_signed_cutoff(anchor)
 
-    def test_native_retry_uses_frozen_provider_issuer_anchor_and_receiver_epoch(self):
-        actor = mock.Mock()
-        actor.send_with_options.return_value.message_id = "retry-native-message-id"
-        provider = types.SimpleNamespace(pk=42)
-        provider_manager = mock.Mock()
-        provider_manager.get.return_value = provider
-        modules = {
-            "authentik.tasks.models": types.SimpleNamespace(Task=mock.Mock()),
-            "authentik.providers.oauth2.models": types.SimpleNamespace(OAuth2Provider=types.SimpleNamespace(objects=provider_manager)),
-            "authentik.providers.oauth2.tasks": types.SimpleNamespace(send_backchannel_logout_request=actor),
-        }
-        out = io.StringIO()
-        with mock.patch.dict(sys.modules, modules), contextlib.redirect_stdout(out):
-            exec(render_probe(native_probes()[1]), {})
-        provider_manager.get.assert_called_once_with(pk=42, name="immich")
-        actor.send_with_options.assert_called_once_with(args=(42, "https://iam.test:9443/application/o/immich/", "23a9ce49-41ed-4640-ac4a-a131535b153f", None, 1788480001.5), rel_obj=provider)
-        self.assertEqual(out.getvalue().strip(), "retry-native-message-id")
 
     def test_real_old_vector_fixture_preserves_managed_auth_and_provider_paths(self):
         modules = path.parents[2] / "modules"
@@ -604,10 +401,10 @@ class HarnessTests(unittest.TestCase):
             suite = harness.Suite(argparse.Namespace(), pathlib.Path(directory), pathlib.Path(directory))
             suite.reports = pathlib.Path(directory)
             before = {("immich", "anas_immich"): {"id": "old-immich", "image": "sha256:old"},
-                      ("authentik", "anas_authentik"): {"id": "old-iam", "image": "sha256:iam"}}
+                      ("casdoor", "anas_casdoor"): {"id": "old-iam", "image": "sha256:iam"}}
             def event(identifier, action, module):
                 return {"Actor": {"ID": identifier, "Attributes": {"com.docker.compose.project": suite.prefix + module, "name": suite.prefix + module}}, "Action": action, "timeNano": 1234}
-            rows = [event("old-immich", "die", "immich"), event("old-iam", "die", "authentik"), event("new-postgres", "start", "postgres")]
+            rows = [event("old-immich", "die", "immich"), event("old-iam", "die", "casdoor"), event("new-postgres", "start", "postgres")]
             def watcher(*args, **kw):
                 for row in rows:
                     kw["stdout"].write((json.dumps(row) + "\n").encode())
@@ -617,7 +414,7 @@ class HarnessTests(unittest.TestCase):
                 rows[1], rows[2] = rows[2], rows[1]
                 with self.assertRaisesRegex(AssertionError, "before the full previous workspace stopped"):
                     suite.transition_with_stop_evidence("bad-order", lambda: "CLI-succeeded", before)
-                rows[:] = [event("old-immich", "die", "immich"), event("old-iam", "die", "authentik"), event("new-immich", "start", "immich")]
+                rows[:] = [event("old-immich", "die", "immich"), event("old-iam", "die", "casdoor"), event("new-immich", "start", "immich")]
                 with self.assertRaisesRegex(AssertionError, "restore unexpectedly resumed"):
                     suite.transition_with_stop_evidence("bad-restore", lambda: "CLI-succeeded", before, expect_pg_start=False)
 

@@ -1,5 +1,8 @@
 # IAM 多实现与协议能力设计
 
+> 当前范围（2026-10-10）：Authentik 已移除，Casdoor 为主力，保留 LLNG。文中 Authentik 对比、命令及验收记录属于历史基线；移除的命令不可执行，也不代表 Casdoor 已通过相同验收。
+
+
 > 状态：**当前模型**。阶段 A–D 已全部落地，详见下方实现状态说明。
 
 ## 1. 目标与硬约束
@@ -409,6 +412,10 @@ Runner 在所有 `calculate` 完成后、Provider `render_env` 前校验登出�
 标准通知 endpoint。环境所有权继续由消费方持有，只有显式消费 `ANAS_IAM_CLIENT_*` 的所选
 Provider 在 render 阶段收到这些字段。
 
+公开 PKCE 消费方可以发布 `PUBLIC_CLIENT=true` 并省略 `CLIENT_SECRET`；目前由 Casdoor Hook 实现，不能推断其他 Provider 也支持。Provider 不向消费方交付应用 API secret。Casdoor 原生导入可能自动生成自己的 secret，但门户环境不消费它，代码交换只使用 PKCE。公开客户端的 UserInfo 通过原生 `tokenFields` 显式选择 `Groups`；仅有 JWT 自定义属性不等于 UserInfo 会返回组。
+
+门户另发布 `REAUTHENTICATION_CLIENT_ID` 与 `REAUTHENTICATION_REDIRECT_URI`，Casdoor 为其建立独立原生应用，关闭自动登录和 signin session。两个 client ID 必须不同；门户仍验证同一身份的签名 `auth_time`，不能把关闭自动登录当作近期认证证据。原生配置接线见 `modules/casdoor/hook/iam.go` 与 `modules/user_portal/hook/main.go`，没有新增 Casdoor 上游补丁。
+
 ## 7. 锁文件与切换语义
 
 provider 是部署级且唯一，因此锁文件把它记录一次，只按应用记录协议：
@@ -619,3 +626,5 @@ docker tag  <mirror>/goauthentik/server:2024.10.5 ghcr.io/goauthentik/server:202
 
 当前需要这样处理的镜像：`linuxserver/baseimage-ubuntu`（noble 与 jammy）、
 `ylianst/meshcentral`、`goauthentik/server`。
+
+OIDC Provider 可在每个绑定发布 `OIDC_SELF_ACCOUNT_API_SCHEMA`，说明原生本人账户 API 的响应契约，而不是供消费者按 Module 名分支。当前 `casdoor-account/v1` 指 `/api/userinfo` 与 `/api/get-account` 的既有 Casdoor 格式、anas 组织状态/组/权限字段；不创建新 API。user_portal 缺失或不认识此格式即拒绝配置，仍只使用自己的绑定。

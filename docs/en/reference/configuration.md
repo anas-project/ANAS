@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `25`
-- Declared parameters: `200` total (`18` global and `182` Module-owned; `178` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `33`, unknown types `0`
-- Type distribution: `bool` `28`, `enum` `29`, `int` `32`, `string` `111`
-- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `8`, `none` `9`, `runtime` `5`, `static` `160`
+- Declared parameters: `206` total (`18` global and `188` Module-owned; `184` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `34`, unknown types `0`
+- Type distribution: `bool` `26`, `enum` `29`, `int` `34`, `string` `117`
+- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `9`, `none` `9`, `runtime` `5`, `static` `165`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -116,6 +116,27 @@ existing deployment creates a different set of projects, container names, and
 cross-container addresses. It is a static deployment change, not an in-place
 rename, so the old deployment must be explicitly migrated or removed first.
 
+## Application catalog
+
+application_catalog is a native structured configuration section, not an environment-variable namespace.
+It has categories (localized names/descriptions and weights), overrides keyed by stable Module entry name,
+and entries for external URLs. Entry metadata includes name, display_name, url, summary, description,
+documentation_url, weight, categories, kind, icons, access and visibility. Display text maps use only zh-CN/en;
+unknown language keys and empty translations fail validation. Unsupported selected language defaults to English.
+Module overrides merge language keys and cannot change kind, URL or permission facts.
+
+External entries use access.mode: external with explicit HTTPS URLs. Management entries require
+visibility.mode: subjects with any_of: [{role: platform_admin}]; this controls directory visibility only,
+while the target keeps its own authentication. Custom icons.source is a configuration-relative square PNG
+of 512–2048px (at most 2MiB); missing sizes are generated at 16/32/48/64/128/256/512px. Optional icons.sizes
+requires an exact-sized local PNG. Links, traversal and secret/data source paths are rejected.
+Edit application_catalog in the source YAML, import it with
+`anas config import SOURCE -w WORKSPACE`, then apply to reconcile native IAM objects without editing their UI.
+The workspace/config.yml remains CLI-managed and cannot be edited directly. Icon paths are relative to the
+imported workspace configuration directory; place custom sources inside that directory.
+The first stage uses native IAM display capabilities in the deployment-default language; full portal features
+are deferred. Provider limitations are reported in plan. See the [catalog design](/architecture/app-catalog-design).
+
 ## Temporary storage root
 
 `global.temp_path` is an optional absolute path. Omission resolves to `<workspace>/tmp`; only
@@ -178,7 +199,7 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `37`.
+Current explicit portable constraints: `39`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
@@ -214,6 +235,8 @@ Current explicit portable constraints: `37`.
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
 | `samba_dc.max_log_size` | <code>minimum=1</code> |
 | `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
+| `user_portal.audit_capacity_mb` | <code>minimum=1; maximum=1024</code> |
+| `user_portal.recent_window_seconds` | <code>minimum=5; maximum=900</code> |
 | `versitygw.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `versitygw.region` | <code>min_length=1; max_length=64; pattern=&#34;^[A-Za-z0-9][A-Za-z0-9._-]*$&#34;</code> |
 | `versitygw.root_access_key` | <code>min_length=3; max_length=64; pattern=&#34;^[A-Za-z0-9._-]+$&#34;</code> |
@@ -226,7 +249,6 @@ Current explicit portable constraints: `37`.
 | --- | ---: | --- |
 | `global` | 18 | `global.base_domain`<br>`global.chinese_build_speedup`<br>`global.chinese_speedup`<br>`global.container_prefix`<br>`global.default_language`<br>`global.default_locale`<br>`global.dns_server`<br>`global.email`<br>`global.host_ip`<br>`global.host_lan_arp_check`<br>`global.host_lan_bridge_ip`<br>`global.host_lan_ip`<br>`global.ipv4`<br>`global.ipv6`<br>`global.network_prefix`<br>`global.temp_path`<br>`global.timezone`<br>`global.virtual_domain` |
 | `ai_agent` | 14 | `ai_agent.agent_runtime_images`<br>`ai_agent.agent_runtimes`<br>`ai_agent.daily_budget_usd`<br>`ai_agent.db_name`<br>`ai_agent.db_type`<br>`ai_agent.domain_prefix`<br>`ai_agent.egress_allowlist`<br>`ai_agent.enabled`<br>`ai_agent.execution_isolation`<br>`ai_agent.job_wallclock_minutes`<br>`ai_agent.language`<br>`ai_agent.reconcile_interval_seconds`<br>`ai_agent.repository_allowlist`<br>`ai_agent.workspace_scope` |
-| `authentik` | 6 | `authentik.db_name`<br>`authentik.db_type`<br>`authentik.domain_prefix`<br>`authentik.ldap_enabled`<br>`authentik.ldap_password_writeback`<br>`authentik.log_level` |
 | `casdoor` | 4 | `casdoor.db_name`<br>`casdoor.db_type`<br>`casdoor.domain_prefix`<br>`casdoor.ldap_auto_sync_minutes` |
 | `collabora` | 5 | `collabora.admin_password`<br>`collabora.admin_username`<br>`collabora.auto_save`<br>`collabora.domain_prefix`<br>`collabora.log_level` |
 | `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
@@ -247,6 +269,7 @@ Current explicit portable constraints: `37`.
 | `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
 | `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
+| `user_portal` | 12 | `user_portal.audit_capacity_mb`<br>`user_portal.delegation_rules`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
 | `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
 | `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
 <!-- generated:configuration-owners:end -->
@@ -282,12 +305,12 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 114 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 122 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 19 | Migrate persistent data, a database, or membership before activation |
+| `data_migrate` | 18 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
 | `immutable` | 3 | Use a replacement or dedicated migration workflow |
-| `reconcile` | 21 | Reconcile application, API, or file state through the Module lifecycle |
+| `reconcile` | 20 | Reconcile application, API, or file state through the Module lifecycle |
 <!-- generated:configuration-effects:end -->
 
 ### Actual execution boundary in this release
@@ -327,7 +350,7 @@ The following results answer whether the upstream service can apply a change in 
 | `nextcloud.language`, `nextcloud.locale` | Yes | The actual system configuration written by `occ` was immediately readable with the same container ID |
 | `samba_fs.share_access_mode`, `samba_fs.share_guest_read_only` | Yes, with a new handler | `smbcontrol all reload-config` made a running `smbd` publish the changed configuration while ACLs changed online. The existing `fix_perm.sh` cannot yet accept explicit inputs from a new deployment |
 | `nextcloud.memories_enabled` | Conditional | Nextcloud supports online app enable/disable, but enabling may also download a pinned release, modify the database, and start places initialization. This needs a transaction, progress, and verification rather than a lone `occ app:enable` |
-| `authentik.domain_prefix`, `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | No | Their complete effect includes Traefik Docker labels. Docker 24.0.7 cannot change a container label with `docker update`; at least the routed containers must be recreated while IAM clients/metadata are reconciled |
+| `casdoor.domain_prefix`, `llng.domain_prefix`, `nextcloud.domain_prefix` | No | Their complete effect includes Traefik Docker labels. Docker 24.0.7 cannot change a container label with `docker update`; at least the routed containers must be recreated while IAM clients/metadata are reconciled |
 | `lego.dns_provider` | No | A one-shot `docker exec` can receive a new provider, but PID 1's cron environment retains the old value and later renewals revert to the old provider |
 | `global.virtual_domain` | No | Lego retains the old mode in its long-lived environment, and certificate replacement also requires every TLS consumer to reload or recreate; one certificate command cannot complete the global effect |
 
@@ -343,7 +366,6 @@ The table below states what every owner's inputs ultimately change. Each named p
 | `global` | `host_lan_ip`, `host_lan_bridge_ip`, `host_lan_arp_check` | Pin the host-LAN container and host bridge addresses and control occupancy probing; all three are optional, and the ARP check runs unless explicitly disabled |
 | `global` | `timezone`, `default_language`, `default_locale` | Produce final `TZ`/BCP 47 defaults and deliver them only to applications declaring support |
 | `global` | `chinese_speedup`, `chinese_build_speedup` | Select runtime image/download mirrors and build-time image/package mirrors; the latter rebuilds images |
-| `authentik` | `db_name`, `db_type`, `domain_prefix`, `ldap_enabled`, `ldap_password_writeback`, `log_level` | Select the database resource and generate IAM URLs/blueprints, LDAP source/writeback, and logging |
 | `casdoor` | `db_name`, `db_type`, `domain_prefix`, `ldap_auto_sync_minutes` | Select the PostgreSQL resource and generate IAM URLs, OIDC/SAML applications, LDAPS import configuration, and the synchronization interval |
 | `collabora` | `admin_username`, `admin_password`, `auto_save`, `domain_prefix`, `log_level` | Map explicitly to upstream `username`/`password` and generate `extra_params`, server name, and route |
 | `ddns_go` | `dns_provider`, `domain_prefix`, `interval`, `ipv4_gettype`, `ipv4_interface`, `ipv4_urls`, `ipv6_gettype`, `ipv6_interface`, `ipv6_urls`, `web_enabled` | Generate ddns-go desired state, polling arguments, address discovery, local login, and the host-network route |

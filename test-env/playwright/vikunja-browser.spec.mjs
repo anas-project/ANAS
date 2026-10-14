@@ -7,7 +7,7 @@ const username = process.env.ANAS_TEST_USERNAME;
 const password = process.env.ANAS_TEST_PASSWORD;
 const domain = process.env.ANAS_TEST_DOMAIN || "vikunja.test";
 const port = process.env.ANAS_TEST_ENTRY_PORT || "9000";
-const pauseContainer = process.env.ANAS_TEST_PAUSE_CONTAINER ?? "anas_vik_authentik";
+const pauseContainer = process.env.ANAS_TEST_PAUSE_CONTAINER ?? "anas_vik_llng";
 const base = `https://tasks.${domain}:${port}`;
 
 function requireEnvironment() {
@@ -82,87 +82,16 @@ async function startOIDC(page) {
   await page.waitForURL((url) => url.hostname === `auth.${domain}`, { timeout: 60_000 });
 }
 
-async function loginAuthentik(page) {
-  const submittedStages = [];
-  const stageTrace = [];
-  page.on("request", (request) => {
-    if (["GET", "HEAD", "OPTIONS"].includes(request.method())) return;
-    try {
-      submittedStages.push({
-        path: new URL(request.url()).pathname,
-        method: request.method(),
-        keys: Object.keys(request.postDataJSON()).sort(),
-      });
-    } catch {
-      submittedStages.push({ path: new URL(request.url()).pathname, method: request.method(), keys: ["unparsed"] });
-    }
-  });
-  const user = page.locator('ak-flow-card input[name="uidField"]').last();
+async function loginLLNG(page) {
+  const user = page.locator('input[name="user"]').first();
+  const secret = page.locator('input[name="password"]').first();
   await user.waitFor({ state: "visible", timeout: 20_000 });
-  if (new URL(page.url()).hostname === `auth.${domain}`) {
-    await user.fill(username);
-    const identificationCard = page.locator('ak-flow-card:has(input[name="uidField"])').last();
-    stageTrace.push({ stage: "identification", text: (await identificationCard.innerText()).slice(0, 200) });
-    await identificationCard.locator('button[type="submit"]').last().click();
-    const stagePassword = page.locator('ak-flow-card input[name="password"]').last();
-    await stagePassword.waitFor({ state: "visible", timeout: 20_000 });
-    await stagePassword.fill(password);
-    const passwordCard = page.locator('ak-flow-card:has(input[name="password"])').last();
-    stageTrace.push({ stage: "password", text: (await passwordCard.innerText()).slice(0, 200) });
-    await passwordCard.locator('button[type="submit"]').last().click();
-    await page.waitForTimeout(1_000);
-  }
-
-  for (let attempt = 0; attempt < 4 && new URL(page.url()).hostname === `auth.${domain}`; attempt += 1) {
-    try {
-      await page.waitForURL((url) => url.hostname === `tasks.${domain}`, { timeout: 10_000 });
-      break;
-    } catch {
-      // The flow needs an explicit consent/continue action.
-    }
-    const consent = await firstVisible(page, [
-      'ak-flow-card button:has-text("Continue")',
-      'ak-flow-card button:has-text("Authorize")',
-      'ak-flow-card button:has-text("Accept")',
-      'ak-flow-card button:has-text("Confirm")',
-      'ak-flow-card input[type="submit"][value*="Continue" i]',
-      'ak-flow-card input[type="submit"][value*="Authorize" i]',
-    ]);
-    if (!consent) break;
-    await consent.click({ force: true });
-    await page.waitForTimeout(1_000);
-  }
-  if (new URL(page.url()).hostname === `auth.${domain}`) {
-    await page.waitForTimeout(5_000);
-  }
-  if (new URL(page.url()).hostname === `auth.${domain}`) {
-    const current = new URL(page.url());
-    const labels = await page.locator("h1,h2,h3,button").allTextContents();
-    const pageText = (await page.locator("body").innerText()).replaceAll(username, "[redacted]");
-    const inputLocators = await page.locator("input").all();
-    const inputs = [];
-    for (const input of inputLocators) {
-      inputs.push({
-        name: await input.getAttribute("name"),
-        type: await input.getAttribute("type"),
-        placeholder: await input.getAttribute("placeholder"),
-        visible: await input.isVisible(),
-        ancestors: await input.evaluate((element) => {
-          const tags = [];
-          let current = element.parentElement;
-          while (current && tags.length < 5) {
-            tags.push(current.tagName.toLowerCase());
-            current = current.parentElement;
-          }
-          return tags;
-        }),
-      });
-    }
-    throw new Error(
-      `Authentik flow stopped at ${current.origin}${current.pathname}; trace=${JSON.stringify(stageTrace)}; submitted=${JSON.stringify(submittedStages)}; controls=${labels.join(" | ").slice(0, 300)}; inputs=${JSON.stringify(inputs)}; text=${pageText.slice(0, 500)}`,
-    );
-  }
-  await page.waitForURL((url) => url.hostname === `tasks.${domain}`, { timeout: 60_000 });
+  await secret.waitFor({ state: "visible", timeout: 20_000 });
+  await user.fill(username);
+  await secret.fill(password);
+  const form = page.locator("form").filter({ has: user }).first();
+  await form.locator('button[type="submit"],input[type="submit"]').first().click();
+  await page.waitForURL((url) => url.hostname === "tasks." + domain, { timeout: 60_000 });
 }
 
 async function assertVikunjaSession(page, expected) {
@@ -233,7 +162,7 @@ function trackLocalLogout(page) {
 
 async function login(page) {
   await startOIDC(page);
-  await loginAuthentik(page);
+  await loginLLNG(page);
   await expect.poll(async () => {
     try {
       await assertVikunjaSession(page, true);
@@ -324,7 +253,7 @@ function docker(action, container) {
   execFileSync(process.env.DOCKER_CMD || "docker", args, { stdio: "ignore" });
 }
 
-test("Authentik OIDC login and RP-initiated logout", async ({ page }) => {
+test("LLNG OIDC login and RP-initiated logout", async ({ page }) => {
   requireEnvironment();
   const storageEvents = await installStorageAudit(page);
   const logoutNetworkEvents = trackLocalLogout(page);

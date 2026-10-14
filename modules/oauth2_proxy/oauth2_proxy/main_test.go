@@ -52,8 +52,12 @@ func TestPublicBridgeStripsIdentityAndAuthorizationHeaders(t *testing.T) {
 	target, _ := url.Parse("http://127.0.0.1:4181")
 	bridge := newOAuth2ReverseProxy(target, "", "")
 	request := httptest.NewRequest(http.MethodGet, "http://bridge.test/oauth2/auth", nil)
+	request.Header.Set("X-Forwarded-Host", "app.example.test:9443")
 	request.Header.Set("X-Anas-Identity-Subject", "attacker")
 	bridge.Director(request)
+	if request.Host != target.Host || request.Header.Get("X-Forwarded-Host") != "app.example.test:9443" {
+		t.Fatal("bridge lost the distinction between its internal Host and original forwarded Host")
+	}
 	if got := request.Header.Get("X-Anas-Identity-Subject"); got != "" {
 		t.Fatalf("upstream received spoofed identity %q", got)
 	}
@@ -105,12 +109,39 @@ func TestTrustedProxyArgsUseExactTraefikPeer(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"--trusted-proxy-ip=127.0.0.1/32",
 		"--trusted-proxy-ip=172.21.0.7/32",
 		"--trusted-proxy-ip=192.0.2.8/32",
 		"--trusted-proxy-ip=198.51.100.0/24",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("trustedProxyArgs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestBridgeRejectsUntrustedForwardedHeadersAndLimitsLocalReadiness(t *testing.T) {
+	peer := netip.MustParseAddr("172.21.0.7")
+	for _, tc := range []struct {
+		remote, path    string
+		public, allowed bool
+	}{
+		{"172.21.0.7:1234", "/oauth2/callback", true, true},
+		{"[::ffff:172.21.0.7]:1234", "/", false, true},
+		{"172.21.0.8:1234", "/", true, false},
+		{"127.0.0.1:1234", "/ping", true, true},
+		{"127.0.0.1:1234", "/oauth2/start", true, false},
+		{"127.0.0.1:1234", "/ping", false, false},
+		{"invalid", "/", true, false},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "http://bridge.test"+tc.path, nil)
+		request.RemoteAddr = tc.remote
+		request.Header.Set("X-Forwarded-Host", "attacker.test")
+		response := httptest.NewRecorder()
+		handler := trustedBridgeHandler(peer, tc.public, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) }))
+		handler.ServeHTTP(response, request)
+		if (response.Code == http.StatusAccepted) != tc.allowed {
+			t.Fatalf("%s %s public=%v: status %d", tc.remote, tc.path, tc.public, response.Code)
+		}
 	}
 }
 

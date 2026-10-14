@@ -11,6 +11,7 @@ title: VersityGW S3 gateway
 description: S3-compatible API backed by a dedicated POSIX directory.
 category: storage
 status: developing
+applications_not_published: "S3 API endpoint has no independent browser UI."
 runtime:
   type: compose
   compose_file: docker-compose.yml

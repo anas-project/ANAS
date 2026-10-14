@@ -187,7 +187,6 @@ The runner creates a dedicated database, principal, and stable generated credent
 ### Exports
 
 - `ANAS_IAM_CLIENT__NEXTCLOUD__*`
-- `APPS_LIST*`
 - `TALK_*`
 
 ### Explicit consumes
@@ -265,3 +264,11 @@ Switching OIDC/SAML recreates and reconciles the IAM registration; switching dat
 Hook tests cover defaults, overrides, typed occ arguments, and write failures. The E2E entry is `test-env/scripts/server-nextcloud-trashbin-e2e.sh`, also included in the domain-separation `full` suite. It verifies live settings before changing them, uses a unique temporary local user to exercise WebDAV deletion and restoration, then tests enabled deletion and disabled retention. Cleanup restores both settings and deletes the user; reports are saved with mode 0600.
 
 Expiration boundaries use synthetic ages evaluated by the real in-container service, not a long-running cron test. The script requires an explicit isolated Docker socket, workspace, prefix, and entry IP. Real-host execution is pending; see the [test plan](../dev-docs/plans/nextcloud-trashbin.md) and [requirements](../dev-docs/requirements/nextcloud-trashbin.md).
+
+## Application catalog
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

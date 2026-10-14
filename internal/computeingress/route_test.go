@@ -48,9 +48,9 @@ func TestRenderRouteUsesOnlyTheFrozenGrant(t *testing.T) {
 		t.Fatal("auth none rendered a middleware")
 	}
 	a.Policy.Auth = "forward_auth"
-	a.ForwardAuth = &ForwardAuth{Provider: "authentik", Middleware: "authentik-forward-auth@file"}
+	a.ForwardAuth = &ForwardAuth{Provider: "gateway", Middleware: "gateway-forward-auth@file"}
 	body, err = RenderRoute(a, host, "10.101.0.17", 7000)
-	if err != nil || !strings.Contains(string(body), `- "authentik-forward-auth@file"`) {
+	if err != nil || !strings.Contains(string(body), `- "gateway-forward-auth@file"`) {
 		t.Fatalf("forward_auth route = %s, %v", body, err)
 	}
 	if _, err := RenderRoute(a, "nextcloud.example.test", "10.101.0.17", 7000); err == nil {

@@ -1,5 +1,8 @@
 # MeshCentral 技术实现
 
+2026-10-10 Authentik 已移除；下文相关运行记录是旧基线，原脚本已退役。当前保留 LLNG 用例，Casdoor 组合须独立验收，不继承旧 Provider 结论。
+
+
 本文面向 Module 维护者，记录 `meshcentral` 当前实现、安全边界和验证入口。用户操作见[中文 README](../README.md)。
 
 <!-- generated:module-identity:start -->
@@ -135,7 +138,6 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ### 导出
 
 - `ANAS_IAM_CLIENT__MESHCENTRAL__*`
-- `APPS_LIST*`
 
 ### 显式消费
 
@@ -189,3 +191,10 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 ## 当前限制
 
 不要把 LDAPS provisioning 误写成浏览器 LDAPS 登录。
+
+## 应用目录
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。

@@ -253,3 +253,7 @@ parameters require dedicated credential rotation and cannot be changed by
 recreating containers. The service-domain/application-zone migrators for
 existing workspaces have not been delivered. Ordinary apply cannot switch the
 zone, and an AD domain cannot be renamed in place.
+
+## Application catalog
+
+No personnel card is published: Directory and DNS protocols only; administration is published by LAM.

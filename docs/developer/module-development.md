@@ -187,8 +187,7 @@ Module 设计必须遵守以下边界。规范来源是[使用 OIDC/SAML 的 Mod
 ### Provider-neutral 注册
 
 Module 只读取自己的 `ANAS_IAM_BINDING__<APP>__*`，并在 `calculate` Hook 发布自己的
-`ANAS_IAM_CLIENT__<APP>__*`。不得按 Provider 名称分支，也不得生成 LLNG、Authentik、
-Casdoor 或其他实现的私有字段。
+`ANAS_IAM_CLIENT__<APP>__*`。不得按 Provider 名称分支，也不得生成 LLNG、Casdoor 或其他实现的私有字段。
 
 OIDC Module 支持 IAM 主动登出时发布：
 
@@ -214,14 +213,14 @@ apply 必须清除另一协议或旧域名的残留字段。
 `<claim>:anasRole:1`。`anasRole` 是 ANAS 的逻辑属性来源，不是 LDAP 属性或 OIDC 标准 claim；
 Provider 根据受信 `SAMBA_DC_ADMIN_GROUP_NAME` 组成员资格计算 `admin` / `user`，不得读取用户可编辑
 profile/Properties。Consumer 自行选择 claim 名和应用的 `roleClaim`；不需要两级角色的 Module 不声明。
-此映射不改变 `sub`，也不替代目录变更后旧会话和独立凭据的撤销。当前 Authentik 与 Casdoor 的固定
-实现分别负责受信组计算；支持情况必须有对应版本验证，不能将一方通过结果推广到另一方。
+此映射不改变 `sub`，也不替代目录变更后旧会话和独立凭据的撤销。当前 Casdoor 的固定
+实现负责受信组计算；支持情况必须有对应版本验证，不能将一方通过结果推广到另一方。
 
 需要区分目录准入丧失与普通退出的 OIDC Consumer，可请求现有通用注册字段
 `ANAS_IAM_CLIENT__<APP>__OIDC_CAEP_EVENTS=session-revoked`。Provider 在自己的 calculate Hook 发布
 `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` 支持集合；Runner 校验交集、backchannel URI 和
 subject-wide (`OIDC_LOGOUT_SESSION_REQUIRED=false`) 语义，未知值、错协议或未支持 Provider 拒绝。
-当前固定 Authentik/Immich 实现采用 [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
+当前固定 Casdoor/Immich 实现采用 [CAEP session-revoked](https://openid.net/specs/openid-caep-1_0.html)
 事件成员及原有签名 backchannel 投递，普通 logout 不携带该成员；没有声明完整 SSF/CAEP 部署。
 应用应按原事件时间和已验证身份定位旧凭据，持久重试不得扩大到恢复准入后的新凭据。
 
@@ -338,7 +337,7 @@ management:
    显式敏感、apply 真实更新、rotate 成功、验证失败回滚、直登入口；声明为稳定支持前必须
    在真实容器上验证旧密码失效和新密码成功。
 
-当前状态必须显式记录：Authentik 声明固定 `akadmin` 的 `break_glass`，Traefik 声明模板
+当前状态必须显式记录：Casdoor 声明固定 `admin_casdoor` 的 `break_glass`，Traefik 声明模板
 用户名的 `primary`，两者都有真实 apply/rotate handler；MeshCentral 当前强制 OIDC-only，
 并在中心认证器拒绝本地和 LDAP 密码认证，因此没有同 domain 的 `break_glass` 绕过入口。
 LAM 主登录使用目录账号并限制为已启用的 Samba `Admins` 组成员；每位用户使用自己的
@@ -420,3 +419,17 @@ config:
 结构化配置声明为 string 与 `constraints: {format: json_object}`；
 `modules.<module>.config.<parameter>` 下的 YAML 对象和 JSON 对象字符串归一成同一环境值，
 在变更影响分析中保持一个参数身份。未知投影、无效 JSON 和空来源值在资源供给前失败。
+
+## 应用入口与目录消费者
+
+Module 在 module.yml 的 applications 发布人员入口，独立于 IAM client 注册。声明双语文案、
+kind: user/admin、第一项为主分类的 categories、url 或自身 url_from，以及明确的 access/visibility。
+没有人员 UI 的 Module 用 applications_not_published 说明原因。已有执行点使用 visibility.mode: access，
+本地 URL 使用 subjects，管理条目必须只解析到 platform_admin。条件 UI 的 enabled_by 引用已声明 bool。
+原生权限的 groups_from 必须经过环境读取声明。PNG 源图保存在 Module 内，Runner 生成缺少尺寸，
+不导出源文件系统路径或 IAM 凭据。
+
+IAM 消费者声明 application_catalog.consumes: true、limitations，以及固定的私有只读
+/run/anas/application-catalog 挂载和单独的公网 assets 挂载。render Hook 读取临时的
+ANAS_APP_CATALOG_FILE 并投射到已有原生 IAM 对象。源目录仍是事实来源，独立 user_portal 复用相同私有目录制品，按当前 IAM/AD 权限保护 API 和图标。
+细节见[目录设计](/architecture/app-catalog-design)。

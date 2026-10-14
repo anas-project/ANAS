@@ -555,7 +555,7 @@ docker exec anas_samba_dc samba-tool group delete 'ROLE_PROJECT_A'
 | [`Administrators`](/architecture/samba-ad-user-planning#ad-built-in-groups) | Administrators，管理员 | AD 内置管理员组的高权限 | 是，高风险 | 底层目录或域控制器管理；通常不需单独直加用户 |
 | [`Unix Admins`](/architecture/samba-ad-user-planning#anas-role-groups) | Unix Administrators，Unix 管理员 | ANAS 域基础设施管理；该组已嵌套进 `Administrators` | 是，高风险 | Samba/Unix 域基础设施管理 |
 | [`Group Policy Creator Owners`](/architecture/samba-ad-user-planning#ad-built-in-groups) | Group Policy Creator Owners，组策略创建者所有者 | 创建和管理其负责的 GPO | 否，不是完整域管理员 | 组策略维护 |
-| [`Admins`](/architecture/samba-ad-user-planning#anas-role-groups) | Administrators 的缩写，管理员 | ANAS 应用管理员角色 | 否 | 登录并管理 Authentik、Nextcloud、LAM 等应用；目录操作仍受 AD ACL 限制 |
+| [`Admins`](/architecture/samba-ad-user-planning#anas-role-groups) | Administrators 的缩写，管理员 | ANAS 应用管理员角色 | 否 | 登录并管理 Casdoor、Nextcloud、LAM 等应用；目录操作仍受 AD ACL 限制 |
 | [`FS Admins`](/architecture/samba-ad-user-planning#anas-access-groups) | File System Administrators，文件系统管理员 | Samba 文件服务器上的 root 等效文件操作能力 | 否，但风险极高 | 修复 ACL、恢复文件、文件服务运维 |
 | [`FS Share RW`](/architecture/samba-ad-user-planning#anas-access-groups) | File System Share Read/Write，共享读写 | 公共 `Share` 的写权限 | 否 | 普通文件协作 |
 | [`APP_all` / `APP_<应用>`](/architecture/samba-ad-user-planning#anas-app-groups) | Application all / Application name，全部或指定应用 | 所有或指定应用的登录权限 | 否 | 普通应用访问 |

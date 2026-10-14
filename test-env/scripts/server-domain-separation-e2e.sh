@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: server-domain-separation-e2e.sh <authentik-ad-zone|llng-separate-zone> [core|contracts|full]
+usage: server-domain-separation-e2e.sh <llng-ad-zone|llng-separate-zone> [core|contracts|full]
 
   core       Read-only domain, DNS, Kerberos, LDAPS, LAM, IAM, and Nextcloud checks.
   contracts  Run core plus the existing IAM runtime-contract probe (default).
@@ -19,16 +19,16 @@ profile=${1:-}
 probe_level=${2:-${ANAS_TEST_DOMAIN_SEPARATION_PROBES:-contracts}}
 
 case "$profile" in
-  authentik-ad-zone)
+  llng-ad-zone)
     base_domain=nas.test.example
     samba_domain=test.example
     resolved_mode=ad_zone
     dns_zone=test.example
-    iam_provider=authentik
-    default_prefix=anas_ds_auth_
-    default_socket=/run/anas-domain-auth-e2e-docker.sock
+    iam_provider=llng
+    default_prefix=anas_ds_ad_
+    default_socket=/run/anas-domain-ad-e2e-docker.sock
     default_entry_ip=10.252.10.2
-    fixture=test-env/server-domain-separation-authentik-e2e.yml
+    fixture=test-env/server-domain-separation-llng-ad-zone-e2e.yml
     ;;
   llng-separate-zone)
     base_domain=apps.example.test
@@ -136,21 +136,13 @@ iam=$(container "$iam_provider")
 eturnal=
 nextcloud=$(container nextcloud)
 nextcloud_cron=$(container nextcloud_cron)
-authentik_worker=
-if [[ "$iam_provider" == authentik ]]; then
-  authentik_worker=$(container authentik_worker)
-else
-  eturnal=$(container eturnal)
-fi
+eturnal=$(container eturnal)
 base_dn=$(domain_to_dn "$samba_domain")
 
 section "isolated fixture and required containers"
 printf 'fixture=%s profile=%s probes=%s docker_socket=%s\n' \
   "$fixture" "$profile" "$probe_level" "$docker_socket"
 required_containers=("$dc" "$fs" "$lego" "$lam" "$iam" "$nextcloud" "$nextcloud_cron")
-if [[ -n "$authentik_worker" ]]; then
-  required_containers+=("$authentik_worker")
-fi
 if [[ -n "$eturnal" ]]; then
   required_containers+=("$eturnal")
 fi
@@ -380,24 +372,6 @@ assert_eq NEXTCLOUD_BASE_DN \
 printf 'nextcloud_cron_internal_ca=installed\n'
 
 case "$iam_provider" in
-  authentik)
-    assert_eq AUTHENTIK_DOMAIN \
-      "$(container_env "$iam" AUTHENTIK_DOMAIN)" "auth.$base_domain"
-    assert_eq AUTHENTIK_LDAP_SERVER_URI \
-      "$(container_env "$iam" AUTHENTIK_LDAP_SERVER_URI)" "ldaps://$base_domain:636"
-    assert_eq AUTHENTIK_LDAP_BASE_DN \
-      "$(container_env "$iam" AUTHENTIK_LDAP_BASE_DN)" "$base_dn"
-    assert_eq AUTHENTIK_WORKER_LDAP_SERVER_URI \
-      "$(container_env "$authentik_worker" AUTHENTIK_LDAP_SERVER_URI)" "ldaps://$base_domain:636"
-    assert_eq AUTHENTIK_WORKER_LDAP_BASE_DN \
-      "$(container_env "$authentik_worker" AUTHENTIK_LDAP_BASE_DN)" "$base_dn"
-    "$docker_cmd" exec "$authentik_worker" sh -ceu '
-      test -s "/certs/$ANAS_TLS_TRUST_BUNDLE_NAME"
-      ak healthcheck
-    '
-    "$docker_cmd" exec "$iam" ak shell -c \
-      'import os; from authentik.sources.ldap.models import LDAPSource; source=LDAPSource.objects.get(slug="samba-ad"); assert source.server_uri == os.environ["AUTHENTIK_LDAP_SERVER_URI"]; assert source.base_dn == os.environ["AUTHENTIK_LDAP_BASE_DN"]; assert source.peer_certificate is not None'
-    ;;
   llng)
     assert_eq LLNG_DOMAIN "$(container_env "$iam" LLNG_DOMAIN)" "auth.$base_domain"
     assert_eq LLNG_LDAPS_URL \

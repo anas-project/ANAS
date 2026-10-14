@@ -1,6 +1,7 @@
 # Module IAM / OIDC 支持清单
 
-Authentik 自 2026-10-05 标记为 `deprecated`（过时），不再推荐新部署。下文相关结果为历史能力记录，Authentik 整改不作为 Casdoor 发布前置条件。
+2026-10-10 按用户要求移除 Authentik，当前保留 Casdoor（主力）与 LLNG。下文 Authentik 结果仅是旧版本历史，已移除的脚本不可执行，其通过结论不适用于 Casdoor。
+
 
 OIDC 是 ANAS 当前默认 IAM 接入协议，但只对声明消费 `iam` capability 且支持 OIDC 的 Module 生效。不支持 OIDC 的 Module 不会被强制改用 OIDC；它按 Manifest 支持范围回退或继续使用自己的认证方式。
 
@@ -51,7 +52,6 @@ Casdoor r10 已统一取 anchor，其他 Provider 的签发侧仍待整改与验
 | `immich` | 是 | 共享 PostgreSQL；OIDC JIT；受信管理员 roleClaim | developing；固定镜像、注册、入口限制与 Authentik 目录撤权已实现并本机验证；真实 IAM/移动端/目录链待验收 | anchor → OIDC `sub` → `user.oauthId`；内部 `user.id` 保留上游生成值 |
 | `vikunja` | 是 | IAM/OIDC JIT 建号；`APP_vikunja`/`APP_all` 门禁；本地认证和注册关闭 | developing；Manifest、Provider 注册、Secret、Hook 和应用配置已实现，真实浏览器/数据库 E2E 待验收 | OIDC `(issuer, sub)`；不可配置，随 Provider 而稳定 |
 | `lam` | 否 | LDAPS 目录管理登录 | 不属于当前 IAM consumer | 无持久键；每次登录按 `sAMAccountName` 检索后 bind DN |
-| `authentik` | 不适用 | IAM provider；另有固定 `akadmin` break-glass | 提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：身份锚点（`object_uniqueness_field`）。签发侧：内部用户 UUID，**非 anchor** |
 | `casdoor` | 不适用 | release IAM provider；使用默认模板 `admin_casdoor` break-glass | OIDC/SAML 登录、Samba 目录收敛、永久 anchor、`ALLOW_GROUPS` 门禁、OIDC exact-`sid` 会话撤销、空 workspace 恢复、多架构生命周期及受管凭据轮换已有真实 E2E；固定版本不发布 SAML SLO | 消费侧：身份锚点（`externalId`）。r10 签发侧：OIDC `sub`、UserInfo、Logout Token 与 SAML `NameID` 统一取 anchor；签名协议、OIDC 故障矩阵和真实 Nextcloud 归属通过；2026-10-06 正式发布验收通过，已标 release |
 | `llng` | 不适用 | IAM provider | r12 developing；提供 OIDC/SAML，不把自身当普通 consumer | 消费侧：无用户副本，session 保存 anchor；签发侧：r12 OIDC `sub` = anchor；SAML NameID 待实现 |
 | `ddns_go` | 否 | ANAS 托管 local emergency account | 不支持 OIDC | 不适用（本地账号） |

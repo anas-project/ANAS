@@ -11,6 +11,31 @@ title: Collabora Online
 description: Online document editing backend for Nextcloud.
 category: app
 status: release
+applications:
+  - name: collabora-admin
+    display_name:
+      zh-CN: "Collabora Administration"
+      en: "Collabora Administration"
+    url_from: COLLABORA_ADMIN_URL
+    summary:
+      zh-CN: "在线文档服务管理"
+      en: "Online office administration"
+    description:
+      zh-CN: "在线文档服务管理。"
+      en: "Online office administration."
+    documentation_url:
+      zh-CN: https://sdk.collaboraonline.com/
+      en: https://sdk.collaboraonline.com/
+    weight: 100
+    kind: admin
+    categories:
+      - collaboration
+    access:
+      mode: local
+    visibility:
+      mode: subjects
+      any_of:
+        - role: platform_admin
 runtime:
   type: compose
   compose_file: docker-compose.yml

@@ -5,25 +5,29 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/deployment"
 )
 
 type Module struct {
-	APIVersion   string
-	Name         string
-	Version      string
-	Revision     int
-	AppVersion   string
-	Title        string
-	Description  string
-	Category     string
-	Lifecycle    string
-	UpgradeFrom  string
-	DataBreaking *[]string
-	SourceDir    string
-	EnvPrefix    string
-	Defaults     map[string]string
+	APIVersion               string
+	Name                     string
+	Version                  string
+	Revision                 int
+	AppVersion               string
+	Title                    string
+	Description              string
+	Category                 string
+	Applications             []appcatalog.Declaration
+	ApplicationCatalog       appcatalog.Consumer
+	ApplicationsNotPublished string
+	Lifecycle                string
+	UpgradeFrom              string
+	DataBreaking             *[]string
+	SourceDir                string
+	EnvPrefix                string
+	Defaults                 map[string]string
 	// InputRequired is the caller-input contract. Required preserves the legacy
 	// pre-Hook invariant after defaults and resolvers have run. MustResolve is the
 	// final invariant after the calculate Hook patch. Their runtime unions are
@@ -52,6 +56,8 @@ type Module struct {
 	RunAfter               []string
 	IdentityInterfaces     []string
 	IdentityAppGroup       bool
+	IdentityRoles          map[string]string
+	IdentityGroupsFrom     string
 	IdentityProvisioning   *IdentityProvisioning
 	IdentityAuthentication *IdentityAuthentication
 	ManagementSurfaces     []ManagementSurface

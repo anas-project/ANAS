@@ -1,5 +1,8 @@
 # MeshCentral
 
+Authentik was removed on 2026-10-10. Its runtime results below are historical and the scripts are retired. LLNG checks remain; Casdoor combinations require independent acceptance.
+
+
 Remote device management with OIDC-only authentication and LDAPS directory provisioning.
 
 ## Quick facts

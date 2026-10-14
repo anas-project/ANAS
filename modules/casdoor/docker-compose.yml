@@ -20,6 +20,8 @@ services:
       - "./conf/init_data.template.json:/opt/anas/conf/init_data.template.json:ro"
       - "${CASDOOR_LOCAL_ADMIN__BREAK_GLASS_PASSWORD_FILE}:/run/secrets/casdoor-break-glass-password:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+      - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
+      - "${ANAS_APP_CATALOG_DIR}/assets:/files/anas-catalog/assets:ro"
       - "${DATA_PATH}/casdoor/dirwatch:/data/anas-dirwatch"
     dns:
       - ${LOCAL_DNS_SERVER}

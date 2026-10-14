@@ -216,7 +216,7 @@ func TestComposeAndEntrypointKeepTheS3BoundaryNarrow(t *testing.T) {
 	}
 	content := string(compose)
 	for _, required := range []string{
-		"ghcr.io/anas-project}/anas-versitygw:1.7.0-r3",
+		"ghcr.io/anas-project}/anas-versitygw:1.7.0-r4",
 		"VGW_BACKEND: posix",
 		"VGW_IAM_DIR: /data/iam",
 		`VGW_ADMIN_PORT: ":7071"`,

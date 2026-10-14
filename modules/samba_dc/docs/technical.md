@@ -230,3 +230,7 @@ r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 
 `domain`、`realm` 和 `netbios_name` 是不可变身份；密码参数需要专用凭据轮换，不能靠重建
 容器修改。已有 workspace 的服务域/应用 DNS zone 迁移器尚未交付，不支持用普通 apply
 切换 zone，也不支持原地重命名 AD 域。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

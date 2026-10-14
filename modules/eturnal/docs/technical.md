@@ -110,3 +110,7 @@ Store provenance 冻结 `anas`/`external` authority 和 generation，不把值�
 
 TURN Secret 是机器凭据，不应作为人员密码查询或共享。当前 verify 校验实际运行配置与容器可用性，
 尚未执行完整 TURN 鉴权握手；resource credential、Samba 和本地管理员也尚未迁入这一统一执行器。
+
+## 应用目录
+
+不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。

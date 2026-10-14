@@ -344,7 +344,7 @@ identity:
   directory:
     provider: samba_dc
   iam:
-    provider: authentik
+    provider: casdoor
     default_protocol: saml
 administration:
   bootstrap:
@@ -356,7 +356,7 @@ administration:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.IAM.Provider != "authentik" || cfg.IAM.DefaultProtocol != "saml" {
+	if cfg.IAM.Provider != "casdoor" || cfg.IAM.DefaultProtocol != "saml" {
 		t.Fatalf("normalized IAM view = %+v", cfg.IAM)
 	}
 	env := cfg.BaseEnv()
@@ -401,7 +401,7 @@ func TestOIDCIsTheDefaultIAMProtocol(t *testing.T) {
   nextcloud: {}
 identity:
   iam:
-    provider: authentik
+    provider: casdoor
 `), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +568,7 @@ func TestLoadRejectsTopLevelIAMAlias(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`modules:
   nextcloud: {}
 iam:
-  provider: authentik
+  provider: casdoor
 `), 0600); err != nil {
 		t.Fatal(err)
 	}

@@ -393,7 +393,6 @@ func (a *app) validateCalculateSecretPatch(mod Module, patch map[string]string) 
 func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	violations := []string{}
 	conflicts := []string{}
-	invalidApplicationLists := []string{}
 	keys := make([]string, 0, len(patch))
 	for k := range patch {
 		keys = append(keys, k)
@@ -408,12 +407,6 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 			violations = append(violations, k)
 			continue
 		}
-		if k == "APPS_LIST" {
-			if !validApplicationListAppend(mod.Name, a.env[k], patch[k]) {
-				invalidApplicationLists = append(invalidApplicationLists, k)
-			}
-			continue
-		}
 		if tracked && owner != mod.Name {
 			conflicts = append(conflicts, k)
 		}
@@ -424,25 +417,12 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 	if len(violations) > 0 {
 		return fmt.Errorf("module %q calculate hook writes undeclared env keys: %s (declare them in module.yml config.exports)", mod.Name, strings.Join(violations, ", "))
 	}
-	if len(invalidApplicationLists) > 0 {
-		return fmt.Errorf("module %q calculate hook must preserve APPS_LIST and append only its own module name", mod.Name)
-	}
 	if len(conflicts) > 0 {
 		return fmt.Errorf("module %q calculate hook tries to overwrite env keys owned by another source: %s", mod.Name, strings.Join(conflicts, ", "))
 	}
 	for _, k := range keys {
 		a.env[k] = patch[k]
-		if k == "APPS_LIST" {
-			// APPS_LIST is a transitional, cooperative launcher protocol. Each
-			// publisher may append only itself; the runner owns the aggregate so
-			// no one Module can later replace or delete another Module's entry.
-			if a.envOwner == nil {
-				a.envOwner = map[string]string{}
-			}
-			a.envOwner[k] = runnerScope
-		} else {
-			a.setEnvOwner(k, mod.Name)
-		}
+		a.setEnvOwner(k, mod.Name)
 	}
 	if len(keys) > 0 {
 		// sensitiveEnvKeySet derives equal-value aliases from a.env. A Hook can
@@ -450,42 +430,4 @@ func (a *app) applyCalculatePatch(mod Module, patch map[string]string) error {
 		a.sensitiveKeys = nil
 	}
 	return nil
-}
-
-func validApplicationListAppend(module, current, next string) bool {
-	currentItems, currentOK := applicationListItems(current)
-	nextItems, nextOK := applicationListItems(next)
-	if !currentOK || !nextOK {
-		return false
-	}
-	want := append([]string{}, currentItems...)
-	if !contains(want, module) {
-		want = append(want, module)
-	}
-	if len(want) != len(nextItems) {
-		return false
-	}
-	for i := range want {
-		if want[i] != nextItems[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func applicationListItems(value string) ([]string, bool) {
-	items := []string{}
-	seen := map[string]bool{}
-	for _, raw := range strings.Split(value, ",") {
-		item := strings.TrimSpace(raw)
-		if item == "" {
-			continue
-		}
-		if seen[item] {
-			return nil, false
-		}
-		seen[item] = true
-		items = append(items, item)
-	}
-	return items, true
 }

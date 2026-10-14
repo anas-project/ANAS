@@ -257,10 +257,10 @@ env:
 func TestConfigImportCanonicalizesTypedValuesGenerically(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "external.yml")
 	if err := os.WriteFile(source, []byte(`modules:
-  authentik:
+  llng:
     config:
       db_type: POSTGRES
-      ldap_enabled: " TRUE "
+      enable_test: " TRUE "
 env:
   SHARE_ACCESS_MODE: ALL_RW
 global:
@@ -273,7 +273,7 @@ global:
 		t.Fatal(err)
 	}
 	body := string(result.Normalized)
-	for _, want := range []string{"db_type: postgres", `ldap_enabled: "true"`, "SHARE_ACCESS_MODE: all_rw", `ipv6: "true"`} {
+	for _, want := range []string{"db_type: postgres", `enable_test: "true"`, "SHARE_ACCESS_MODE: all_rw", `ipv6: "true"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("normalized import is missing %q:\n%s", want, body)
 		}
@@ -378,11 +378,11 @@ env:
   SHARE_DIR_NAME: two
 `,
 		"prefixed module and environment": `modules:
-  authentik:
+  llng:
     config:
-      ldap_enabled: true
+      enable_test: true
 env:
-  AUTHENTIK_LDAP_ENABLED: false
+  LLNG_ENABLE_TEST: false
 `,
 		"global and environment": `modules:
   traefik: {}
@@ -502,10 +502,10 @@ func TestConfigImportKeepsTypedEmptyAndScalarAliasValuesCompatible(t *testing.T)
   email: admin@nas.test
   ipv6: &enabled " TRUE "
 modules:
-  authentik:
+  llng:
     config:
       db_type: null
-      ldap_enabled: *enabled
+      enable_test: *enabled
 env:
   SHARE_ACCESS_MODE: ""
 `), 0o600); err != nil {
@@ -523,7 +523,7 @@ env:
 	if !strings.Contains(body, `ipv6: &enabled "true"`) {
 		t.Fatalf("global anchor was not canonicalized:\n%s", body)
 	}
-	if !strings.Contains(body, `ldap_enabled: "true"`) {
+	if !strings.Contains(body, `enable_test: "true"`) {
 		t.Fatalf("typed scalar alias was not expanded to its canonical value:\n%s", body)
 	}
 }
@@ -536,9 +536,9 @@ func TestConfigImportCanonicalizesTypedAliasFromUndeclaredAnchor(t *testing.T) {
 env:
   LEGACY_SWITCH: &enabled " TRUE "
 modules:
-  authentik:
+  llng:
     config:
-      ldap_enabled: *enabled
+      enable_test: *enabled
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -550,7 +550,7 @@ modules:
 	if !strings.Contains(body, `LEGACY_SWITCH: &enabled " TRUE "`) {
 		t.Fatalf("normalization unexpectedly rewrote unrelated anchor:\n%s", body)
 	}
-	if !strings.Contains(body, `ldap_enabled: "true"`) {
+	if !strings.Contains(body, `enable_test: "true"`) {
 		t.Fatalf("typed alias did not persist its canonical bool value:\n%s", body)
 	}
 	if err := validateNormalizedImportedConfig(result.Normalized, importTestRegistry(t)); err != nil {

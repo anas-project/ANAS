@@ -96,7 +96,6 @@ jobs:
           bash test-env/scripts/test-upgrade-workspace-cleanup.sh
           bash test-env/scripts/test-upgrade-old-compat.sh
           bash test-env/scripts/test-upgrade-suite-targets.sh
-          bash test-env/scripts/test-authentik-upgrade-probes.sh
           bash test-env/scripts/test-upgrade-proxy-boundary.sh
 
   documentation-sources:
@@ -127,7 +126,6 @@ jobs:
         timeout-minutes: 3
         run: |
           node --test modules/immich/immich/*.test.cjs
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s modules/authentik/authentik -p 'test_*.py'
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s test-env/scripts -p 'test_immich_workspace*.py'
 
       - name: Validate native Incus browser guards (no browser or VM)

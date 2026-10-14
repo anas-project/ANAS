@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/application"
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
@@ -111,7 +112,11 @@ type app struct {
 	// artifactRoot is the final immutable deployment module directory. Hooks use
 	// this path while a deployment is rendered in staging so values they derive
 	// never contain the temporary staging path.
-	artifactRoot string
+	artifactRoot             string
+	applicationCatalog       *appcatalog.Catalog
+	applicationCatalogAssets *appcatalog.Assets
+	applicationCatalogFiles  map[string][]byte
+	applicationCatalogDigest string
 	// dnsReg is the DNS platform registry, loaded on first use.
 	dnsReg *dns.Registry
 	// A path transition retains old leases until the candidate mounts have
@@ -1145,6 +1150,9 @@ func (a *app) calculate() error {
 	if err := a.validateIAMClientRegistrations(); err != nil {
 		return err
 	}
+	if err := a.prepareApplicationCatalog(); err != nil {
+		return fmt.Errorf("application catalog: %w", err)
+	}
 	domains := []string{}
 	seenDomains := map[string]bool{}
 	addDomain := func(fqdn, owner string) {
@@ -1176,6 +1184,9 @@ func (a *app) renderAll(work string) error {
 	if err := os.MkdirAll(work, 0755); err != nil {
 		return err
 	}
+	if err := a.renderApplicationCatalog(work); err != nil {
+		return fmt.Errorf("application catalog: %w", err)
+	}
 	if err := writeEnv(filepath.Join(work, globalEnvFile), a.globalEnv()); err != nil {
 		return err
 	}
@@ -1194,9 +1205,15 @@ func (a *app) renderAll(work string) error {
 		env := a.scopedEnv(name)
 		env["MODULE_NAME"] = name
 		env["ANAS_MODULE_RUNTIME_STATE_PATH"] = a.moduleRuntimeStatePath(name)
+		a.catalogRenderEnvironment(mod, work, env)
 		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
 		if err != nil {
 			return err
+		}
+		for _, key := range []string{"ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST"} {
+			if value, ok := resp.Env[key]; ok && value != env[key] {
+				return fmt.Errorf("%s render hook changed runner-owned catalog environment", name)
+			}
 		}
 		if err := applyHookEnv(env, resp.Env); err != nil {
 			return fmt.Errorf("%s render_env patch: %w", name, err)
@@ -1208,6 +1225,17 @@ func (a *app) renderAll(work string) error {
 		if err := applyHookFiles(dir, resp.Files); err != nil {
 			return err
 		}
+		if mod.ApplicationCatalog.Consumes {
+			for _, content := range resp.Files {
+				if strings.Contains(content, env["ANAS_APP_CATALOG_FILE"]) && env["ANAS_APP_CATALOG_FILE"] != "" {
+					return fmt.Errorf("%s render hook persisted the temporary application catalog file path", name)
+				}
+			}
+			if err := validateCatalogComposeMount(filepath.Join(dir, mod.ComposeFile)); err != nil {
+				return err
+			}
+		}
+		delete(env, "ANAS_APP_CATALOG_FILE")
 		if err := applyHookRuntimeFiles(a.resolveModuleRuntimeStatePath(name, env), resp.RuntimeFiles); err != nil {
 			return err
 		}

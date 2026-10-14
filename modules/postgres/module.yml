@@ -11,6 +11,31 @@ title: PostgreSQL
 description: PostgreSQL database service with optional Adminer UI.
 category: database
 status: developing
+applications:
+  - name: postgres-adminer
+    display_name:
+      zh-CN: "PostgreSQL Adminer"
+      en: "PostgreSQL Adminer"
+    url_from: POSTGRES_ADMINER_URL
+    summary:
+      zh-CN: "PostgreSQL 数据库管理"
+      en: "PostgreSQL database administration"
+    description:
+      zh-CN: "PostgreSQL 数据库管理。"
+      en: "PostgreSQL database administration."
+    documentation_url:
+      zh-CN: https://www.adminer.org/
+      en: https://www.adminer.org/
+    weight: 100
+    kind: admin
+    categories:
+      - database
+    enabled_by: adminer_enabled
+    access:
+      mode: forward_auth
+      role: platform_admin
+    visibility:
+      mode: access
 runtime:
   type: compose
   compose_file: docker-compose.yml

@@ -7,6 +7,9 @@ updated: 2026-08-28
 
 # MeshCentral OIDC-only 实施计划
 
+> 历史边界（2026-10-10）：Authentik 已从当前版本移除，本文 Authentik 通过记录保留原版本与日期；对应专属需求/用例已废弃，移除的脚本不再可执行。Casdoor 或调整后的 LLNG fixture 不继承这些通过结论。
+
+
 验收依据是[MeshCentral OIDC-only 验收要求](../../requirements/meshcentral-oidc-only.md)。当前目标是在
 `finance.hlong.wang` 的专用隔离 daemon 上完成 Authentik 与 LLNG 两套真实 OIDC 验收。
 
@@ -15,7 +18,7 @@ updated: 2026-08-28
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M0：服务端强制、fixture 与文档边界 | R-001、R-005—R-007 | 已完成 |
-| M1：Authentik 真实 OIDC | R-002—R-003 | 已完成 |
+| M1：Authentik 真实 OIDC | R-002 | 已完成 |
 | M2：LLNG 真实 OIDC | R-004 | 已完成 |
 
 ## 2. 检查表

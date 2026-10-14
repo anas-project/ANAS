@@ -11,7 +11,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `traefik, db, casdoor` | 5 |
+| `anas_casdoor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `traefik, db, casdoor` | 7 |
 | `anas_casdoor_dirwatch` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-casdoor:3.143.0-r12` | `casdoor` | 3 |
 <!-- generated:compose-topology:end -->
 
@@ -194,3 +194,22 @@ r11 新组合的真实 Immich 验收在进行中，不能将 r10 的正式验收
 Immich 的严格 OIDC 校验会拒绝该 ID token。补丁与原生标准 token 的
 `omitempty` 行为保持一致：未请求时省略，已请求时保留原值。不关闭客户端
 校验，不新增 IAM 参数。
+
+## 应用目录
+
+r12 补齐 OIDC `auth_time`：仅在密码/LDAP 验证成功或 MFA 完成后，将认证时间与
+Casdoor 不可变用户 ID 绑定到服务端会话。已有会话授权和 refresh 保留原认证时间；
+旧会话缺少该记录时需重新登录，不用签发时间代替。自定义 JWT 属性不能覆盖此值。
+ForwardAuth 继续严格校验稳定身份、认证时间和组声明；实机结果见下方应用目录计划。
+
+人员入口在 module.yml 的 applications 声明，包含中英文文案、稳定 URL 来源、分类与权限事实。
+Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
+纯目录 Application 不启用密码登录，disableSignin 为 true，授权类型与回调地址为空。
+Casdoor 初始化仍会补齐客户端字段；列表 API 返回密钥掩码，不能用“客户端字段为空”判断是否可登录。
+实际协议拒绝签发的测试基线与结果记录在[应用目录计划](../../../dev-docs/plans/app-catalog.md)。
+本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
+[目录设计](/architecture/app-catalog-design)。
+
+公开 PKCE 消费方的注册使用 `PUBLIC_CLIENT=true`，不向其交付应用 API secret。原生导入可能生成 Provider 自有 secret；门户不消费它。原生 `tokenFields` 包含 `Groups`，以便 UserInfo 返回当前组。`REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` 创建关闭自动登录与 signin session 的独立客户端，近期认证仍由消费方检查签名 auth_time 和身份一致。
+
+账户 API 格式由 `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1` 声明；门户按绑定契约检查，不按 IAM Module 名分支。它仍依赖现有原生本人 API，不扩展 API 权限。门户以 `no_prior_release` 登记首次发布基线，不宣称存在旧版本升级通过结果。

@@ -1,121 +1,145 @@
 api_version: anas.module-lock/v1
 modules:
-    authentik:
-        version: 2026.5.6
-        revision: 1
-        app_version: 2026.5.6
-        source: bundle:authentik
-        digest: sha256:21c6f22ef89aeb64f299a8e4ab98feb09bd651a11609052764d220b6ae6a7add
+    casdoor:
+        version: 3.143.0
+        revision: 12
+        app_version: 3.143.0
+        lifecycle: developing
+        source: bundle:casdoor
+        digest: sha256:6acbfa4d6bf0f0ff26978e20eb2b043d70ed5542acfbaffa9f7e1244c3c281a9
     collabora:
         version: 26.4.2
-        revision: 1
+        revision: 7
         app_version: 26.04.2.4.1
+        lifecycle: release
         source: bundle:collabora
-        digest: sha256:7625e4d42981f669a3def7d407344c217c594ef44b02cf12ee0437e18d991ba9
-    core:
-        version: 0.0.0
-        revision: 1
-        source: bundle:core
-        digest: sha256:19f7fc389fe0060f31a508acfc6c9028d2840d6f715ce41e9830f08812e8e6ab
+        digest: sha256:f44ec3d3ab5bb734a911795d23dd2bf604b287da3c97f4b138e831f6945704a3
     ddns_updater:
         version: 2.10.0
-        revision: 1
+        revision: 5
         app_version: 2.10.0
+        lifecycle: release
         source: bundle:ddns_updater
-        digest: sha256:e80c8942fe0c8dbdf0fcd39ec607e3fed77f5861a027104de5505603bf486d92
+        digest: sha256:8449fba9f25752dd7045d4be084d20586037a04b9b0e87722095467b4b37ffc6
     eturnal:
         version: 1.12.2
-        revision: 1
+        revision: 7
         app_version: 1.12.2
+        lifecycle: release
         source: bundle:eturnal
-        digest: sha256:f9e5c06d4c988b33c888e238d7d9ddde222d8ca42aab7721b00483d82744a5c0
+        digest: sha256:4e33c8203be4ef87718680c5bbbf6a2c08796239d05bf056d40c93b10ec4c8aa
     freeradius:
         version: 3.2.10
-        revision: 1
+        revision: 5
         app_version: 3.2.10
+        lifecycle: developing
         source: bundle:freeradius
-        digest: sha256:ac2fa1a8130122ffd3464880015c4cfa921ea6c38e383a47550c4b8a67b1eb81
+        digest: sha256:01492ce12b4eadc994a17341bcaa80c566126167c1238254e1d816b5ea4c2531
     lam:
         version: 9.6.0
-        revision: 1
+        revision: 9
         app_version: 9.6.0
+        lifecycle: release
         source: bundle:lam
-        digest: sha256:a3d799f804c481b45692a7a3c54cd93eaad18dbbb3f115a291359c404dcd1dec
+        digest: sha256:d8bf76243ac599666db5dcd1c6951021319faa190a23bec6e54f9bc522173641
     lego:
         version: 5.3.1
-        revision: 1
+        revision: 6
         app_version: 5.3.1
+        lifecycle: release
         source: bundle:lego
-        digest: sha256:77f49259466ebd731eaef88152bc3bdc7a6db56710c872266da43f8b78e57294
+        digest: sha256:108b6684ac7a8c3616fa36598a67343245bcb20bd5c682719181b75c7c459dc4
     mariadb:
         version: 12.3.2
-        revision: 1
+        revision: 5
         app_version: 12.3.2
+        lifecycle: release
         source: bundle:mariadb
-        digest: sha256:e831fbdac07f5021cd65bfe47107899139034d3e3519752c9e76a410d2c70910
+        digest: sha256:eb28710449725dbcf116d89e68c4bab27b3bf875598b25466a1eaa9dc0cbf704
     meshcentral:
         version: 1.2.4
-        revision: 1
+        revision: 9
         app_version: 1.2.4
+        lifecycle: release
         source: bundle:meshcentral
-        digest: sha256:5e7c64ac9206fec9f95aa81f80cab3b81dee9dae77cebb17f34f607d7c6705fa
+        digest: sha256:098cc7730740e97be57c06a7ec880d72852dcbbe848869abf94c577c5f2d1a7c
     netbird:
         version: 0.76.1
-        revision: 1
+        revision: 6
         app_version: 0.76.1
+        lifecycle: developing
         source: bundle:netbird
-        digest: sha256:f5cff538068defe15cf714372488443f36d61dc598a5f4d308753d57dd9be2e1
+        digest: sha256:7fa7a8bb647f4a35d1983ecff874a482cec7509b8b50fb3354766819f1f6172f
     nextcloud:
         version: 34.0.2
-        revision: 1
+        revision: 12
         app_version: 34.0.2
+        lifecycle: developing
         source: bundle:nextcloud
-        digest: sha256:8e71df4610cab6ad44b8259e9f2ab939418bbff75ad2d12cf843b8453c70393b
+        digest: sha256:396f81d4c11f973225d2a367aab0e8b372554ce2f1469e27c8b544a87cf40573
     oauth2_proxy:
         version: 7.15.3
-        revision: 1
+        revision: 6
         app_version: 7.15.3
+        lifecycle: release
         source: bundle:oauth2_proxy
-        digest: sha256:3bf711f2817820bd0fb35abf5e8988db159a603eecdd6613bb9128180b7f99a5
+        digest: sha256:6da0922947369cb776ce0a33d30d7228068f36b0104a50bffa78d4ba12c505cb
     postgres:
         version: 18.4.0
-        revision: 1
+        revision: 5
         app_version: 18.4.0
+        lifecycle: developing
         source: bundle:postgres
-        digest: sha256:d66ed2c78fc02d9341207b10ab1b74afb13780c74d58f29af552d1e89cf476e6
+        digest: sha256:183116eab6d10ed3b7763ccd4cc6cde2d88b0170a56ddd415e6b12acc6fc9fd8
     samba_dc:
         version: 4.23.6
-        revision: 1
+        revision: 13
         app_version: 4.23.6
+        lifecycle: release
         source: bundle:samba_dc
-        digest: sha256:62c8dfb31da109e00cca62703836f8ea0a8d20f359ec1997b37b9b8890e89e36
+        digest: sha256:f8813103680e33f1cfbcb198c1f89a4d5292aaaee7129911551943488a5a55af
     samba_fs:
         version: 4.23.6
-        revision: 1
+        revision: 7
         app_version: 4.23.6
+        lifecycle: release
         source: bundle:samba_fs
-        digest: sha256:f9df496e62dbd51e4de10b84efa9cdaf61858817736ab2e1991373129418b02f
+        digest: sha256:1e817e8f7cb79f31c271d3d931e4342ab5df57b4ee02393db411a1561d2d2bbc
     traefik:
         version: 3.7.10
-        revision: 1
+        revision: 8
         app_version: 3.7.10
+        lifecycle: release
         source: bundle:traefik
-        digest: sha256:a1fe0259f455d7b80e9d721d5c85d5747e8e747aff74b45000707b28df041548
+        digest: sha256:b2ed57a396e1bee6654da47f468bdb69d9dd021518408e9365aca62df9620084
+contracts:
+    relational_database:
+        version: 1.0.0
+        digest: sha256:b0ed967a15c6251876c4a6796c6e509e7e041298958099ad5d039c36114fd4c6
 iam:
-    provider: authentik
+    provider: casdoor
 bindings:
-    authentik:
+    casdoor:
         relational_database: postgres
+        relational_database.interface: postgres
     ddns_updater:
         forward_auth: oauth2_proxy
         forward_auth.interface: http
+    meshcentral:
+        iam: casdoor
+        iam.interface: oidc
+        relational_database: postgres
+        relational_database.interface: postgres
     netbird:
-        iam: authentik
+        iam: casdoor
         iam.interface: oidc
     nextcloud:
-        iam: authentik
-        iam.interface: saml
-        relational_database: postgres
-    oauth2_proxy:
-        iam: authentik
+        iam: casdoor
         iam.interface: oidc
+        relational_database: postgres
+        relational_database.interface: postgres
+    oauth2_proxy:
+        iam: casdoor
+        iam.interface: oidc
+snapshot:
+    backend: none

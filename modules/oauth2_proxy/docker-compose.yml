@@ -36,8 +36,8 @@ services:
       # than from the address it was reached on. Required in this arrangement.
       - --reverse-proxy=true
       # The image bootstrap resolves TRAEFIK_HOSTNAME at container start and
-      # appends one exact --trusted-proxy-ip address. This keeps redirects and
-      # audit context correct without trusting every RFC1918 container.
+      # trusts the loopback bridge and the exact Traefik peer. Both outer
+      # bridges reject other TCP callers, except local /ping readiness.
       # oauth2-proxy itself is loopback-only. The bootstrap exposes two
       # deliberately different bridges: 4180 for browser/callback traffic and
       # 4182 for Traefik ForwardAuth identity assertions.
@@ -58,10 +58,14 @@ services:
       - --cookie-domain=.${BASE_DOMAIN}
       # Without this, a redirect back to the service the user actually asked
       # for is treated as an open-redirect attempt and refused.
-      - --whitelist-domain=.${BASE_DOMAIN}
+      - --whitelist-domain=.${BASE_DOMAIN}:${TRAEFIK_BASE_PORT}
       - --cookie-secure=true
       - --email-domain=*
       - --scope=openid profile email
+      # All three managed IAM adapters release the requested claims in the
+      # signed ID token. The identity bridge requires those token claims;
+      # optional profile lookups must not become another login dependency.
+      - --skip-claims-from-profile-url=true
       - --skip-provider-button=true
       - --set-xauthrequest=true
       # The internal bridge consumes the verified ID token from this response

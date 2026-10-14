@@ -9,7 +9,7 @@ ISSUER_MARK="$OUT/.issuer"
 
 # lego writes every artifact 0600. The leaf certificate and the issuer chain
 # are public material, and the consumers that verify TLS do not run as root --
-# the anchor worker is nobody, oauth2_proxy and authentik are their own users.
+# the directory anchor worker and authentication gateways use unprivileged users.
 # Left at 0600 they cannot read the chain, and the failure surfaces far from
 # here as "certificate signed by unknown authority" or an LDAPS bind that
 # reports Permission denied. Only the private key stays owner-only. ca.sh

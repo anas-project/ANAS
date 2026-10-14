@@ -30,7 +30,7 @@ Provider 与 Module 两侧必须同时通过，组合能力才能标为双向登
    邮件 Module 在邮箱创建、改址、迁移和停用后负责同步目录属性。Provider 不得从 UPN、
    `sAMAccountName` 或基础域名臆造 email claim。
 6. **用户不得自助修改 `mail`、`sAMAccountName`、`displayName` 或 anchor。** 保存目录影子记录的
-   Provider 必须关闭本地 profile 上这些字段的自助编辑（Casdoor 的账号项 modify 规则、authentik 的
+   Provider 必须关闭本地 profile 上这些字段的自助编辑（Casdoor 的账号项 modify 规则；历史 Authentik 的
    user settings flow 同理），它们只能由目录同步产生。理由不是洁癖：`mail` 与 `sAMAccountName` 是
    下游应用认领既有账号的依据——任何按邮箱或用户名绑定的应用都算，Forgejo 的 `ACCOUNT_LINKING`
    一旦不是 `disabled` 就是一例——本地可改的邮箱等于把"我是谁"的决定权交给了用户自己，而且改动只落在 IAM 本地、不回写 AD（写回凭据 `svc_ldap` 是只读），
@@ -74,7 +74,6 @@ ACL 决定。`APP_all` 和 `APP_<应用名>` 始终只授予访问权，绝不�
 
 | Module/入口 | `Admins` 的应用内含义 | 撤销方式 | 当前状态 |
 | --- | --- | --- | --- |
-| Authentik | `is_superuser=true` | LDAP Source 同步后收敛 | 已实现 |
 | LLNG Manager | 可进入并管理全部 LLNG 配置 | 每次 Portal 授权重新判断目录组 | 已实现 |
 | Nextcloud | LDAP administrative group，对应 Nextcloud `admin` 权限 | LDAP 组动态映射，不写本地粘滞成员 | 已实现 |
 | MeshCentral | `siteadmin=0xffffffff` | OIDC 组同步并启用 `revokeAdmin` | 已实现 |
@@ -94,7 +93,7 @@ reconcile。Provider 必须用独立持久游标消费事件，并在有界时�
 Sync；周期 LDAP 全量同步仍必须保留为一致性兜底，Samba AD 仍是唯一事实来源。
 
 应用目录的字段、非 IAM 入口、共享图标和权限过滤以[应用目录要求](app-catalog.md)为准。
-Casdoor 是新目录首要目标，Authentik 逐步弃用；目录条目与登录客户端分别声明，
+Casdoor 是新目录首要目标，2026-10-10 已按用户要求移除 Authentik；目录条目与登录客户端分别声明，
 不能要求每个本地登录或外部入口都先成为 OIDC/SAML client。该新版目录尚未实现。
 
 Runner 拥有 Provider 无关的应用目录与 IAM 注册事实，包括应用 ID、协议、URL、分类、
@@ -139,7 +138,7 @@ Adapter 必须幂等：重复执行会收敛到声明状态；修改 redirect UR
 
 ## 6. 强制 E2E 验收矩阵
 
-Authentik、LLNG 和任何新增 Provider 都必须在相互独立的部署中运行同一套语义测试：
+Casdoor、LLNG 和任何新增 Provider 都必须在相互独立的部署中运行同一套语义测试：
 
 | Samba AD 条件 | 期望 |
 | --- | --- |

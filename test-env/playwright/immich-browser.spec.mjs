@@ -6,26 +6,20 @@ const username = process.env.ANAS_TEST_USERNAME;
 const password = process.env.ANAS_TEST_PASSWORD;
 const iam = new URL(process.env.ANAS_TEST_IAM_URL || 'https://auth.invalid');
 const app = new URL(process.env.ANAS_TEST_APP_URL || 'https://photos.invalid');
-const provider = process.env.ANAS_TEST_IAM_PROVIDER || 'authentik';
+const provider = process.env.ANAS_TEST_IAM_PROVIDER || 'casdoor';
 const originals = [process.env.ANAS_TEST_PHOTO, process.env.ANAS_TEST_VIDEO];
 const checksum = (value) => createHash('sha256').update(value).digest('hex');
 const phase = (name) => appendFileSync(`${process.env.ANAS_TEST_REPORT_FILE}.phases.log`, `${new Date().toISOString()} ${name}\n`, { mode: 0o600 });
 
 function loginUsername(page) {
-  return provider === 'casdoor' ? page.locator('form#normal_login input#input') : page.locator('ak-flow-card input[name="uidField"]').last();
+  return page.locator('form#normal_login input#input');
 }
 
 async function signIn(page) {
   await expect(loginUsername(page)).toBeVisible();
   await loginUsername(page).fill(username);
-  if (provider === 'casdoor') {
-    await page.locator('#normal_login_password').fill(password);
-    await page.locator('form#normal_login button[type="submit"]').click();
-    return;
-  }
-  await page.locator('ak-flow-card:has(input[name="uidField"]) button[type="submit"]').last().click();
-  await page.locator('ak-flow-card input[name="password"]').last().fill(password);
-  await page.locator('ak-flow-card:has(input[name="password"]) button[type="submit"]').last().click();
+  await page.locator('#normal_login_password').fill(password);
+  await page.locator('form#normal_login button[type="submit"]').click();
 }
 
 async function acknowledgeVersionNotice(page) {
@@ -37,7 +31,7 @@ async function acknowledgeVersionNotice(page) {
 }
 
 test('native OIDC browser login, onboarding, photo/video upload, album, RP logout and IAM-initiated logout', async ({ page, context }) => {
-  if (!['authentik', 'casdoor'].includes(provider) || !['admin', 'user'].includes(process.env.ANAS_TEST_ROLE) || !username || !password || !process.env.ANAS_TEST_REPORT_FILE || originals.some((path) => !path) || iam.protocol !== 'https:' || iam.port !== app.port || iam.hostname !== `auth.${app.hostname.slice('photos.'.length)}`) {
+  if (provider !== 'casdoor' || !['admin', 'user'].includes(process.env.ANAS_TEST_ROLE) || !username || !password || !process.env.ANAS_TEST_REPORT_FILE || originals.some((path) => !path) || iam.protocol !== 'https:' || iam.port !== app.port || iam.hostname !== `auth.${app.hostname.slice('photos.'.length)}`) {
     throw new Error('Complete isolated AD/IAM/media fixture inputs are required');
   }
   phase('login-page');

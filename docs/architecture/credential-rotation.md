@@ -418,7 +418,7 @@ Module 协调器实际恢复。
 - `ensure` 继续负责创建数据库和账号，新增的 reconcile 合同负责 authority、候选验证和幂等
   密码变化；二者不能仅因都执行 `ALTER USER/ROLE` 就混为同一个语义；
 - MariaDB 必须先解决 root 的独立本地管理通道和多个 root principal/auth plugin 的识别；
-- Provider 验证成功后，使用 candidate 投影启动 Nextcloud、LLNG、MeshCentral、Authentik 等消费者。
+- Provider 验证成功后，使用 candidate 投影启动 Nextcloud、LLNG、MeshCentral、Casdoor 等消费者。
 
 ### 8.2 Samba DC
 
@@ -428,7 +428,7 @@ Samba Module 在下游停止时协调五个独立账号：
 | --- | --- |
 | `samba_dc.admin_password` | Samba FS 等日常域管理任务 |
 | `samba_dc.ldap_bind_password` | LAM、MeshCentral |
-| `samba_dc.password_bind_password` | Nextcloud、LLNG、Authentik |
+| `samba_dc.password_bind_password` | Nextcloud、LLNG |
 | `samba_dc.anchor_bind_password` | Anchor Worker |
 | `samba_dc.administrator_password` | DC 恢复、结构和控制操作 |
 
@@ -530,7 +530,7 @@ schema/ABI/ready-barrier 主干。Eturnal 已获得 deployment 驱动的启动�
 
 1. 五个账号的独立声明和控制图；
 2. Samba 本地 probe/reconcile/verify；
-3. LAM、MeshCentral、Nextcloud、LLNG、Authentik、Samba FS、Anchor Worker 启动验证；
+3. LAM、MeshCentral、Nextcloud、LLNG、Casdoor、Samba FS、Anchor Worker 启动验证；
 4. 密码历史、锁定、进程崩溃和 previous deployment 恢复测试。
 
 ### 阶段 E：其余凭据类型

@@ -39,9 +39,6 @@ func TestOIDCRegistrationAndStableSecret(t *testing.T) {
 	if strings.Contains(e[clientPrefix+"REDIRECT_URIS"], "/auth/login,https://photos.nas.test:443/user-settings,app.immich:///oauth-callback") == false {
 		t.Fatal("missing web/mobile redirects")
 	}
-	if e["APPS_LIST"] != "immich" {
-		t.Fatal("launcher registration is not idempotent")
-	}
 }
 
 func TestManagedConfigMapsDatabaseAndOnlyOIDC(t *testing.T) {

@@ -23,7 +23,6 @@ requirement_scope:
   - VIK-R-017
   - VIK-R-018
   - VIK-R-019
-  - VIK-R-020
   - VIK-R-021
   - VIK-R-022
   - VIK-R-023
@@ -56,7 +55,7 @@ cases:
       - VIK-R-016
       - VIK-R-028
     requirement_digest: sha256:4e6ab7db4302d264c32e0ecc479254154a12cc6e58c306a9bb5a9ea8af71a809
-    implementation_digest: sha256:bf278c2fc7265dc0a77fe83e5621a7b57b324092e79675b1a8402bb6776aaeb8
+    implementation_digest: sha256:7765d277a27fcefdfe63a4ba49a9a50fc6f2ed786b3ffc894e07ff497c909dd9
     fixture: Vikunja Module manifest、Hook 输入和入口临时目录
     capabilities: [go, shell, module-manifest]
     preconditions: []
@@ -184,48 +183,16 @@ cases:
     timeout: 1h
     sensitive_data: 报告只记录对象计数和摘要
   - id: VIK-T-005
-    title: Authentik OIDC 五账号浏览器矩阵
-    status: active
-    level: e2e
-    requirements: [VIK-R-020]
-    requirement_digest: sha256:deea37b29ff56047ad3576787db389708738067935fc721792000e3d07957d05
-    implementation_digest: sha256:6536fd7349c46d4fab59d4f2341989dbaf5c2653e22d6097eb7587ef51707574
-    fixture: Samba AD、Authentik、PostgreSQL、Vikunja 与 Chromium
-    capabilities: [docker, authentik, playwright, chromium]
-    preconditions: [一次性目录账号可创建且浏览器通过测试服务器隧道访问]
-    steps:
-      - 创建五类一次性目录账号并执行 Authentik 授权码矩阵
-      - 用五个隔离 Chromium context 验证允许、拒绝和 JIT
-    implementation:
-      files:
-        - test-env/scripts/server-vikunja-oidc-e2e.sh
-        - test-env/playwright/vikunja-authentik-matrix-browser.spec.mjs
-      commands:
-        - bash test-env/scripts/server-vikunja-oidc-e2e.sh authentik
-        - npm run e2e:vikunja-authentik-matrix-browser
-    assertions:
-      - 直接组、APP_all 和管理员账号允许并完成 JIT
-      - 无组与禁用账号拒绝且不创建本地用户
-      - 本地登录和开放注册保持关闭
-    oracle:
-      sources: [ui, api, database]
-    negative_cases: [无应用组和禁用目录账号分别验证授权拒绝]
-    validity:
-      method: counterexample
-      commands:
-        - bash test-env/scripts/server-vikunja-oidc-e2e.sh authentik
-        - npm run e2e:vikunja-authentik-matrix-browser
-      evidence: 两类无授权账号真实完成浏览器流程并证明拒绝且数据库没有 JIT 用户
-    cleanup: [删除五个一次性目录账号、浏览器 session 和脱敏报告之外的临时文件]
-    timeout: 30m
-    sensitive_data: 使用一次性账号；截图、trace、video 关闭；报告 mode 0600
+    title: Authentik 专属用例（2026-10-10 随模块移除退役）
+    status: retired
+    replaced_by: [VIK-T-006]
   - id: VIK-T-006
     title: LLNG OIDC 五账号浏览器矩阵
     status: active
     level: e2e
     requirements: [VIK-R-021]
     requirement_digest: sha256:1d00bb4f40bb6d3f384cfb4431526261f53a4366ff600f4e6426927477c61309
-    implementation_digest: sha256:36be9e4bdaca703ec7e4fe0ef4f341cb1a2e1ba1f26e6483cfdfd8e33b039ede
+    implementation_digest: sha256:1c2bd0e3c3cd9ab78cacd2ce45ff477d358f4bcb56769eacb2a8231930b16408
     fixture: Samba AD、LLNG、MariaDB、Vikunja 与 Chromium
     capabilities: [docker, llng, playwright, chromium]
     preconditions: [一次性目录账号可创建且 LLNG fixture 独立运行]
@@ -260,7 +227,7 @@ cases:
     level: e2e
     requirements: [VIK-R-022]
     requirement_digest: sha256:4f63d65543e6c0d7fe4603c90337135df424db79c384f1a4fd356f4cdf2fe785
-    implementation_digest: sha256:cfc148b4d615c936554afc80e8a32161b166c23ca3924e42251207d29689ade6
+    implementation_digest: sha256:00962499669458a4d71ba082bfddd88f6fad740b3dcf25c80efe8760b0e8a74e
     fixture: Authentik、Vikunja 与两个隔离 Chromium context
     capabilities: [docker, authentik, playwright, chromium]
     preconditions: [一次性账号已能通过 OIDC 登录]

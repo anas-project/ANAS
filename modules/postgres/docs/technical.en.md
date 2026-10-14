@@ -166,3 +166,15 @@ still require acceptance. This evidence does not establish real-host business ac
 or arbitrary other consumers.
 
 Before a target build, Runner retains the current PostgreSQL workspace’s actual images under local references scoped to the workspace and service. Docker’s containerd image store may stop resolving an old image ID after a build replaces its tag. These fixed service references are updated before the next build; they are never pushed and do not alter other deployment tags. Recovery points still export an untagged archive by immutable ID and capture data only after writers stop.
+
+## Application catalog
+
+Adminer 5.5 rejects underscores in server names. PostgreSQL publishes the `postgres` alias on
+its private database network, and Adminer prefills that address. Users must still provide
+their separate database account and password.
+
+Personnel entry metadata is declared in module.yml applications, including zh-CN/en text, a stable URL
+source, categories and permission facts. Runner generates seven PNG sizes and an immutable deployment
+catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
+the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
+[catalog design](/architecture/app-catalog-design).

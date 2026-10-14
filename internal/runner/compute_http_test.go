@@ -153,7 +153,7 @@ func TestActivationPrunesRoutesOfChangedGrants(t *testing.T) {
 	changed.Resources = []deploymentResource{unchanged.Resources[0]}
 	changed.Resources[0].ComputeIngress = f.grant.Clone()
 	changed.Resources[0].ComputeIngress.Policy.Auth = "forward_auth"
-	changed.Resources[0].ComputeIngress.ForwardAuth = &computeingress.ForwardAuth{Provider: "authentik", Middleware: "authentik-forward-auth@file"}
+	changed.Resources[0].ComputeIngress.ForwardAuth = &computeingress.ForwardAuth{Provider: "gateway", Middleware: "gateway-forward-auth@file"}
 	if err := pruneComputeHTTPRoutes(f.base, current, &changed); err != nil || len(f.routes(t)) != 0 {
 		t.Fatalf("a changed grant kept its route: %v %v", err, f.routes(t))
 	}
