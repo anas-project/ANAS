@@ -1,16 +1,16 @@
 ---
 doc_type: plan
-status: in_progress
+status: done
 created: 2026-10-11
-updated: 2026-10-14
+updated: 2026-10-15
 ---
 
 # 独立用户门户实施计划
 
-**状态：审查修复已实现；计划重新打开，修复后正式镜像的 finance 复验待执行。** 历史 41/41、95/95 通过基线保留在 §9。
-规范来源为 [门户要求](../requirements/user-portal.md) PORTAL-R-001—R-041，
-实现机制见 [独立用户门户设计](../../../../docs/architecture/user-portal-design.md)。
-原应用目录 APPCAT-R-001—R-039 仍归 [应用目录计划](../../../../dev-docs/plans/app-catalog.md)；
+**状态：指定提交加共享目录权限修复的正式制品已完成 ln 全套复验，41/41 判据通过，见 §11。** 历史基线保留。
+规范来源为 [门户要求](../../requirements/user-portal.md) PORTAL-R-001—R-041，
+实现机制见 [独立用户门户设计](../../../../../docs/architecture/user-portal-design.md)。
+原应用目录 APPCAT-R-001—R-039 仍归 [应用目录计划](../../../../../dev-docs/plans/app-catalog.md)；
 共享交付时两份矩阵分别记录结果，不重复归属。
 
 ## 1. 确认范围与基线
@@ -34,9 +34,9 @@ updated: 2026-10-14
 
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
-| M1：登录、授权目录与本人资料 | R-001—R-005、R-007—R-010、R-013、R-041 | 历史完成；审查后复验见 §10 |
-| M2：本人改密与写入基础 | R-016、R-018—R-020、R-025—R-027、R-032—R-039 | 历史完成；审查后复验见 §10 |
-| M3：委派用户与分组管理 | R-006、R-011、R-012、R-014、R-015、R-017、R-021—R-024、R-028—R-031、R-040 | 历史完成；审查后复验见 §10 |
+| M1：登录、授权目录与本人资料 | R-001—R-005、R-007—R-010、R-013、R-041 | 已完成；最终复验见 §11 |
+| M2：本人改密与写入基础 | R-016、R-018—R-020、R-025—R-027、R-032—R-039 | 已完成；最终复验见 §11 |
+| M3：委派用户与分组管理 | R-006、R-011、R-012、R-014、R-015、R-017、R-021—R-024、R-028—R-031、R-040 | 已完成；最终复验见 §11 |
 
 ### M1：能力实验、接线和只读入口
 
@@ -129,58 +129,58 @@ RFC Editor 的 RFC 4528 地址首次请求返回 429，改从 IETF Datatracker �
 
 ### 4.2 e2e 执行记录
 
-入口见 test-env/cases/user-portal/cases.yml；具体断言和源码/镜像基线见 §8。
+入口见 test-env/cases/user-portal/cases.yml；具体断言和最终源码/镜像基线见 §11。
 运行基线分开记录，不能把中途版本的通过自动复制给后来修改的制品。
 
 | 需求 ID | 脚本 | 环境 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-001 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-002 | T-001 unit/contract, T-002 browser, T-004 boundary | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-003 | T-001 unit/contract, T-002 browser, T-004 boundary | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-006 | T-001 unit/contract, T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-007 | T-001 unit/contract, T-002 browser, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-008 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-010 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-011 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-014 | T-001 unit/contract, T-002 browser, T-004 boundary | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-015 | T-001 unit/contract, T-002 browser, T-004 boundary | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-016 | T-001 unit/contract, T-005 native LDAP | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-017 | T-002 browser, T-005 native LDAP | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-018 | T-001 unit/contract, T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-019 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-020 | T-002 browser, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-021 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-022 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-023 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-024 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-026 | T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-027 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-028 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-029 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-030 | T-002 browser, T-004 boundary | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-031 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-033 | T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-035 | T-001 unit/contract, T-003 audit contract, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-036 | T-003 audit contract, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-037 | T-001 unit/contract, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-038 | T-001 unit/contract, T-003 faults | finance 正式镜像，§9 | 2026-10-14 | 通过 |
-| R-041 | T-001 unit/contract, T-002 browser | finance 正式镜像，§9 | 2026-10-14 | 通过 |
+| R-001 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-002 | T-001 unit/contract, T-002 browser, T-004 boundary | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-003 | T-001 unit/contract, T-002 browser, T-004 boundary | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-006 | T-001 unit/contract, T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-007 | T-001 unit/contract, T-002 browser, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-008 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-010 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-011 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-014 | T-001 unit/contract, T-002 browser, T-004 boundary | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-015 | T-001 unit/contract, T-002 browser, T-004 boundary | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-016 | T-001 unit/contract, T-005 native LDAP | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-017 | T-002 browser, T-005 native LDAP | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-018 | T-001 unit/contract, T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-019 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-020 | T-002 browser, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-021 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-022 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-023 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-024 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-026 | T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-027 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-028 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-029 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-030 | T-002 browser, T-004 boundary | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-031 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-033 | T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-035 | T-001 unit/contract, T-003 audit contract, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-036 | T-003 audit contract, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-037 | T-001 unit/contract, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-038 | T-001 unit/contract, T-003 faults | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
+| R-041 | T-001 unit/contract, T-002 browser | ln 正式镜像（权限修复），§11 | 2026-10-15 | 通过 |
 
 
 ### 4.3 单元与契约验收记录
 
 | 需求 ID | 验证入口 | 证据基线 | 日期 | 结果 |
 | --- | --- | --- | --- | --- |
-| R-004 | T-001 unit/contract, T-002 browser | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-005 | T-001 unit/contract, T-002 browser | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-009 | T-002 browser | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-012 | T-001 unit/contract | 本机 race 单元；运行源码一致，§9 | 2026-10-14 | 通过 |
-| R-013 | T-001 unit/contract, T-002 browser | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-025 | T-001 unit/contract, T-002 browser, T-003 audit contract | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-032 | T-002 browser, T-003 audit contract | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-034 | T-002 browser, T-003 audit contract | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-039 | T-002 browser, T-003 faults | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
-| R-040 | T-001 unit/contract, T-002 browser | 本机单元与 finance 契约，§9 | 2026-10-14 | 通过 |
+| R-004 | T-001 unit/contract, T-002 browser | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-005 | T-001 unit/contract, T-002 browser | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-009 | T-002 browser | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-012 | T-001 unit/contract | 本机 race 单元；最终源码，§11 | 2026-10-15 | 通过 |
+| R-013 | T-001 unit/contract, T-002 browser | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-025 | T-001 unit/contract, T-002 browser, T-003 audit contract | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-032 | T-002 browser, T-003 audit contract | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-034 | T-002 browser, T-003 audit contract | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-039 | T-002 browser, T-003 faults | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
+| R-040 | T-001 unit/contract, T-002 browser | 本机单元与 ln 契约，§11 | 2026-10-15 | 通过 |
 
 ## 5. 首次设计检查（2026-10-11；保留历史基线）
 
@@ -610,3 +610,132 @@ modulepackage/gen-module-docs，共享构建上下文、用例/需求/状态/计
 完整 Runner 在 macOS 上仍有 Linux 受管临时存储限制失败：TestCLIApplyRetriesFailedFrozenMaintenanceCandidateAfterHookFailure、TestCLIApplyCannotReaddHistoricalPostgresOverRetainedData（5 分支）、TestCLIApplyAllowsFirstPostgresWithNoPriorPostgresRecords（2 分支）。本轮以父提交 ad1e0b98 单独复核这三个入口及全部分支，确认同样因 local Linux filesystem 要求失败；不将选定测试通过宣称为完整 Runner 通过。提交快照保存在 /tmp/anas-portal-review-20261014，原始测试输出只在会话/临时环境，不作为共享耐久验收证据。
 
 源码空白检查通过；保留的 0008 补丁通过 git apply --numstat 的统一差异语法解析。补丁上下文的首空格属于差异格式，未把它计为 Go 源码缩进错误。
+
+## 11. 指定提交的正式镜像复验（2026-10-14—15）
+
+以下按执行顺序保留构建、问题发现和重试记录；最终通过基线见 §11.3。
+
+用户指定源码提交 `84f377cca2c468080d0b58efd12c42c07f2282f3`。运行输入来自该提交的干净导出，
+保留无关工作树改动；仅验收脚本补充真实 UPN 别名和 §10 两项回归，不修改门户运行源码。
+本轮独立环境为 `anas-user-portal-e2e-test-20261014-cbc88ccc`，
+路径 `/home/whl/anas-user-portal-e2e-test-20261014-cbc88ccc`。
+finance 的原 SSH 入口传输间歇中断；用户提供 `ln.hlong.wang:2200`，已确认它是另一台主机，
+只用作 SSH 跳板，没有修改其现有容器。测试继续在 finance（hostname `fengoffice`）的私有 daemon/namespace 中。
+
+214 项公开构建/测试输入已逐文件校验。正式 Dockerfile 的第一次 Go 镜像拉取遇到镜像站 502，
+重试构建成功；Linux/amd64 镜像 ID 为
+`sha256:052ad457f0c44588b222a2165104277888c81c345a051f8a560ed1831b7d6503`。
+该结果目前只证明正式镜像构建成功。实际容器部署、全部 PORTAL-R-001—R-041 的运行复验、
+§10 回归、审计/目录边界、最终制品核对、证据封存和环境清理尚待完成。
+不把 §9 历史通过结果转移到本次制品。
+
+### 11.1 验收主机调整与准备
+
+用户随后明确允许把全套验收改到 ln 的独立环境，并要求不修改既有容器。
+ln（hostname `liannong`）根盘仅约 341 MiB 可用，容量分析另见[只读评估](../../../../../dev-docs/reviews/2026-10-14-ln-root-disk.md)；
+没有清理既有数据、镜像或容器。本轮新目录位于
+`/data/anas-user-portal-e2e-test-20261014-f2ac813b`，独立绑定到同名 `/home/whl/` 路径，
+用于兼容当前测试夹具的路径校验；Docker/containerd、工作区和镜像缓存都在该目录内。
+namespace、socket 和容器前缀分别为同名 run、`/run/anas-user-portal-e2e-test-20261014-f2ac813b.sock`、`anas_puf2ac813b_`。
+
+指定提交的干净源码、CLI/7 个 Hook、Casdoor server/helper 已成功传输并核对摘要。
+Casdoor server/helper 与 finance 使用的既有二进制逐字节相同，SHA-256 分别为
+`95c90c397a944e3688df559b69ef6c691d2872925b642df1d91563142313ca6b`、
+`4a6d3a3b6990a797326003fe6d632dcfe27ce037ee7edffb852502c9d4ba90ff`；仍为既有 0001—0008 补丁，没有新增 Casdoor 补丁。
+正式门户 Dockerfile 正在 ln 重新构建，不能据 finance 的构建摘要宣称 ln 制品相同。
+
+浏览器依赖的初次抽取遗漏 `playwright/node_modules/fsevents@2.3.2`，npm ci 明确失败；
+已补齐仓库锁文件中的该条目，不修改产品依赖版本或忽略完整性校验。后续安装和实际验收尚待通过。
+
+### 11.2 复验中发现的问题（2026-10-15）
+
+ln 的正式 Dockerfile 首次拉取 Alpine 遇到镜像站 502，重试构建成功，镜像 ID
+`sha256:05e006b956198a91818778ca250c955978b74fa3ac463660c5d59adbc1e9cbdd`。
+锁文件补齐后 npm ci 通过。准备脚本的 PostgreSQL 覆盖镜像漏了维护工具，且设置 ENTRYPOINT 时
+没有保留 CMD，容器退出 127/后续检查退出 137；改为当前 PostgreSQL Dockerfile 的完整构建，
+使用校验为 `69f4019389af05dc1c9548deb8628e62878e6e207c03907f2b8af2016472cdaa` 的固定 pgvector 0.8.2 源码，
+仅在隔离构建上下文将下载输入替换为已校验本地 COPY、APK 下载站改为 HTTPS 镜像。
+完整依赖镜像 `sha256:b9a36115b71be2469f610e6204bad242fd349bb5b7043b97c4380aa70c91d0c0`。
+配置导入脚本误用了 apply 的 `--module-root` 参数，已按 config import 接口改为 `--root`。
+以上为准备脚本问题，不作为产品源码缺陷或通过判据。
+
+实际启动发现现有 PORTAL-R-001/R-004 的缺口：CLI 运行在 umask 0077 时，应用目录生成权限被裁窄，
+封存后的 catalog.json 为 0400、目录 0700，降权到 UID 65532 的门户无法读取，启动明确失败。
+修复 `internal/appcatalog.WriteBundle`：为只读挂载显式设置目录 0755、JSON/图标 0644，再由既有封存移除写位；
+私有 deployment 父目录与认证 API 边界不变，不新增 Casdoor 补丁或服务。
+新增 Unix 权限回归在干净 84f377cc 源码上失败，在修复源码上通过；关联 appcatalog/门户/Casdoor Hook race 通过。
+制品基线因此改为 **84f377cc + 本次共享目录权限修复**，原 84f377cc 构建成功不等于该缺口已通过。
+修复后的正式重建与全套验收仍待执行。
+
+finance 的本轮独立 Docker/containerd、namespace 及镜像缓存已移除；两个既有测试 namespace 和
+10 个业务容器 ID/名称/镜像/端口保持一致。正式镜像已保留在
+`/home/whl/anas-user-portal-e2e-test-20261014-cbc88ccc/evidence/formal-user-portal-image.tar.gz`，
+7571962 bytes，SHA-256 `24fd61fa9660b2a4b83ab07b6c1c385bc808ac5af672f6d183fcefb87e8cd2a1`，
+二进制 SHA-256 `eb0ed299467590d2768c0018fd864b1ac798d8e06187df9e02a37e5dd057d1c3`。
+该镜像仍属修复前，仅记录构建与清理，不计作运行验收。
+214 项公开输入封存在同目录 `verified-public-source.tar.gz`，SHA-256
+`31da92c21cb3831c7f5f725990b270c6fd7b50987db1b54e15e23df5d6f705d8`。
+
+### 11.3 最终验收与清理（2026-10-15）
+
+用户确认将验收主机改到 ln 后，最终源码为 `84f377cca2c468080d0b58efd12c42c07f2282f3`
+加 `internal/appcatalog/icons.go` 的显式目录制品权限修复；该文件 SHA-256
+`8da435a1f2990a004d4bfa65a1f130df3aefae93c84960ecb16ecf8f1cc76066`。
+未带入 AI Agent、Incus 或其他无关工作树改动。四项夹具脚本变更分别补实际 UPN 别名、
+限流/审计回归和按 run.json 选择端口；没有以修改运行源码或跳过断言来处理夹具错误。
+浏览器初次误用 finance 端口，连接拒绝且执行 0 项；纠正后从未变更的初始夹具开始全套重跑。
+
+最终正式 Dockerfile 的 Linux/amd64 镜像为
+`sha256:5a8b10a483026de35f0d8d5db44cb7df14f36f1a3bc8b88e9b8f95072c871119`，
+实际容器 Image 一致；二进制 SHA-256
+`bdf40136077908094d7b75011fa933f0dee8bfeeeff726128aa1a43c9249b333`。
+Go/Alpine 基础摘要分别为
+`sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade`、
+`sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1`。
+214 项公开构建/测试输入在最终运行环境逐文件校验。
+服务健康，PID 1 的 UID/GID 均为 65532，rootfs 与目录挂载只读，目录 0755、catalog.json 0444。
+委派规则为 1 项，测试近期认证窗口 60 秒；生产默认 300 秒。
+仍使用同一既有 Casdoor server/helper 及 0001—0008 补丁，本次新增 Casdoor 补丁为 0。
+
+| 验证 | 结果 |
+| --- | --- |
+| Chromium 151.0.7922.34 主要浏览器流程 | 50/50 |
+| 故障回归（含稳定身份别名限流隐私、无效成员请求 Actor） | 28/28 |
+| 实际 LDAP 适配器/最小权限与 TLS 边界 | 13/13 |
+| 身份/DN/组名称复用与保护边界 | 7/7 |
+| 最终持久审计契约 | 6/6 |
+| 最终编译 Hook 的账户 API 格式探测 | 3/3 |
+
+运行检查 **104/104**，另有配置探测 **3/3**，合计 **107/107**。
+执行顺序为 browser、faults、native、boundary、最终 audit；boundary 会重建对象，不能在其后用旧 anchor 验证 native。
+PORTAL-R-001—R-041 全部按 §4.2/§4.3 规定方式通过，M1—M3 完成，首版 **41/41**。
+R-012 的规则不拼接判据按需求规定使用单元；R-016 的原生报告提供严格 CA/服务器名反例，
+不因原生报告把 ID 放在报告顶层就遗漏其覆盖。appcatalog/门户/门户 Hook/Casdoor Hook race、
+Runner 目录相关选定测试、相关 go vet、用例及文档门禁通过。
+这里不宣称完整 Runner、全部 APPCAT/所有 Module/IAM 组合或多架构发布已经通过。
+
+专用容器、daemon/socket、namespace/veth、工作区、私有绑定输入、浏览器依赖和 owned Btrfs data/userdata 子卷均已移除。
+临时绑定目录也已卸载，最终共享位置为 `/data/anas-user-portal-e2e-test-20261014-f2ac813b/`。
+清理脚本的“默认 Docker 整体集合完全相等”检查返回 1：期间新增
+`mesh-protocol-test-ln-client`、`mesh-protocol-test-ln-v2ray` 两个非本轮容器。
+随后逐项核对，原有 **36** 个容器的 ID/名称/镜像/端口全部一致，无删除或变更；新增两项未处理。
+保留原始失败结论和新增项清单，不把集合检查改写成已通过，也不恢复或删除其他任务容器。
+用户要求的“现有容器不改动”以及本轮专用资源清理均通过。
+根盘历史数据与旧 Docker 镜像没有清理，相关建议仍在根盘评估中。
+
+脱敏证据与制品共享封存如下；不含原始日志、截图、会话、数据库、私钥或测试密码：
+
+| 文件（上文共享目录内） | 大小 | SHA-256 |
+| --- | --- | --- |
+| `verified-final-evidence.tar.gz` | 4615 bytes，11 个安全 JSON | `42a6ea4d7d6cecbaf25b46f053d5453af31f28f9c99ed4cb47ea0283d6d4098c` |
+| `verified-public-source.tar.gz` | 321621 bytes，214 项白名单输入及新增权限回归和清单 | `ed629695b37ea162adedbf6de79a5a3a7e6c134b7a02585d95c40990ec106299` |
+| `verified-formal-user-portal-image.tar.gz` | 8020155 bytes | `842434c6563d4a8b953e73a326a44fca0b2ee875b335f955ea6cdc16093ca60d` |
+
+归档中的随机身份统一替换为 `[fixture-id]`，已扫描实际测试密码及 JWT。
+本机 `/tmp/anas-user-portal-e2e-test-20261014-f2ac813b/final-evidence/` 只是安全证据副本；共享持久位置仍为 ln 的 `/data`。
+权限修复及夹具/文档更新单独提交；本轮未发布到生产，已有 84f377cc 提交保持不变。
+
+最后保留检查：本轮原始日志、截图及传输副本已删除，正式镜像/公开源码/安全证据三份归档保留，
+私有运行输入与临时宿主绑定路径均不存在；共享 `final-retention.json` 保存四项布尔结论。
+文档站最终构建通过（按仓库当前标签生成 v0.1.1 文档，不代表本次修复已发布）；
+归档后的需求、用例摘要、计划/需求索引和文档状态门禁通过，源码空白检查通过。

@@ -65,6 +65,16 @@ async function faults(){
  fault('audit-restore');await ready();check([36],'restart invalidates old session',(await api(op2,'/api/me')).status===401);const op3=await login(await context(),'poperator');const records=(await api(op3,'/api/audit')).data.records;
  check([36],'durable pending intent becomes unknown without replay',records.some(r=>r.reason==='fixture result audit failure'&&r.directory==='unknown')&&(await api(op3,'/api/groups?target='+a.pscopea)).data.groups.find(g=>g.group.anchor===a.PortalAllowed).direct);
  await op3.waitForTimeout(1200);check([36],'service restart does not replay pending member write',(await api(op3,'/api/groups?target='+a.pscopea)).data.groups.find(g=>g.group.anchor===a.PortalAllowed).direct);
+ report.stage='review-regressions';const alias=remoteAction('recovery-alias');
+ check([38,39],'recovery aliases refer to the same actual directory identity',alias.anchor===a.pscopeb&&alias.username==='pscopeb'&&alias.upn==='pscopeb@portal.test');
+ const publicPage=await (await context()).newPage();await publicPage.goto(portal,{waitUntil:'domcontentloaded'});
+ const recoverBody=username=>({username,old_password:fixture.wrong,new_password:fixture.new,confirm_password:fixture.new});
+ for(let i=0;i<5;i++)check([38,39],'stable identity rejected attempt '+i,(await api(publicPage,'/api/password/recover',recoverBody(alias.username))).status===409);
+ const limited=await api(publicPage,'/api/password/recover',recoverBody(alias.upn));const absent=await api(publicPage,'/api/password/recover',recoverBody('review-nonexistent'));
+ check([39],'identity-limited known alias and absent account have identical public response',limited.status===409&&absent.status===409&&JSON.stringify(limited.data)===JSON.stringify(absent.data));
+ check([38],'submitted label still refuses its sixth attempt',(await api(publicPage,'/api/password/recover',recoverBody(alias.username))).status===429);
+ const invalid=await api(op3,'/api/groups/'+a.PortalAllowed+'/member',{unexpected:true});const audit=(await api(op3,'/api/audit')).data.records;
+ check([32,34],'invalid member request records the bound actor',invalid.status===400&&audit.some(r=>r.action==='groups.member'&&r.actor===a.poperator&&r.directory==='denied'));
 }
 
 try {

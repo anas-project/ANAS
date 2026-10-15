@@ -15,6 +15,7 @@ assert root.resolve() == root and mode in ['dependencies', 'browser', 'faults', 
 run = json.loads((root / 'run.json').read_text())
 assert run['remote_root'] == str(root) and run['socket'] == '/run/' + root.name + '.sock'
 assert re.fullmatch(r'anas_pu[0-9a-f]{8}_', run['prefix'])
+assert type(run['port']) is int and 1 <= run['port'] <= 65535
 socket = 'unix://' + run['socket']
 image = 'mcr.microsoft.com/playwright@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e'
 def docker(*args):
@@ -44,6 +45,7 @@ else:
             '-v', '/usr/bin/docker:/usr/bin/docker:ro', '-v', run['socket'] + ':' + run['socket']]
     env = {'DOCKER_HOST': socket, 'PORTAL_PROBE_ROOT': str(root), 'PORTAL_TEST_REMOTE_ROOT': str(root),
            'PORTAL_TEST_LOCAL_FIXTURE': '1', 'PORTAL_TEST_RESOLVED_IP': run['ip'],
+           'PORTAL_TEST_ORIGIN': 'https://portal.portal.test:' + str(run['port']),
            'PORTAL_TEST_RECENT_WINDOW_SECONDS': '60', 'PORTAL_TEST_MODE': mode}
     for key, value in env.items():
         args += ['-e', key + '=' + value]

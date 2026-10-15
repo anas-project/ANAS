@@ -86,7 +86,7 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 审计默认容量 64 MiB，可用 audit_capacity_mb 调整。满额时先停止门户、备份并人工核对未完成记录，再按受管维护流程导出；不要直接删除未完成记录。当前没有自动轮转/清理接口。
 
-单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/user-portal.md)。
+单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/archived/user-portal.md)。
 
 ## 时区与语言
 

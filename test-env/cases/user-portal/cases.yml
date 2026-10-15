@@ -2,7 +2,7 @@ api_version: "anas.test-cases/v2"
 topic: "user-portal"
 title: "独立用户门户验收用例"
 requirement_document: "modules/user_portal/dev-docs/requirements/user-portal.md"
-plan_document: "modules/user_portal/dev-docs/plans/user-portal.md"
+plan_document: "modules/user_portal/dev-docs/plans/archived/user-portal.md"
 requirement_scope: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-009", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-012", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-016", "PORTAL-R-017", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-040", "PORTAL-R-041"]
 cases:
   - id: "PORTAL-T-001"
@@ -11,21 +11,21 @@ cases:
     level: "unit"
     requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-012", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-025", "PORTAL-R-035", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-040", "PORTAL-R-041"]
     requirement_digest: "sha256:4060754a43956653ebd72aacedbafc2744ca88ed38288eb1a764c66abf1094a8"
-    implementation_digest: "sha256:eb0bccd655c03373efb4ddc0dc5d0613a1ee9c2ccf7dd3f7592c9b593671cf25"
-    fixture: "固定候选；e2e 使用 finance 独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
+    implementation_digest: "sha256:eb3ab84b1897097106f2d5cedb80e78cdc12024a2d9b027d7991a065fc223cc4"
+    fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "https-test-server"]
     preconditions: []
     steps: ["执行列出的固定入口", "分别核对授权正例和反例，读取退出状态及脱敏结果"]
     implementation:
-      files: ["modules/user_portal/portal/server_test.go", "modules/user_portal/hook/main_test.go"]
-      commands: ["go test ./modules/user_portal/portal ./modules/user_portal/hook"]
+      files: ["modules/user_portal/portal/server_test.go", "modules/user_portal/hook/main_test.go", "internal/appcatalog/bundle_umask_test.go"]
+      commands: ["go test ./modules/user_portal/portal ./modules/user_portal/hook ./internal/appcatalog"]
     assertions: ["伪造/过期 token、规则拼接、CSRF、身份复用、审计故障和 TLS 反例必须拒绝"]
     oracle:
       sources: ["return-value", "error-contract", "filesystem"]
     negative_cases: ["伪造/过期 token、规则拼接、CSRF、身份复用、审计故障和 TLS 反例必须拒绝"]
     validity:
       method: "counterexample"
-      commands: ["go test ./modules/user_portal/portal ./modules/user_portal/hook"]
+      commands: ["go test ./modules/user_portal/portal ./modules/user_portal/hook ./internal/appcatalog"]
       evidence: "伪造/过期 token、规则拼接、CSRF、身份复用、审计故障和 TLS 反例必须拒绝"
     cleanup: ["临时测试目录自动清理"]
     timeout: "5m"
@@ -36,10 +36,10 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-009", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-017", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-039", "PORTAL-R-040", "PORTAL-R-041"]
     requirement_digest: "sha256:1f5553893a779e73821d6a5c796c5ffd20020a50746de731a5757980ab61621b"
-    implementation_digest: "sha256:2394844ad395210de7857eb97cabf0a6ac4c05770d9d4c807fa09bb1093f44c6"
-    fixture: "固定候选；e2e 使用 finance 独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
+    implementation_digest: "sha256:5c982f6de45d019d37831cfed5b728321e2ce7c9bccb6d292a34e2274f9c37d4"
+    fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
-    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置并按顺序运行；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
+    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
     steps: ["执行列出的固定入口", "分别核对授权正例和反例，读取退出状态及脱敏结果"]
     implementation:
       files: ["test-env/scripts/user-portal-server-browser.py", "test-env/scripts/user-portal-prepare-directory.py", "test-env/playwright/user-portal-e2e.mjs", "test-env/scripts/user-portal-fixture-control.py"]
@@ -61,10 +61,10 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-007", "PORTAL-R-020", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039"]
     requirement_digest: "sha256:a34c0af1019dc8e6a77336f03b3e8ad18e3953b8af227a01d6a1e97c1069b5c1"
-    implementation_digest: "sha256:093430dcda30d3330eccf7a280339a5dccb0b81a03ce9c31beb2bd12d553aec1"
-    fixture: "固定候选；e2e 使用 finance 独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
+    implementation_digest: "sha256:22a34046702e454848a18d4dfd4ce73ea7a00cd4e99b6307c2964f4810ea4b4e"
+    fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
-    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置并按顺序运行；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
+    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
     steps: ["执行列出的固定入口", "分别核对授权正例和反例，读取退出状态及脱敏结果"]
     implementation:
       files: ["test-env/scripts/user-portal-server-browser.py", "test-env/scripts/user-portal-prepare-directory.py", "test-env/playwright/user-portal-e2e.mjs", "test-env/scripts/user-portal-fixture-control.py", "test-env/scripts/user-portal-runtime-fault.py", "test-env/scripts/user-portal-ldap-reply-proxy.py", "test-env/scripts/user-portal-audit-fault.py"]
@@ -86,10 +86,10 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-030"]
     requirement_digest: "sha256:88812280037ae7845286f47b9d646e7ff07ae5906447ec412c00c705c95a679d"
-    implementation_digest: "sha256:2394844ad395210de7857eb97cabf0a6ac4c05770d9d4c807fa09bb1093f44c6"
-    fixture: "固定候选；e2e 使用 finance 独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
+    implementation_digest: "sha256:5c982f6de45d019d37831cfed5b728321e2ce7c9bccb6d292a34e2274f9c37d4"
+    fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
-    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置并按顺序运行；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
+    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
     steps: ["执行列出的固定入口", "分别核对授权正例和反例，读取退出状态及脱敏结果"]
     implementation:
       files: ["test-env/scripts/user-portal-server-browser.py", "test-env/scripts/user-portal-prepare-directory.py", "test-env/playwright/user-portal-e2e.mjs", "test-env/scripts/user-portal-fixture-control.py"]
@@ -111,10 +111,10 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-016", "PORTAL-R-017"]
     requirement_digest: "sha256:ba79ae443d4b97ee964387c63c06ac3ad40aa1e7beb0b7375f554b79fc19efce"
-    implementation_digest: "sha256:0103969026ae7288fcf3c78ebedb2e09bcd91b2b0ed8ae4edf7adf0a0b032084"
-    fixture: "固定候选；e2e 使用 finance 独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
+    implementation_digest: "sha256:9bbd0c65e563d60784b8cb0694a09dfa2b84c833d6a4bac81f96711d5e16053d"
+    fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
-    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置并按顺序运行；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
+    preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
     steps: ["执行列出的固定入口", "分别核对授权正例和反例，读取退出状态及脱敏结果"]
     implementation:
       files: ["test-env/scripts/user-portal-prepare-directory.py", "modules/user_portal/portal/native_test.go"]

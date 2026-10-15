@@ -86,7 +86,7 @@ Only `${DATA_PATH}/user_portal/audit` persists: private 0700/0600 JSONL intents/
 
 The default limit is 64 MiB, configurable via audit_capacity_mb. Stop the portal, back up and reconcile unfinished records before managed export; never delete pending records. There is no automatic rotation interface.
 
-Single instance; restart requires sign-in. Fresh checks and GUID single-member writes do not provide multi-object transactions. Restart the portal after Traefik's address changes. Evidence is in the [paired plan](dev-docs/plans/user-portal.md).
+Single instance; restart requires sign-in. Fresh checks and GUID single-member writes do not provide multi-object transactions. Restart the portal after Traefik's address changes. Evidence is in the [paired plan](dev-docs/plans/archived/user-portal.md).
 
 ## Timezone and language
 

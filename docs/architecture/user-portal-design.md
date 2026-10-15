@@ -14,7 +14,7 @@ updated: 2026-10-14
 新增功能满足
 [PORTAL-R-001—R-041](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md)，
 实施、能力实验和验收结果只维护在
-[门户计划](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/user-portal.md)。
+[门户计划](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/archived/user-portal.md)。
 原生协议的能力和限制见 [门户身份与目录能力研究](/research/user-portal-identity-capabilities)；
 原生实验通过不代表门户 API、授权或审计已经通过。
 

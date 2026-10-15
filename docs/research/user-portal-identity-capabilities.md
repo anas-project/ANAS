@@ -18,7 +18,7 @@ Samba 不支持 LDAP assertion control，
 
 本文研究已有协议和固定实现的边界，不是门户验收报告。逐项结果、源码/制品摘要、
 失败重试和共享证据仅维护在
-[门户计划 §6—7](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/user-portal.md)。
+[门户计划 §6—7](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/archived/user-portal.md)。
 接线与授权方案见 [独立用户门户设计](/architecture/user-portal-design)，门户候选已实现，产品验收见配套计划。
 
 ## 研究范围

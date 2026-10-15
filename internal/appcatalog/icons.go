@@ -302,7 +302,16 @@ func WriteBundle(dir string, catalog Catalog, assets Assets, files map[string][]
 	if err := os.Mkdir(dir, 0755); err != nil {
 		return "", err
 	}
+	// The bundle is bind-mounted into consumers running with a different UID.
+	// Its declared modes must survive a restrictive producer umask; the private
+	// deployment parent and authenticated APIs still control access.
+	if err := os.Chmod(dir, 0755); err != nil {
+		return "", err
+	}
 	if err := os.Mkdir(filepath.Join(dir, "assets"), 0755); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(filepath.Join(dir, "assets"), 0755); err != nil {
 		return "", err
 	}
 	var catalogBytes []byte
@@ -318,6 +327,9 @@ func WriteBundle(dir string, catalog Catalog, assets Assets, files map[string][]
 		if err := os.WriteFile(filepath.Join(dir, name), body, 0644); err != nil {
 			return "", err
 		}
+		if err := os.Chmod(filepath.Join(dir, name), 0644); err != nil {
+			return "", err
+		}
 	}
 	for path, body := range files {
 		digest := fmt.Sprintf("%x", sha256.Sum256(body))
@@ -325,6 +337,9 @@ func WriteBundle(dir string, catalog Catalog, assets Assets, files map[string][]
 			return "", fmt.Errorf("invalid asset content address")
 		}
 		if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(path)), body, 0644); err != nil {
+			return "", err
+		}
+		if err := os.Chmod(filepath.Join(dir, filepath.FromSlash(path)), 0644); err != nil {
 			return "", err
 		}
 	}

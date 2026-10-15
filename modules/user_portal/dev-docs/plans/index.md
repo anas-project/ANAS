@@ -2,4 +2,4 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
-| [独立用户门户](user-portal.md) | 首版原生 OIDC/API/LDAP 接线及固定测试主机验收 | 审查修复后复验中 |
+| [独立用户门户](archived/user-portal.md) | 首版原生 OIDC/API/LDAP 接线及固定测试主机验收 | 已完成（已归档） |

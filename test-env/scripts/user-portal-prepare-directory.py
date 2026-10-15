@@ -40,6 +40,7 @@ for name,ou in [('pnormal','PortalA'),('pfirst','PortalA'),('pexpired','PortalA'
  else: db.setpassword('(sAMAccountName='+name+')',pw,force_change_at_next_login=False)
  raw=db.search(base=dn,scope=ldb.SCOPE_BASE,attrs=['objectGUID'])[0]['objectGUID'][0]
  replace(dn,'mS-DS-ConsistencyGuid',[raw]);replace(dn,'anasIdentityAnchor',[str(uuid.UUID(bytes_le=raw))])
+ replace(dn,'userPrincipalName',[name+'@portal.test'])
  users[name]=dn
 for name in ['svc_portal_reset','svc_portal_group']:
  if not db.search(base=base,expression='(sAMAccountName='+name+')'): db.newuser(name,pw,userou='OU=Service Accounts')

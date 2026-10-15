@@ -80,6 +80,9 @@ elif action=='snapshot':
   row=db.search(base=dn,scope=ldb.SCOPE_BASE,attrs=['lockoutTime','pwdLastSet','userAccountControl','accountExpires'])[0]
   out[name]={a:str(row[a][0]) for a in ['lockoutTime','pwdLastSet','userAccountControl','accountExpires'] if a in row}
  print(json.dumps(out));sys.exit(0)
+elif action=='recovery-alias':
+ row=db.search(base=u['pscopeb'],scope=ldb.SCOPE_BASE,attrs=['sAMAccountName','userPrincipalName','anasIdentityAnchor'])[0]
+ print(json.dumps({'username':str(row['sAMAccountName'][0]),'upn':str(row['userPrincipalName'][0]),'anchor':str(row['anasIdentityAnchor'][0])}));sys.exit(0)
 else:raise SystemExit('unknown fixture action')
 print(json.dumps({'action':action,'applied':True}))
 '''
