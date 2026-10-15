@@ -1,10 +1,13 @@
 # ln 根盘容量评估（2026-10-14）
 
-用户要求只读分析根盘是否需要清理。本轮没有删除或迁移既有文件，没有清理既有 Docker 镜像、卷或容器。
+**2026-10-15 已完成授权迁移与日志清理：根盘约 48.0 GiB 可用，使用率 49%；旧测试数据及日志归档已保留。**
+
+2026-10-14 用户要求只读分析根盘是否需要清理；该次检查没有删除或迁移既有文件，没有清理既有 Docker 镜像、卷或容器。
+2026-10-15 用户授权提交门户修复、迁移旧 Incus 测试目录并清理根盘日志；执行记录见文末。
 主机 `ln.hlong.wang:2200`，hostname `liannong`；以下是检查时状态，不能替代执行清理前的再次核验。
 门户本轮隔离环境及其构建/验收结果仍归[门户计划](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)，不在本评估重复登记。
 
-## 结论
+## 原评估结论（清理前）
 
 根盘需要尽快恢复空间。`df` 显示约 98 GiB 总容量、93 GiB 已用、341 MiB 可用，使用率 100%；
 精确可用量 357359616 bytes。根分区 ext4 保留块约 5 GiB（1310720 × 4096 bytes），
@@ -47,3 +50,81 @@ Docker 的可回收量是其自身估计，不等于已确认安全删除量，�
 2026-10-15 最后只读核对：根盘可用量降到约 209 MiB，仍为 100%。这是后续时点的实测，
 不是已确认的增长归因。本轮测试目录、镜像缓存及工作区位于 `/data`，专用运行资源和绑定路径已清理；
 未清理根盘历史目录、日志或现有镜像。原建议仍适用，应尽快恢复根盘余量。
+
+## 2026-10-15 授权执行
+
+本轮门户修复已单独提交到 `master`：`850b7094`，父提交 `84f377cc`。
+仅包含共享应用目录权限修复、对应回归/夹具和验收文档；AI Agent、Incus 网络/存储等无关工作树改动保留未提交。
+门户正式制品的最终验收仍以配套计划 §11 的基线为准，本轮未发布到生产。
+
+### 旧 Incus 目录迁移
+
+源目录 `/home/whl/anas-incus-followup-20260923.4p9ob_nk` 已完整迁到
+`/data/anas-incus-followup-20260923.4p9ob_nk`，原路径保留指向目标的符号链接。
+目标仍为原所有者及 `0700`；完整保留旧报告、源码、VM 磁盘等，没有选择性删除验收数据。
+
+迁移前检查了进程 cwd/root/exe、全部可读 fd、命令路径、映射、54 个 mount namespace、
+回环设备、systemd/cron 配置和默认 Docker 全部容器；没有源目录引用，也没有容器挂载其上级目录。
+复制后、删除原件前再次检查进程/挂载和最新容器配置，仍无引用。
+
+复制使用 `rsync -aHAXS --numeric-ids`，以较低 CPU/I/O 优先级执行，保留稀疏文件、所有者、权限、ACL、扩展属性和硬链接。
+两份目录逐项核对 **2219** 项、普通文件 **47982191459 bytes**；
+每个普通文件的 SHA-256、目录清单、权限/UID/GID/mtime、扩展属性及硬链接关系全部一致。
+规范化完整清单 SHA-256 为 `c5dd641fd3f8b23276d810ff9423b5903c49240d82d43557115ba97b7656911c`。
+随后同步 `/data`，重查元数据和引用，才移除根盘副本并保留原路径链接。
+移除前根盘可用 **224280576 bytes**，移除后 **48211496960 bytes**（约 44.9 GiB）。
+
+维护原始证据保留在 ln 的 `/data/anas-ln-root-maintenance-20261015/`（`0700`，需 sudo 读取），
+包括迁移前检查、容器基线、两份完整清单、`incus-verification.json` 和 `incus-migration.json`。
+Git 只记录关键摘要与证据位置，不包含原始日志或运行私有文件。
+
+### 日志归档
+
+历史 journal 已保留在维护目录的 `journal-archive/`，共 **88** 个文件、**4353687552 bytes**。
+先复制并核对既有封存日志，再同步/轮转活动日志并补齐新封存文件，避免轮转自动回收时丢失旧文件。
+每个文件的内容 SHA-256、大小、所有者、权限和 mtime 均已与源文件核对。
+`journal-manifest.json` 的 SHA-256 为 `429fa88624ac2bf0d340fac4419a9272300dd70a8e0c463aa453593dad76e2b1`。
+归档保持私有权限；这些是原始系统日志，与门户脱敏验收证据分开保存。
+
+### 日志缩减与容量限制
+
+归档全部通过 `journalctl --verify` 结构检查（退出 0），之后才缩减根盘 journal。
+日志占用由约 **4.0 GiB** 降到 **1000.0 MiB**；日志服务保持 active。
+新增 `/etc/systemd/journald.conf.d/90-anas-root-disk.conf`：
+
+```ini
+[Journal]
+SystemMaxUse=1G
+SystemKeepFree=2G
+```
+
+该文件原先不存在，没有覆盖已有配置；重启的是 journald 服务，没有重启 Docker 或容器。
+未清理 Docker 镜像、卷、构建缓存、容器日志或 `/home/whl/docker` 应用数据。
+最后核验根盘可用 **51518791680 bytes**（约 48.0 GiB），`df` 使用率 **49%**。
+这是核验时的观察值；期间另有并发任务清理容器，不将可用量的全部变化归因于本轮操作。
+
+### 容器差异核实与验收证据保留
+
+执行前基线为 **48** 个容器、**41** 个运行。第一次整体比较返回 1，原始
+`final-check.json` 及失败结论完整保留：5 个 Mesh 测试容器缺失，部分 Mounts 列表顺序改变。
+逐项按无序挂载集合复核后，仍存在的 **43** 个原容器（**36** 个运行）没有实际差异；
+ID、名称、镜像、HostConfig（不含 LogConfig）、挂载、端口、状态、启动时间、PID、重启计数和健康状态一致。
+
+5 个缺失项是 `mesh-protocol-test-ln-client`、`mesh-protocol-test-ln-v2ray`、
+`mesh-protocol-test-ln-extra`、`mesh-protocol-test-ln-extra-v2ray`、`mesh-protocol-test-ln-final`。
+只读查询 Docker 事件未取回该时间段记录，不能由此推断未发生删除。
+随后核对同时进行的“设计 Cloudflare Mesh 跳转方案”任务：其清理命令
+`exec-bc156c92-ac12-4c1b-abbe-e738231e8488` 明确列出上述 5 个名称，执行完成且退出 0；
+该任务本轮完成时间早于本次根盘原件移除时间。
+相关最小证据保存在 `concurrent-mesh-cleanup.json`，进一步比较保存在 `container-reconciliation.json`。
+这些缺失项归因于并发 Mesh 任务，本轮没有恢复或重建它们，也没有执行容器生命周期写操作。
+保留“全体 48 项完全相等”未通过的事实，不把它改写为通过；本次迁移/日志清理未改变其余原容器。
+
+门户的安全验收证据、公开源码和正式镜像三份归档仍位于
+`/data/anas-user-portal-e2e-test-20261014-f2ac813b/`，大小及 SHA-256 均与执行前一致，
+也与[门户计划 §11](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)登记值一致。
+维护目录的 `maintenance-summary.json` 汇总最终结论；`maintenance-evidence-manifest.json`
+登记检查、迁移、日志和差异归因等 13 份证据的文件摘要，其自身 SHA-256 为
+`f47eec99026009cf9993fbde42e884453f81356be4c2cf84263aafb214f9ffe6`。
+
+本轮根盘恢复空间目标已达到，不需要继续清理现有 Docker 数据。

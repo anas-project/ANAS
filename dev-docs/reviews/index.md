@@ -31,7 +31,7 @@
 | [系统容器 Runner cgroup 与作业闭环](2026-09-22-incus-onejob-closeout.md) | 2026-09-22，`3f5242e` 加累积工作树 | 不可变镜像 OCI exec/资源限制、真实作业中断矩阵与物理 Docker 后置基线；终态见正文 |
 | [Incus 网络与 proxy 权限核验](2026-09-10-incus-network-proxy-validation.md) | 2026-09-10，ANAS `f7642c5` / Incus `v7.3.0` | 固定版本源码调用链、兼容性缺陷与实机验证边界 |
 | [凭据轮换机制审查：全面轮换与单独轮换](2026-09-04-credential-rotation-review.md) | 2026-09-04 工作树，HEAD `5306b63` | 轮换覆盖面、作用域语义与 resource 凭据空白 |
-| [ln 根盘容量评估](2026-10-14-ln-root-disk.md) | 2026-10-14，ln 主机只读检查 | 根盘约 341 MiB 可用；45 GiB 旧测试目录、journal 与镜像候选，仅分析未清理 |
+| [ln 根盘评估与清理](2026-10-14-ln-root-disk.md) | 2026-10-14—15，ln 评估及授权执行 | 旧 Incus 完整迁到 /data、日志归档后缩减；根盘约 48 GiB 可用，容器并发清理差异与证据见正文 |
 | [用户门户提交前审查](2026-10-14-user-portal-review.md) | 2026-10-14，`ad1e0b98` 加本任务工作树 | 公开改密限流隐私、无效成员请求审计身份和文档状态修正；实机新制品复验见配套计划 |
 | [AI Agent 编排设计审查](../../modules/ai_agent/dev-docs/reviews/2026-09-05-orchestration-design-review.md) | 2026-09-05 工作树，HEAD `455770b` | 编排设计、凭据边界与事件状态审查（随组件迁至 `modules/ai_agent/`） |
 
