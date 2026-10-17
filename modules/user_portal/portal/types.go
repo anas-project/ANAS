@@ -32,6 +32,11 @@ type Config struct {
 	URL, Issuer, ClientID, ReauthClientID, Catalog, CAFile, AuditDir, Language        string
 	LDAPURL, LDAPBindDN, LDAPBindPassword, BaseDN, UsersDN, GroupsDN, AnchorAttribute string
 	PasswordBindDN, PasswordBindPassword, GroupBindDN, GroupBindPassword              string
+	ProfileBindDN, ProfileBindPassword, AdminGroupDN, ServiceAccountsDN               string
+	Administration, DomainAdministration                                              bool
+	ManagedGroupNames                                                                 map[string]string
+	AdminGroup, AdminGroupGUID                                                        string
+	ManagedGroups                                                                     map[string]string
 	ProxyHost                                                                         string
 	TrustedForwarders                                                                 []netip.Prefix
 	Rules                                                                             []Rule
@@ -43,6 +48,20 @@ type Config struct {
 func loadConfig() (Config, error) {
 	e := func(k string) string { return strings.TrimSpace(os.Getenv("USER_PORTAL_" + k)) }
 	c := Config{URL: e("URL"), Issuer: e("ISSUER"), ClientID: e("CLIENT_ID"), ReauthClientID: e("REAUTH_CLIENT_ID"), Catalog: e("CATALOG"), CAFile: e("CA_FILE"), AuditDir: e("AUDIT_DIR"), Language: e("LANGUAGE"), LDAPURL: e("LDAP_URL"), LDAPBindDN: e("LDAP_BIND_DN"), LDAPBindPassword: os.Getenv("USER_PORTAL_LDAP_BIND_PASSWORD"), BaseDN: e("BASE_DN"), UsersDN: e("USERS_DN"), AnchorAttribute: e("ANCHOR_ATTRIBUTE"), PasswordBindDN: e("PASSWORD_BIND_DN"), PasswordBindPassword: os.Getenv("USER_PORTAL_PASSWORD_BIND_PASSWORD"), GroupBindDN: e("GROUP_BIND_DN"), GroupBindPassword: os.Getenv("USER_PORTAL_GROUP_BIND_PASSWORD"), ProxyHost: e("PROXY_HOST"), RecentWindow: 5 * time.Minute, SessionTTL: 2 * time.Hour, AuditMaxBytes: 64 << 20}
+	c.ProfileBindDN, c.ProfileBindPassword = e("PROFILE_BIND_DN"), os.Getenv("USER_PORTAL_PROFILE_BIND_PASSWORD")
+	c.AdminGroupDN, c.ServiceAccountsDN = e("ADMIN_GROUP_DN"), e("SERVICE_ACCOUNTS_DN")
+	for key, dst := range map[string]*bool{"ADMINISTRATION_ENABLED": &c.Administration, "DOMAIN_ADMINISTRATION_ENABLED": &c.DomainAdministration} {
+		if value := e(key); value != "" {
+			v, err := strconv.ParseBool(value)
+			if err != nil {
+				return c, errors.New("invalid administration switch")
+			}
+			*dst = v
+		}
+	}
+	if c.Administration && (c.AdminGroupDN == "" || c.ServiceAccountsDN == "") || c.DomainAdministration && !c.Administration {
+		return c, errors.New("incomplete administration boundary")
+	}
 	for _, s := range []string{c.URL, c.Issuer} {
 		u, err := url.Parse(s)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" {
@@ -93,7 +112,7 @@ func loadConfig() (Config, error) {
 	for _, p := range []struct {
 		key string
 		dst any
-	}{{"RULES", &c.Rules}, {"PROTECTED_USERS", &c.ProtectedUsers}, {"PROTECTED_GROUPS", &c.ProtectedGroups}, {"PROTECTED_GROUP_NAMES", &c.ProtectedGroupNames}} {
+	}{{"RULES", &c.Rules}, {"PROTECTED_USERS", &c.ProtectedUsers}, {"PROTECTED_GROUPS", &c.ProtectedGroups}, {"PROTECTED_GROUP_NAMES", &c.ProtectedGroupNames}, {"MANAGED_GROUPS", &c.ManagedGroupNames}} {
 		if v := e(p.key); v != "" {
 			d := json.NewDecoder(strings.NewReader(v))
 			d.DisallowUnknownFields()
@@ -176,12 +195,18 @@ type Group struct {
 	Members       []string `json:"-"`
 	Protected     bool     `json:"-"`
 	Primary       bool     `json:"primary,omitempty"`
+	Managed       bool     `json:"managed"`
+	Category      string   `json:"category"`
+	DomainRisk    bool     `json:"domain_risk"`
+	AdminRole     bool     `json:"admin_role"`
 }
 
 type Person struct {
 	Anchor             string            `json:"anchor"`
 	Username           string            `json:"username"`
 	DisplayName        string            `json:"display_name"`
+	GivenName          string            `json:"given_name"`
+	Surname            string            `json:"surname"`
 	Email              string            `json:"email"`
 	Disabled           bool              `json:"disabled"`
 	AccountExpired     bool              `json:"account_expired"`
@@ -194,6 +219,10 @@ type Person struct {
 	DN, GUID, SID      string            `json:"-"`
 	Protected          bool              `json:"-"`
 	KnownGroups        map[string]string `json:"-"`
+	DomainRisk         bool              `json:"domain_risk"`
+	Administrator      bool              `json:"administrator"`
+	System             bool              `json:"-"`
+	PrimaryGroupSID    string            `json:"-"`
 }
 
 func (p Person) canLogin() bool {
@@ -201,7 +230,7 @@ func (p Person) canLogin() bool {
 }
 func (p Person) inGroup(anchor string) bool {
 	for _, g := range p.Groups {
-		if g.Anchor == anchor {
+		if g.Anchor == anchor || g.Reference == anchor {
 			return true
 		}
 	}

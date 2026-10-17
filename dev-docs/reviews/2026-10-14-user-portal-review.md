@@ -9,7 +9,7 @@ updated: 2026-10-15
 
 审查基线：`ad1e0b982b9eb8bedf369740558f7e2c77c45799` 加本任务工作树。
 范围为 user_portal、目录协议及必要 IAM/目录配套；不包含 AI Agent 编排、Incus 网络/存储或持久目录契约设计。
-实机验收结果与剩余动作只记录在[配套计划](../../modules/user_portal/dev-docs/plans/archived/user-portal.md) §10。
+实机验收结果与剩余动作只记录在[配套计划](../../modules/user_portal/dev-docs/plans/user-portal.md) §10。
 
 | 级别 | 已确认问题 | 修复 |
 | --- | --- | --- |

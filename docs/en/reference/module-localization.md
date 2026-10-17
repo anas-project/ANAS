@@ -265,7 +265,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## user_portal
 
-- **Version / 版本：** `0.1.0-r1`; reviewed 2026-10-14
+- **Version / 版本：** `0.1.0-r1`; reviewed 2026-10-16
 - **Timezone / 时区：** `container` — TZ is supplied to the process; audit timestamps use UTC and the browser displays local time.
 - **Language / 语言：** `supported`, `application` — All portal pages and catalog presentation
 - **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`

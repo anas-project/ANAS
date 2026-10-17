@@ -67,6 +67,10 @@ func main() {
 	}
 	ldapURL, _ := url.Parse(c.LDAPURL)
 	directory := &LDAPDirectory{config: c, tls: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12, ServerName: ldapURL.Hostname()}}
+	if err := directory.resolveAdministration(); err != nil {
+		log.Fatal("invalid administration role or managed group registry")
+	}
+	c = directory.config
 	if err := validateReferences(c, directory); err != nil {
 		log.Fatal("invalid or unavailable delegation references")
 	}
@@ -84,9 +88,12 @@ func main() {
 		peers = append(peers, a.Unmap())
 	}
 	policy, _ := json.Marshal(struct {
-		Rules                []Rule
-		Users, Groups, Names []string
-	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames})
+		Rules                                []Rule
+		Users, Groups, Names                 []string
+		Administration, DomainAdministration bool
+		AdminGroup, AdminGUID, ProfileWriter string
+		Managed                              map[string]string
+	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.ManagedGroups})
 	digest := sha256.Sum256(policy)
 	s := &Server{config: c, oidc: o, directory: directory, audit: journal, catalog: catalog, store: newStore(), limiter: newLimiter(), peers: peers, digest: hex.EncodeToString(digest[:])}
 	httpServer := &http.Server{Addr: ":8080", Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}

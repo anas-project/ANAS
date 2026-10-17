@@ -1,49 +1,65 @@
 ---
 doc_type: architecture
 status: current
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # 独立用户门户设计
 
 **状态：首版已实现；审查修复后正式镜像复验待执行，历史通过基线保留在计划。** 2026-10-11 用户确认“应用入口 +
 个人账号 + 委派用户管理”的首版建议及已说明的高复杂度方向。本文细化接线和失败边界；
-部署中的实际委派名单仍由配置显式给出，默认没有账号管理授权。
+平台管理使用 ANAS 注册管理员角色；另保留配置显式限定范围的委派路径。
 应用展示沿用 [应用目录协议](/architecture/app-catalog-design) 与
 [APPCAT-R-001—R-039](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/app-catalog.md)。
 新增功能满足
-[PORTAL-R-001—R-041](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md)，
+[PORTAL-R-001—R-061](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md) 中仍有效的判据，
 实施、能力实验和验收结果只维护在
-[门户计划](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/archived/user-portal.md)。
+[门户计划](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/plans/user-portal.md)。
 原生协议的能力和限制见 [门户身份与目录能力研究](/research/user-portal-identity-capabilities)；
 原生实验通过不代表门户 API、授权或审计已经通过。
 
-## 1. 首版范围与页面
+2026-10-16 的后续方案单列于[门户用户管理、邮箱归属与域级管理](portal-account-mail-administration.md)：
+用户资料编辑、ANAS 管理员管理全部人员、本人域权限与逐次验证、主邮箱/个人自助别名及界面修复。
+界面、姓名编辑、平台管理和本人域权限路径已实现并在 finance 验收；本轮审查修复待更新制品复验。
+邮件后端、主邮箱管理与个人别名写入尚未实施，不计入门户本轮验收。
+
+## 1. 当前范围与页面
 
 Casdoor 负责日常登录，Samba AD 是用户、组、密码和账号状态的事实来源；
 应用文案与图标来自现有只读目录。门户不建立另一套用户/组数据库。
 
-| 页面 | 已确认的首版能力 |
+| 页面 | 当前能力 |
 | --- | --- |
 | 应用首页 | 展示获准应用；用户应用/后台管理两大组及分类；七档图标、简介、详情、文档、原样链接；名称/简介搜索 |
-| 我的账号 | 只读姓名、登录名、实际邮箱；账号和密码状态、到期提示；直接组、间接组和授权来源 |
+| 我的账号 | 编辑姓、名、显示名；只读登录名、实际邮箱；账号和密码状态、到期提示；直接组、间接组和授权来源 |
 | 修改密码 | 原密码、新密码与确认；返回目录密码策略结果；成功后重新认证门户 |
 | 退出登录 | 清除门户会话，同时退出当前浏览器的 IAM 会话；失败时显示 IAM 登出未确认 |
 | 首次/过期改密 | 即使日常 SSO 尚不能完成，也能验证原密码并只修改本人密码；不产生普通门户会话 |
-| 用户管理 | 在授权范围搜索、分页、查看账号；重置临时密码、下次登录强改和单独解锁 |
+| 用户管理 | ANAS 管理员管理全部人员；受限委派按规则范围搜索、分页、查看账号；重置临时密码、下次登录强改和单独解锁 |
 | 分组管理 | 对允许的用户和组增删直接人员成员；展示来源及权限影响 |
 | 安全记录 | 用户查看本人的安全操作，审计管理员查看获准范围；记录拒绝、失败、目录结果与同步状态 |
 
 全部账号页面复用目录语言选择：中文和英文，不支持的语言直接选英文；
 用户切换语言无需重登，API 与页面一致，不串用身份/语言缓存。
-“我的账号”不允许编辑 mail、sAMAccountName、displayName 或 anchor。
+“我的账号”只允许编辑 givenName、sn、displayName，不允许编辑 mail、sAMAccountName 或 anchor。
 邮箱来自实际邮件系统，不能用 UPN 代造；无法可靠查询的到期时间显示“未知”，不编造日期。
 
 账号创建/启停、无原密码找回、管理员 MFA、跨应用会话列表与撤销、收藏/最近使用、
 访问申请、公告和邮件/短信通知保留为后续候选，不进入首版矩阵。
 首版在站内显示操作结果；不新增通知渠道或审批工作流。
 
-## 2. 委派规则：动作、用户、组属于同一授权
+## 2. 平台角色与受限委派
+
+### 2.1 平台管理员
+
+`administration_enabled` 启用当前 ANAS 注册 Admins 组的 anchor/GUID 角色；Casdoor 原生管理员或同名组不替代该身份。
+角色管理跨 OU 的人员账号，不包含服务、计算机和信任主体。默认分组按 Provider 显式注册表及 GUID 识别并按用途分类；未注册/系统组只在高级视图展示风险。
+管理员不能重置本人密码、移除自身管理路径或最后一个可用管理员；姓名修改仍限定三个字段及版本。
+
+`domain_administration_enabled` 默认关闭。开启后的域级人员或分组写入需要当前 ANAS 角色、近期 OIDC、绑定完整参数的限时单次确认，以及操作者本人域密码和原生 AD ACL。
+普通写绑定没有全域管理权限，不能代替本人授权。确认及资料写入的细节见扩展方案和 Module 技术文档。
+
+### 2.2 显式范围委派
 
 首版动作集合固定为 `users.read`、`password.reset`、`account.unlock`、
 `groups.member.add`、`groups.member.remove`、`audit.read`。
@@ -55,17 +71,17 @@ Casdoor 负责日常登录，Samba AD 是用户、组、密码和账号状态的
 但一条完整规则必须同时覆盖这次动作、目标人员和目标组。
 不能把规则 A 的用户范围与规则 B 的组范围拼起来放行。
 
-目标人员必须在目录 Provider 的人员查询范围内；默认布局为 OU=People。
+目标人员必须在目录 Provider 的人员查询范围内；未启用平台管理时默认布局为 OU=People，启用后跨人员 OU 查询。
 委派规则进一步显式限定目标人员组或人员 anchor，不接受任意 LDAP filter、
 任意 DN 或无限制 `*`。目标人员组和操作者组都是授权边界，
 不能成为这套门户分组写入的目标。实际部门/业务组名单不由门户猜测。
 
-示意数据结构如下；**这是设计结构，尚非可执行 workspace 配置**：
+`delegation_rules` 数组中的单条结构如下；引用替换为实际稳定 anchor 后使用：
 
 ```json
 {
   "id": "helpdesk-team-a",
-  "operator_group": "group-anchor-operator",
+  "operator_groups": ["group-anchor-operator"],
   "actions": ["users.read", "password.reset", "account.unlock"],
   "target_user_groups": ["group-anchor-team-a"],
   "target_users": [],
@@ -75,8 +91,8 @@ Casdoor 负责日常登录，Samba AD 是用户、组、密码和账号状态的
 
 同一规则内 target_user_groups/target_users 为显式并集；均为空即不授权。
 成员动作必须额外提供 editable_groups。不存在或类型不符的引用拒绝发布，
-没有规则时仍提供本人功能，但关闭所有委派操作。
-`Admins`/`platform_admin` 不隐式匹配这些动作。
+没有规则时关闭受限委派；本人功能与 §2.1 的平台角色路径分别授权。
+`Admins`/`platform_admin` 不隐式拼接或替代这些委派规则。
 
 域管理组、Administrators、Unix Admins、配置中的平台/文件管理员组、
 门户操作者组与目标范围组、配置中的额外保护对象全部保护。
@@ -277,7 +293,6 @@ LDAP 请求须保证目标仍是查找时的 anchor，改名/DN 复用不能写�
 用户已确认该范围与分步方向；不再重复确认是否独立建站或是否具备首版管理功能。
 后续候选新增服务/持久机制或扩大目录管理范围时，按实际变化重新评审。
 
-受限 Casdoor 判定接口、强制近期认证、门户外保护关系并发反例及审计故障仍待完成；
-过期密码、最小属性/对象 ACL 与稳定成员操作已有原生能力证据。
-配置的实际人员/组范围由部署者给出，没有规则即关闭管理；
-不因暂未给出生产名单阻止隔离夹具的开发。运行基线和未通过项见门户计划，本文不代替产品验收。
+原生 OIDC/API、近期认证、过期密码、最小属性/对象 ACL、稳定成员操作和审计故障的历史验收基线见门户计划；不新增 Casdoor 源码补丁。
+2026-10-17 审查补齐配置工具的服务主组检查、资料保存后刷新失败的结果保留和退出后的迟到响应处理；新制品的 finance 复验仍待执行，不能套用旧镜像结果。
+目录外并发修改不具备跨对象原子保证。本文描述机制，不代替产品验收。

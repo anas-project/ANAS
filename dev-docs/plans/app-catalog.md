@@ -73,7 +73,7 @@ LLNG 投射 applicationList 的用途/主分类组合组名和精确组 OR（默
 第二阶段：自己的门户完成 R-005、R-014、R-018、R-022、R-026、R-035—R-038 的完整行为，
 包括原样 URL、认证后先过滤再返回文案、无管理员绕过、策略失效拒绝、主分类/附加筛选、
 空组隐藏及即时语言切换。保持只读目录为事实来源，不以原生数据库投影回填目录。
-用户已改为独立网站；目录交付见设计 §10，账号首版已确认，另由[门户计划](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)调度；其设计见[独立用户门户](../../docs/architecture/user-portal-design.md)。
+用户已改为独立网站；目录交付见设计 §10，账号首版已确认，另由[门户计划](../../modules/user_portal/dev-docs/plans/user-portal.md)调度；其设计见[独立用户门户](../../docs/architecture/user-portal-design.md)。
 
 原生限制：Casdoor 原生字段最大 100 字符，超长标题/简介/URL 明确拒绝；只有一个图标，
 原生点击会追加 silentSignin，原生权限缺失默认允许且管理员绕过。hidden/禁用的 IAM client
@@ -733,7 +733,7 @@ Casdoor 首次/过期认证与敏感操作 MFA 接线仍须隔离主机实验。
 “确定”推定为全部人员：采用显式规则，动作/用户/可修改组同规则匹配，空配置关闭管理。
 高权限、门户授权边界组和服务身份默认保护，不以平台管理员代替 LDAP 委派权。
 
-新增 [PORTAL 矩阵](../../modules/user_portal/dev-docs/requirements/user-portal.md) 40 条判据及 [门户计划](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)。
+新增 [PORTAL 矩阵](../../modules/user_portal/dev-docs/requirements/user-portal.md) 40 条判据及 [门户计划](../../modules/user_portal/dev-docs/plans/user-portal.md)。
 首版包括应用搜索、本人资料与改密/首次过期闭环、范围内查询/重置/强改/解锁/分组、
 审计和近期认证；其他候选仍不纳入。建议以单个服务、内存会话和私有审计文件保持组件最少。
 这里转交账号规划，不重复列出第二份里程碑；M3 与原 R-001—R-039 归属/验收保持。

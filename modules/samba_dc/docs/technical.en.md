@@ -257,3 +257,5 @@ zone, and an AD domain cannot be renamed in place.
 ## Application catalog
 
 No personnel card is published: Directory and DNS protocols only; administration is published by LAM.
+
+The explicit ANAS group registry also includes Unix Admins. Registration marks ownership, not a low-risk permission: this group inherits infrastructure administrator rights and the portal must handle it through the domain-level path.

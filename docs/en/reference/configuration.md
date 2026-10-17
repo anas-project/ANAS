@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `25`
-- Declared parameters: `206` total (`18` global and `188` Module-owned; `184` structured Module parameters and `4` bare `env.*` parameters)
+- Declared parameters: `210` total (`18` global and `192` Module-owned; `188` structured Module parameters and `4` bare `env.*` parameters)
 - Resolution phases: `input_required` `2`, `must_resolve` `34`, unknown types `0`
-- Type distribution: `bool` `26`, `enum` `29`, `int` `34`, `string` `117`
-- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `9`, `none` `9`, `runtime` `5`, `static` `165`
+- Type distribution: `bool` `28`, `enum` `29`, `int` `34`, `string` `119`
+- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `9`, `none` `9`, `runtime` `5`, `static` `169`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -269,7 +269,7 @@ Current explicit portable constraints: `39`.
 | `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
 | `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
-| `user_portal` | 12 | `user_portal.audit_capacity_mb`<br>`user_portal.delegation_rules`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
+| `user_portal` | 16 | `user_portal.administration_enabled`<br>`user_portal.audit_capacity_mb`<br>`user_portal.delegation_rules`<br>`user_portal.domain_administration_enabled`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.profile_bind_dn`<br>`user_portal.profile_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
 | `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
 | `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
 <!-- generated:configuration-owners:end -->
@@ -305,7 +305,7 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 122 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 126 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
 | `data_migrate` | 18 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |

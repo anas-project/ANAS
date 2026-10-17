@@ -250,7 +250,7 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_ADMIN_GROUP_DN"] = "CN=Admins," + e["SAMBA_DC_BASE_GROUPS_ROLE_DN"]
 	e["SAMBA_DC_FS_ADMIN_GROUP_NAME"] = "FS Admins"
 	e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"] = "FS Share RW"
-	groups := []string{e["SAMBA_DC_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"]}
+	groups := []string{e["SAMBA_DC_ADMIN_GROUP_NAME"], "Unix Admins", e["SAMBA_DC_FS_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"]}
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
 		groups = append(groups, e["SAMBA_DC_APP_ALL_NAME"])
 		for _, app := range strings.Split(e["ANAS_IDENTITY_APP_CLIENTS"], ",") {

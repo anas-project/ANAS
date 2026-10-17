@@ -2,7 +2,7 @@ api_version: anas.module-localization/v1
 module: user_portal
 module_version: 0.1.0
 module_revision: 1
-reviewed_at: 2026-10-14
+reviewed_at: 2026-10-16
 timezone:
   status: container
   mechanism: TZ is supplied to the process; audit timestamps use UTC and the browser displays local time.

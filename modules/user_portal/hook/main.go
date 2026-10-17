@@ -92,6 +92,27 @@ func handle(r request) (response, error) {
 	}
 	data, _ := json.Marshal(names)
 	out.Env["USER_PORTAL_PROTECTED_GROUP_NAMES"] = string(data)
+	out.Env["USER_PORTAL_ADMIN_GROUP_DN"] = e["SAMBA_DC_ADMIN_GROUP_DN"]
+	out.Env["USER_PORTAL_SERVICE_ACCOUNTS_DN"] = e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
+	managed := map[string]string{}
+	for _, name := range strings.Split(e["SAMBA_DC_APPLICATION_CATALOG_GROUPS"], ",") {
+		if name == "" {
+			continue
+		}
+		category := "access"
+		if strings.HasPrefix(name, "APP_") {
+			category = "applications"
+		}
+		if strings.HasPrefix(name, "CAP_") {
+			category = "capabilities"
+		}
+		if name == e["SAMBA_DC_ADMIN_GROUP_NAME"] || name == "Unix Admins" {
+			category = "roles"
+		}
+		managed[name] = category
+	}
+	data, _ = json.Marshal(managed)
+	out.Env["USER_PORTAL_MANAGED_GROUPS"] = string(data)
 	out.Env["USER_PORTAL_LANGUAGE"] = appcatalog.SelectLanguage(e["USER_PORTAL_LANGUAGE"], "", e["DEFAULT_LANGUAGE"])
 	return out, nil
 }

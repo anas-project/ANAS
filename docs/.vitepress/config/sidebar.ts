@@ -113,6 +113,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
         { text: '独立用户门户', link: '/architecture/user-portal-design' },
+        { text: '门户账号、邮箱与域级管理', link: '/architecture/portal-account-mail-administration' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
         { text: 'Object Storage 能力', link: '/architecture/object-storage-capability-design' },
         { text: 'Forgejo Module', link: '/architecture/forgejo-module-design' },
@@ -142,6 +143,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: '自部署 IAM 与 ANAS 适配', link: '/research/self-hosted-open-source-iam-research' },
         { text: 'BIND 9 Web 管理工具', link: '/research/bind9-open-source-web-management-research' },
         { text: '自部署邮件服务', link: '/research/self-hosted-open-source-mail-services-research' },
+        { text: '邮件服务器与 ANAS 适配', link: '/research/mail-server-anas-integration-research' },
         { text: '自部署邮件转发', link: '/research/self-hosted-open-source-email-forwarding-research' },
         { text: 'S3 兼容存储', link: '/research/self-hosted-open-source-s3-compatible-storage-research' },
         { text: '自部署 Git 服务', link: '/research/self-hosted-open-source-git-services-research' },
@@ -274,6 +276,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Immich Module (Chinese)', link: '/architecture/immich-module-design' },
         { text: 'IAM capability design', link: '/en/architecture/iam-capability-design' },
         { text: 'User portal design (Chinese)', link: '/architecture/user-portal-design' },
+        { text: 'Portal accounts, mail and domain administration (Chinese)', link: '/architecture/portal-account-mail-administration' },
         { text: 'Object storage capability design', link: '/en/architecture/object-storage-capability-design' }
       ]
     }
@@ -286,6 +289,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Docker / Podman compatibility (Chinese)', link: '/research/docker-podman-compatibility' },
         { text: 'Casdoor application catalog (Chinese)', link: '/research/casdoor-app-catalog' },
         { text: 'User portal identity capabilities (Chinese)', link: '/research/user-portal-identity-capabilities' },
+        { text: 'Mail servers and ANAS integration (Chinese)', link: '/research/mail-server-anas-integration-research' },
         { text: 'Casdoor directory subject feasibility (Chinese)', link: '/research/casdoor-directory-subject' },
         { text: 'Immich integration feasibility (Chinese)', link: '/research/immich-module-integration' }
       ]

@@ -140,6 +140,9 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /oidc/backchannel-logout", s.backchannel)
 	m.HandleFunc("GET /api/bootstrap", s.bootstrap)
 	m.HandleFunc("GET /api/me", s.me)
+	m.HandleFunc("POST /api/me/profile", s.updateProfile)
+	m.HandleFunc("POST /api/administration/prepare", s.prepareOperation)
+	m.HandleFunc("POST /api/administration/execute", s.executeOperation)
 	m.HandleFunc("GET /api/apps", s.apps)
 	m.HandleFunc("GET /api/assets/{name}/{size}", s.asset)
 	m.HandleFunc("GET /api/users", s.users)
@@ -351,7 +354,14 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	respond(w, 200, map[string]any{"person": p, "csrf": v.CSRF, "actions": actions, "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
+	if s.administrator(p) {
+		for _, a := range []string{"users.read", "profile.update", "password.reset", "account.unlock", "groups.member.add", "groups.member.remove", "audit.read"} {
+			if !has(actions, a) {
+				actions = append(actions, a)
+			}
+		}
+	}
+	respond(w, 200, map[string]any{"person": p, "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
@@ -376,7 +386,7 @@ func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
 		// Public icon addresses are authenticated portal routes, not the bundle path.
 		icons := map[string]appcatalog.Icon{}
 		for size, icon := range app.Icons {
-			icon.Path = "/api/assets/" + app.Name + "/" + size
+			icon.Path = "/api/assets/" + app.Name + "/" + size + "?v=" + icon.SHA256
 			icons[size] = icon
 		}
 		app.Icons = icons
@@ -404,6 +414,8 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
+		w.Header().Set("ETag", `"`+icon.SHA256+`"`)
 		w.WriteHeader(200)
 		_, _ = w.Write(data)
 		return
@@ -447,7 +459,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, p := range people {
-		if authorize(s.config.Rules, actor, p, "users.read", "") == "" {
+		if !s.administrator(actor) && authorize(s.config.Rules, actor, p, "users.read", "") == "" {
 			continue
 		}
 		if q != "" && !strings.Contains(strings.ToLower(p.Username+" "+p.DisplayName+" "+p.Email), q) {
@@ -461,6 +473,16 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) targetActions(actor, target Person) []string {
 	result := []string{}
+	if s.administrator(actor) && !target.System && !has(s.config.ProtectedUsers, target.Anchor) {
+		if target.DomainRisk && !s.config.DomainAdministration && target.Anchor != actor.Anchor {
+			return result
+		}
+		result = append(result, "profile.update")
+		if target.Anchor != actor.Anchor {
+			result = append(result, "password.reset", "account.unlock")
+		}
+		return result
+	}
 	if target.Protected {
 		return result
 	}
@@ -478,11 +500,11 @@ func (s *Server) user(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := s.directory.Person(r.PathValue("anchor"))
-	if err != nil || authorize(s.config.Rules, actor, target, "users.read", "") == "" {
+	if err != nil || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
 		failure(w, 403, "access_denied")
 		return
 	}
-	respond(w, 200, map[string]any{"person": target, "actions": s.targetActions(actor, target)})
+	respond(w, 200, map[string]any{"person": target, "actions": s.targetActions(actor, target), "profile_version": profileVersion(target), "requires_domain": target.DomainRisk, "administration": s.administrator(actor), "domain_administration": s.administrator(actor) && s.config.DomainAdministration})
 }
 
 func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
@@ -491,8 +513,12 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := s.directory.Person(r.URL.Query().Get("target"))
-	if err != nil || authorize(s.config.Rules, actor, target, "users.read", "") == "" {
+	if err != nil || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
 		failure(w, 403, "access_denied")
+		return
+	}
+	if s.administrator(actor) {
+		s.adminGroups(w, r, actor, target)
 		return
 	}
 	result := []map[string]any{}
@@ -530,7 +556,20 @@ func (s *Server) auditQuery(w http.ResponseWriter, r *http.Request) {
 	}
 	allowed := []Record{}
 	permittedTargets := map[string]bool{}
+	if s.administrator(actor) {
+		people, err := s.directory.People()
+		if err != nil {
+			failure(w, 503, "identity_unavailable")
+			return
+		}
+		for _, p := range people {
+			permittedTargets[p.Anchor] = true
+		}
+	}
 	for _, rule := range s.config.Rules {
+		if s.administrator(actor) {
+			break
+		}
 		if !has(rule.Actions, "audit.read") {
 			continue
 		}

@@ -41,6 +41,10 @@ config:
     password_bind_password: ""
     group_bind_dn: ""
     group_bind_password: ""
+    profile_bind_dn: ""
+    profile_bind_password: ""
+    administration_enabled: true
+    domain_administration_enabled: false
     recent_window_seconds: 300
     audit_capacity_mb: 64
   types:
@@ -54,6 +58,10 @@ config:
     password_bind_password: string
     group_bind_dn: string
     group_bind_password: string
+    profile_bind_dn: string
+    profile_bind_password: string
+    administration_enabled: bool
+    domain_administration_enabled: bool
     recent_window_seconds:
       kind: int
       constraints: {minimum: 5, maximum: 900}
@@ -71,6 +79,9 @@ config:
     group_bind_password:
       effect: container_recreate
       sensitive: true
+    profile_bind_password:
+      effect: container_recreate
+      sensitive: true
   exports:
     - ANAS_IAM_CLIENT__USER_PORTAL__*
   consumes:
@@ -86,6 +97,9 @@ config:
     - SAMBA_DC_BASE_GROUPS_DN
     - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
     - SAMBA_DC_ADMIN_GROUP_NAME
+    - SAMBA_DC_ADMIN_GROUP_DN
+    - SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN
+    - SAMBA_DC_APPLICATION_CATALOG_GROUPS
     - SAMBA_DC_FS_ADMIN_GROUP_NAME
     - TRAEFIK_BASE_PORT
     - TRAEFIK_HOSTNAME

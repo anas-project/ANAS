@@ -234,3 +234,5 @@ r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 
 ## 应用目录
 
 不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。
+
+ANAS 显式组注册表也包含 Unix Admins。注册只表示所有权，不表示低风险：该组具有基础设施管理员嵌套权限，门户必须按域级操作处理。

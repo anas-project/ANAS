@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf16"
 
@@ -28,8 +29,9 @@ type Directory interface {
 }
 
 type LDAPDirectory struct {
-	config Config
-	tls    *tls.Config
+	config        Config
+	tls           *tls.Config
+	profileWrites sync.Mutex
 }
 
 func (d *LDAPDirectory) Probe() error {
@@ -59,6 +61,10 @@ func (d *LDAPDirectory) dial(dn, password string) (*ldap.Conn, error) {
 	conn.SetTimeout(10 * time.Second)
 	if err := conn.Bind(dn, password); err != nil {
 		conn.Close()
+		var e *ldap.Error
+		if errors.As(err, &e) && e.ResultCode == ldap.LDAPResultInvalidCredentials {
+			return nil, errDenied
+		}
 		return nil, errors.New("directory bind failed")
 	}
 	return conn, nil
@@ -81,7 +87,14 @@ func (d *LDAPDirectory) users(filter string) string {
 }
 
 func (d *LDAPDirectory) attributes() []string {
-	return []string{d.config.AnchorAttribute, "objectGUID", "objectSid", "sAMAccountName", "displayName", "mail", "userAccountControl", "accountExpires", "pwdLastSet", "msDS-UserPasswordExpiryTimeComputed", "msDS-User-Account-Control-Computed", "lockoutTime", "primaryGroupID"}
+	return []string{d.config.AnchorAttribute, "objectGUID", "objectSid", "sAMAccountName", "givenName", "sn", "displayName", "mail", "userAccountControl", "accountExpires", "pwdLastSet", "msDS-UserPasswordExpiryTimeComputed", "msDS-User-Account-Control-Computed", "lockoutTime", "primaryGroupID"}
+}
+
+func (d *LDAPDirectory) peopleBase() string {
+	if d.config.Administration {
+		return d.config.BaseDN
+	}
+	return d.config.UsersDN
 }
 
 func (d *LDAPDirectory) Person(anchor string) (Person, error) {
@@ -105,7 +118,7 @@ func (d *LDAPDirectory) find(filter, expected string) (Person, error) {
 		return Person{}, err
 	}
 	defer conn.Close()
-	entries, err := search(conn, d.config.UsersDN, d.users(filter), 2, d.attributes())
+	entries, err := search(conn, d.peopleBase(), d.users(filter), 2, d.attributes())
 	if err != nil || len(entries) != 1 {
 		return Person{}, errDenied
 	}
@@ -114,6 +127,9 @@ func (d *LDAPDirectory) find(filter, expected string) (Person, error) {
 		return Person{}, err
 	}
 	p, err := d.person(entries[0], groups)
+	if p.System {
+		return Person{}, errDenied
+	}
 	if expected != "" && p.Anchor != expected {
 		return Person{}, errDenied
 	}
@@ -126,7 +142,7 @@ func (d *LDAPDirectory) People() ([]Person, error) {
 		return nil, err
 	}
 	defer conn.Close()
-	entries, err := search(conn, d.config.UsersDN, d.users(""), 5000, d.attributes())
+	entries, err := search(conn, d.peopleBase(), d.users(""), 5000, d.attributes())
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +156,9 @@ func (d *LDAPDirectory) People() ([]Person, error) {
 		p, err := d.person(e, groups)
 		if err != nil || seen[p.Anchor] {
 			return nil, errDenied
+		}
+		if p.System {
+			continue
 		}
 		seen[p.Anchor] = true
 		people = append(people, p)
@@ -289,7 +308,7 @@ func (d *LDAPDirectory) person(e *ldap.Entry, groups []Group) (Person, error) {
 	if err != nil || !anchorPattern.MatchString(anchor) {
 		return Person{}, errDenied
 	}
-	p := Person{Anchor: anchor, Username: e.GetAttributeValue("sAMAccountName"), DisplayName: e.GetAttributeValue("displayName"), Email: e.GetAttributeValue("mail"), DN: e.DN, GUID: guid, SID: sidString(e.GetRawAttributeValue("objectSid")), Groups: []Group{}, KnownGroups: map[string]string{}}
+	p := Person{Anchor: anchor, Username: e.GetAttributeValue("sAMAccountName"), DisplayName: e.GetAttributeValue("displayName"), GivenName: e.GetAttributeValue("givenName"), Surname: e.GetAttributeValue("sn"), Email: e.GetAttributeValue("mail"), DN: e.DN, GUID: guid, SID: sidString(e.GetRawAttributeValue("objectSid")), Groups: []Group{}, KnownGroups: map[string]string{}}
 	uac, err := strconv.ParseUint(e.GetAttributeValue("userAccountControl"), 10, 64)
 	if err != nil || p.SID == "" {
 		return Person{}, errDenied
@@ -324,8 +343,15 @@ func (d *LDAPDirectory) person(e *ldap.Entry, groups []Group) (Person, error) {
 		primarySID = p.SID[:i+1] + e.GetAttributeValue("primaryGroupID")
 	}
 	p.Groups = closure(groups, p.DN, primarySID)
+	p.PrimaryGroupSID = primarySID
+	p.System = d.config.ServiceAccountsDN != "" && underDN(p.DN, d.config.ServiceAccountsDN) || uac&0x3800 != 0 || strings.HasSuffix(p.SID, "-502") || strings.HasSuffix(p.SID, "-501")
+	p.DomainRisk = strings.HasSuffix(p.SID, "-500")
 	p.Protected = has(d.config.ProtectedUsers, p.Anchor) || strings.HasSuffix(p.SID, "-500")
 	for _, g := range p.Groups {
+		p.Administrator = p.Administrator || g.Anchor == d.config.AdminGroup && g.GUID == d.config.AdminGroupGUID && d.config.AdminGroupGUID != ""
+		if domainGroup(g) {
+			p.DomainRisk = true
+		}
 		if d.privilegedGroup(g) {
 			p.Protected = true
 		}
@@ -359,7 +385,7 @@ func (d *LDAPDirectory) Group(anchor string) (Group, error) {
 	var found *Group
 	for i := range groups {
 		g := &groups[i]
-		if g.Anchor == anchor && underDN(g.DN, d.config.GroupsDN) {
+		if (g.Anchor != "" && g.Anchor == anchor && underDN(g.DN, d.config.GroupsDN)) || (d.config.Administration && "sid:"+g.SID == anchor) {
 			if found != nil {
 				return Group{}, errDenied
 			}
@@ -370,6 +396,10 @@ func (d *LDAPDirectory) Group(anchor string) (Group, error) {
 		return Group{}, errDenied
 	}
 	result := *found
+	result.Reference = result.Anchor
+	if result.Reference == "" {
+		result.Reference = "sid:" + result.SID
+	}
 	result.Protected = d.protectedGroup(result)
 	for _, parent := range closure(groups, result.DN, "") {
 		if d.protectedGroup(parent) {
@@ -428,6 +458,9 @@ func writeResult(err error) string {
 		return "saved"
 	}
 	var e *ldap.Error
+	if errors.As(err, &e) && e.ResultCode == ldap.LDAPResultInsufficientAccessRights {
+		return "denied"
+	}
 	if errors.As(err, &e) && e.ResultCode > 0 && e.ResultCode < ldap.ErrorNetwork {
 		return "rejected"
 	}
@@ -445,7 +478,25 @@ func (d *LDAPDirectory) modify(dn, password, guid string, changes func(*ldap.Mod
 	defer conn.Close()
 	req := ldap.NewModifyRequest("<GUID="+guid+">", nil)
 	changes(req)
-	return writeResult(conn.Modify(req))
+	return modificationResult(conn.Modify(req), req)
+}
+
+func modificationResult(err error, req *ldap.ModifyRequest) string {
+	for _, change := range req.Changes {
+		if change.Modification.Type != "unicodePwd" {
+			continue
+		}
+		var e *ldap.Error
+		if errors.As(err, &e) {
+			if e.ResultCode == ldap.LDAPResultConstraintViolation {
+				return "password_policy_rejected"
+			}
+			if e.ResultCode == ldap.LDAPResultInvalidCredentials {
+				return "credentials_rejected"
+			}
+		}
+	}
+	return writeResult(err)
 }
 
 func (d *LDAPDirectory) ChangePassword(p Person, oldPassword, newPassword string) string {

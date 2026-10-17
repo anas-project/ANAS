@@ -1,6 +1,6 @@
 # ANAS 用户门户
 
-独立门户用于有权限的应用、本人账号、LDAP 改密与范围受限的用户管理。当前为开发中的候选，尚未通过全部首版验收。
+独立门户用于有权限的应用、本人账号、LDAP 改密与范围受限的用户管理。首版验收基线保留在配套计划；本轮资料与管理员扩展正在 finance 复验。
 
 ## 快速信息
 
@@ -25,15 +25,15 @@ modules:
   user_portal: {}
 ```
 
-默认入口为 `https://portal.<base_domain>`。门户与 IAM 必须使用同站 HTTPS。未配置委派规则时只提供应用与本人功能。
+默认入口为 `https://portal.<base_domain>`。门户与 IAM 必须使用同站 HTTPS。ANAS 管理员角色默认启用；目录写入还需要单独配置专用绑定和 ACL。显式委派规则用于额外的范围受限角色。
 
 ## 身份与用户管理
 
 OIDC Authorization Code + PKCE/S256。服务端验证签名、issuer、audience、nonce、请求绑定和有效期，浏览器只持有受保护 Cookie。匹配键为 `sub` 中的 immutable anchor，AD 名称和邮箱不参与会话绑定。
 
-Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应用通用 API secret。卡片、搜索和图标在当前 IAM/AD 校验及固定正向组策略检查后返回。LDAP 改密使用原密码 delete/new add，不退化为 reset。管理员密码和成员写入需要单独受限绑定、显式完整规则及近期认证。
+Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应用通用 API secret。卡片、搜索和图标在当前 IAM/AD 校验及固定正向组策略检查后返回。LDAP 改密使用原密码 delete/new add，不退化为 reset。ANAS 管理员写入使用专用受限绑定及近期认证；系统权限操作还要求本人域权限和逐次验证。额外委派角色继续要求完整规则。
 
-退出先撤销门户会话，再从浏览器调用 discovery 的原生登出端点，不传递 token。IAM 失败时明确显示未确认，允许重试。原生 back-channel receiver 为 `/oidc/backchannel-logout`；真实双向登出和无浏览器撤销结论以配套计划的 E2E 为准，当前不宣称通过。
+退出先撤销门户会话，再从浏览器调用 discovery 的原生登出端点，不传递 token。IAM 失败时明确显示未确认，允许重试。原生 back-channel receiver 为 `/oidc/backchannel-logout`；真实双向登出和无浏览器撤销结论以配套计划中对应制品的 E2E 记录为准。
 
 | 目录侧变更 | 当前实现及证据等级 |
 | --- | --- |
@@ -46,6 +46,19 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 | 标识符回收 | 不按名称或 DN 替换 anchor；稳定 GUID 用于写入 |
 
 兜底：身份依赖失败关闭访问；修复目录/IAM 后重新登录。变更不宣称撤销其他应用的 token、SSH key 或资产。
+
+
+### 资料与 ANAS 管理员管理
+
+个人资料允许修改名、姓、显示名；邮箱、登录名、锚点只读，未接邮件模块不提供别名写入。资料在写入前逐字复核版本及旧值，门户内串行写入；同一 LDAP Modify 检查旧属性值。外部目录工具的并发不属于全局事务保证。用户应用分类开关记住当前浏览器偏好；密码/资料结果显示在表单旁。未支持语言仍回退英文。
+
+`administration_enabled` 使用目录 Provider 注册的管理员组并绑定稳定标识，不以 Casdoor 原生管理员或名称前缀授权。默认管理列表只展示明确注册的 ANAS 组，按应用、能力、文件资源和角色分类；高级视图说明系统权限风险。不能重置本人密码、移出自身管理员路径或移除最后一个可确认的可用管理员。计算机、服务和信任主体不进入人员管理。
+
+启用写入前，部署者在选定 Samba DC 内运行 `tools/provision-directory.py`，以私有标准输入提供确认串、实际 base_dn 和 profile/reset/group 三个随机密码；确认串为 `provision-user-portal-scoped-writers`。脚本创建 `svc_portal_profile`、`svc_portal_reset`、`svc_portal_group`，只增加特定属性/对象 ACL，不给服务账号域角色、不修改已有服务密码。随后将三个 DN/密码填入对应门户配置并重新部署。输入须保留在 0700 目录/0600 文件，不进入命令行、Git 或日志。该脚本是管理员运行的目录配置工具，不是门户 API。
+
+姓名绑定只写三个姓名属性；密码绑定写普通人员的 reset/pwdLastSet/lockoutTime；成员绑定只写已注册且非域级组的 member。初始配置显式拒绝密码绑定管理现有域级人员。以后在门户外新增高权限人员或更改权限边界时，部署者须重新核对 ACL；目录 ACL 不能按 member 值限制目标，也不能代替门户每次动态权限检查。服务账号没有全域权限不代表凭据泄露没有风险。
+
+`domain_administration_enabled` 默认关闭；开启后受保护人员/系统组走独立确认：近期 OIDC、限时一次性参数确认、同一登录人员的本人 LDAPS 绑定、原生 AD ACL。密码只用于一个请求，不跨请求保存；不是 MFA 或进程隔离的保证。普通门户不长期持有全域管理凭据。组关系之外的自定义 ACL 权限仍以 AD 的最终拒绝/允许为准。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -63,8 +76,10 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `user_portal.administration_enabled` | bool | — | `true` | `static` | `USER_PORTAL_ADMINISTRATION_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 启用受管 ANAS 管理员角色；实际写入仍要求专属 ACL 和绑定 |
 | `user_portal.audit_capacity_mb` | int | `1..1024` | `64` | `static` | `USER_PORTAL_AUDIT_CAPACITY_MB` | 否 | 否 | 否 | 是 | `container_recreate` | 私有审计容量；满额关闭写入 |
 | `user_portal.delegation_rules` | string | — | `[]` | `static` | `USER_PORTAL_DELEGATION_RULES` | 否 | 否 | 否 | 是 | `container_recreate` | 完整委派规则 JSON 数组；默认关闭 |
+| `user_portal.domain_administration_enabled` | bool | — | `false` | `static` | `USER_PORTAL_DOMAIN_ADMINISTRATION_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 显式启用本人域权限和逐次凭据验证；默认关闭 |
 | `user_portal.domain_prefix` | string | — | `portal` | `static` | `USER_PORTAL_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 门户域名前缀 |
 | `user_portal.group_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_GROUP_BIND_DN` | 否 | 否 | 否 | 是 | `container_recreate` | 门户专属单成员写绑定 DN |
 | `user_portal.group_bind_password` | string | — | `""` | `static` | `USER_PORTAL_GROUP_BIND_PASSWORD` | 否 | 否 | 是 | 是 | `container_recreate` | 专属成员写绑定凭据，不交付浏览器 |
@@ -72,6 +87,8 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 | `user_portal.language` | string | — | — | `inherited` | `USER_PORTAL_LANGUAGE` | 否 | 是 | 否 | 是 | `container_recreate` | 默认中英文选择，不支持时英文回退 |
 | `user_portal.password_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_PASSWORD_BIND_DN` | 否 | 否 | 否 | 是 | `container_recreate` | 门户专属密码/解锁写绑定 DN |
 | `user_portal.password_bind_password` | string | — | `""` | `static` | `USER_PORTAL_PASSWORD_BIND_PASSWORD` | 否 | 否 | 是 | 是 | `container_recreate` | 专属密码写绑定凭据，不交付浏览器 |
+| `user_portal.profile_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_PROFILE_BIND_DN` | 否 | 否 | 否 | 是 | `container_recreate` | 仅具 givenName、sn、displayName 写权的专属绑定 DN |
+| `user_portal.profile_bind_password` | string | — | `""` | `static` | `USER_PORTAL_PROFILE_BIND_PASSWORD` | 否 | 否 | 是 | 是 | `container_recreate` | 资料专属写绑定密码；不交付浏览器 |
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护分组的 anchor JSON 数组 |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护人员的 anchor JSON 数组 |
 | `user_portal.recent_window_seconds` | int | `5..900` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | 否 | 否 | 否 | 是 | `container_recreate` | 近期认证窗口；默认 300 秒 |
@@ -86,7 +103,7 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 审计默认容量 64 MiB，可用 audit_capacity_mb 调整。满额时先停止门户、备份并人工核对未完成记录，再按受管维护流程导出；不要直接删除未完成记录。当前没有自动轮转/清理接口。
 
-单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/archived/user-portal.md)。
+单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/user-portal.md)。
 
 ## 时区与语言
 
@@ -95,7 +112,7 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`0.1.0-r1`（reviewed 2026-10-14）
+- Module version / 版本：`0.1.0-r1`（reviewed 2026-10-16）
 - Timezone / 时区：`container` — TZ is supplied to the process; audit timestamps use UTC and the browser displays local time.
 - Language scope / 语言范围：All portal pages and catalog presentation
 - Selection / 选择方式：`application`

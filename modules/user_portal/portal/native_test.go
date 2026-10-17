@@ -30,8 +30,8 @@ func TestNativeDirectoryBoundary(t *testing.T) {
 	}
 	var f struct {
 		Host, Server, CA, Base, Old, New string
-		Services                    map[string]struct{ DN, Password string }
-		Anchors                     map[string]string
+		Services                         map[string]struct{ DN, Password string }
+		Anchors                          map[string]string
 	}
 	data, err := os.ReadFile(input)
 	if err != nil {
@@ -119,8 +119,8 @@ func TestNativeDirectoryBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal("other group unavailable")
 	}
-	record("reset outside delegated OU denied", d.ResetPassword(b, "Aa1!"+randomID(), false) == "rejected", nil)
-	record("group binding outside group denied", d.Member(other, a, true) == "rejected", nil)
+	record("reset outside delegated OU denied", d.ResetPassword(b, "Aa1!"+randomID(), false) == "denied", nil)
+	record("group binding outside group denied", d.Member(other, a, true) == "denied", nil)
 	modify := func(service, object, attribute string, values []string) error {
 		bind := f.Services[service]
 		conn, err := d.dial(bind.DN, bind.Password)
@@ -151,7 +151,7 @@ func TestNativeDirectoryBoundary(t *testing.T) {
 	err = conn.Modify(m)
 	var le *ldap.Error
 	record("existing shared password binding has no group write", errors.As(err, &le) && le.ResultCode == ldap.LDAPResultInsufficientAccessRights, err)
-	report, _ := json.MarshalIndent(map[string]any{"requirements": []string{"PORTAL-R-016", "PORTAL-R-017"}, "results": results}, "", "  ")
+	report, _ := json.MarshalIndent(map[string]any{"requirements": []string{"PORTAL-R-016"}, "results": results}, "", "  ")
 	if os.WriteFile(filepath.Join(root, "evidence/native-directory-boundary.json"), append(report, '\n'), 0600) != nil {
 		t.Fatal("cannot preserve native evidence")
 	}

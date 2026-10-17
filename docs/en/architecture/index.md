@@ -1,9 +1,24 @@
 # Architecture
 
+## Portal account administration and mail ownership
+
+The [Chinese extension design](/architecture/portal-account-mail-administration) separates AD-owned
+identity/profile/password fields from mail-module-owned addresses. It specifies one primary address,
+multiple personal aliases and one inbox, including self-service alias addition/removal, protected names,
+address retention and partial failures. ANAS administrators manage personnel with self-protection and
+explicit group risk handling. Domain-level actions use the operator's own AD rights and per-operation
+credential verification; no permanent domain-wide service credential is added to the ordinary portal.
+The domain authorization model and personal alias self-service were confirmed on 2026-10-16.
+Portal UI, profile editing and user administration were implemented and verified on finance;
+the paired portal plan records exact artifacts, scope and subsequent review checks. The mail backend
+and personal alias writes remain proposed work and are not part of that acceptance baseline.
+The separate [mail-server research](/research/mail-server-anas-integration-research) compares native
+capabilities, licenses, identity integration and operational fit; no mail deployment was tested.
+
 ## Independent user portal: confirmed first version
 
 The [Chinese user portal design](/architecture/user-portal-design) specifies the confirmed scope:
-authorized applications and search, a read-only personal profile and group/grant sources, old-password
+authorized applications and search, editable name fields with read-only identity/email and group/grant sources, old-password
 self-change including first-login/expired-password flows, scoped user search, temporary-password reset,
 forced change, separate unlocking, direct member changes, recent reauthentication, audit and logout
 from both the portal and the current IAM browser session.
@@ -12,9 +27,11 @@ Account creation/disable, recovery without the old password, MFA, cross-applicat
 favorites, access requests and external notifications remain later candidates.
 
 Casdoor handles login, Samba AD owns users/groups/passwords, and the read-only catalog owns metadata.
-Each complete delegation rule must cover the actor, action, target person and applicable group.
-Admins/platform_admin has no implicit account write permission; absent rules disable delegation.
-Privileged identities, service accounts and groups that define delegation boundaries are protected.
+The stable registered ANAS administrator role authorizes personnel administration; enabled domain
+actions additionally require the operator's own AD rights and a fresh per-operation password.
+The separate scoped delegation path still requires each complete rule to cover the actor, action,
+target person and applicable group; absent rules disable that path. Service accounts and computers
+are excluded, while self/last-administrator protections apply to platform management.
 Directory attribute/object ACLs complement the portal's dynamic target and privilege checks.
 
 The implemented first version has one portal process, memory-only server sessions (restart requires

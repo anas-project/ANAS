@@ -28,6 +28,7 @@ type Record struct {
 	ConfigDigest   string    `json:"config_digest"`
 	ForceChange    *bool     `json:"force_change,omitempty"`
 	ExpectedDirect *bool     `json:"expected_direct,omitempty"`
+	ChangedFields  []string  `json:"changed_fields,omitempty"`
 }
 
 // Journal contains only stable references and outcomes. Passwords, tokens,

@@ -22,8 +22,10 @@ One Go process embeds UI/API. Traefik is the only ingress; no host ports or Dock
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `user_portal.administration_enabled` | bool | — | `true` | `static` | `USER_PORTAL_ADMINISTRATION_ENABLED` | no | no | no | yes | `container_recreate` | Enable the registered ANAS administrator role; writes still need scoped bindings and ACLs |
 | `user_portal.audit_capacity_mb` | int | `1..1024` | `64` | `static` | `USER_PORTAL_AUDIT_CAPACITY_MB` | no | no | no | yes | `container_recreate` | Private audit capacity; full storage closes writes |
 | `user_portal.delegation_rules` | string | — | `[]` | `static` | `USER_PORTAL_DELEGATION_RULES` | no | no | no | yes | `container_recreate` | Complete delegation rules as JSON; disabled by default |
+| `user_portal.domain_administration_enabled` | bool | — | `false` | `static` | `USER_PORTAL_DOMAIN_ADMINISTRATION_ENABLED` | no | no | no | yes | `container_recreate` | Opt in to per-operation personal AD credentials and native domain rights; disabled by default |
 | `user_portal.domain_prefix` | string | — | `portal` | `static` | `USER_PORTAL_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Portal hostname prefix |
 | `user_portal.group_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_GROUP_BIND_DN` | no | no | no | yes | `container_recreate` | Dedicated single-member write bind DN |
 | `user_portal.group_bind_password` | string | — | `""` | `static` | `USER_PORTAL_GROUP_BIND_PASSWORD` | no | no | yes | yes | `container_recreate` | Dedicated member bind credential; backend only |
@@ -31,11 +33,13 @@ One Go process embeds UI/API. Traefik is the only ingress; no host ports or Dock
 | `user_portal.language` | string | — | — | `inherited` | `USER_PORTAL_LANGUAGE` | no | yes | no | yes | `container_recreate` | Default language; unsupported selections fall back to English |
 | `user_portal.password_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_PASSWORD_BIND_DN` | no | no | no | yes | `container_recreate` | Dedicated password/unlock bind DN |
 | `user_portal.password_bind_password` | string | — | `""` | `static` | `USER_PORTAL_PASSWORD_BIND_PASSWORD` | no | no | yes | yes | `container_recreate` | Dedicated password bind credential; backend only |
+| `user_portal.profile_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_PROFILE_BIND_DN` | no | no | no | yes | `container_recreate` | Dedicated writer DN restricted to givenName, sn and displayName |
+| `user_portal.profile_bind_password` | string | — | `""` | `static` | `USER_PORTAL_PROFILE_BIND_PASSWORD` | no | no | yes | yes | `container_recreate` | Private profile writer credential; never sent to the browser |
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | no | no | no | yes | `container_recreate` | Additional protected group anchors as JSON |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | no | no | no | yes | `container_recreate` | Additional protected user anchors as JSON |
 | `user_portal.recent_window_seconds` | int | `5..900` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | no | no | no | yes | `container_recreate` | Recent authentication window; default 300 seconds |
 
-module.yml is authoritative. Delegation defaults to disabled; directory privileges are never widened. Explicit runtime environment excludes application API secrets and IAM registration variables.
+module.yml is authoritative. Additional delegation rules default to empty. ANAS administration is a separate registered role; dedicated directory ACLs are an explicit operator step. Explicit runtime environment excludes application API secrets and IAM registration variables.
 
 Source builds reuse the repository's `DOCKER_HUB_REGISTRY`, `GOPROXY_URL` and `CHINESE_BUILD_SPEEDUP`/`APK_MIRROR_URL`. `GO_MODULE_PROXY` can override the Go proxy separately; official endpoints remain the defaults. Download acceleration does not disable TLS verification.
 
@@ -49,7 +53,22 @@ Memory sessions and one-use state/nonce/verifier have capacity limits and TTL. C
 
 The directory reuses appcatalog language/BuildView. Policies must be enabled, Approved, Allow and match model/resource/Read/group sets, intersected with current AD groups. Native default allow/admin bypass is not used. Icon authorization precedes the no-link reader and digest check.
 
-LDAP actions are fixed password change/reset, pwdLastSet, lockoutTime and one member add/delete. Anchor resolution yields a current GUID; no arbitrary attribute/DN, full-member replacement or command endpoint exists. Audit has no password/token field; intent fsync precedes LDAP, unknown network results never replay, and result-storage failure closes writes.
+LDAP actions are limited to the three name fields, password change/reset, pwdLastSet, lockoutTime and one member add/delete. Anchor resolution yields a current GUID; no arbitrary attribute/DN, full-member replacement or command endpoint exists. Audit has no password/token field; intent fsync precedes LDAP, unknown network results never replay, and result-storage failure closes writes.
+
+
+### Profiles and ANAS administration
+
+Users may edit given name, surname and display name. Email, login name and anchors remain read-only; no alias writes exist before mail integration. Profiles recheck exact field values immediately before writing and serialize portal profile writes, followed by one old-value LDAP Modify. AD name matching is case-insensitive; external directory tools do not share a global transaction. The application category switch persists per browser, while form outcomes are visible next to the operation and saved names immediately refresh the visible account summary. Unsupported languages select English.
+
+`administration_enabled` binds the directory provider's registered ANAS administrator role to its stable identity, not a Casdoor native administrator flag or a name prefix. Registered groups are categorized by purpose; system groups require the advanced risk view. Self password reset, self removal from administrator paths and removal of the last confirmed available administrator are rejected. Computers, service and trust accounts are excluded.
+
+Before enabling writes, an operator runs `tools/provision-directory.py` inside the selected Samba DC, supplying private JSON on stdin with confirmation `provision-user-portal-scoped-writers`, the actual base_dn and separate random profile/reset/group passwords. It creates `svc_portal_profile`, `svc_portal_reset` and `svc_portal_group` and adds attribute/object ACLs, without domain roles or resetting existing service passwords. Configure the resulting DNs/passwords in the portal and redeploy. Keep input under a 0700 directory in a 0600 file, never in argv, Git or logs. This is an operator tool, not a portal endpoint.
+
+The profile writer only writes the three name fields. Reset covers ordinary personnel's reset/pwdLastSet/lockoutTime; member writes cover registered, non-domain groups. Provisioning requires ordinary user service accounts with no extra groups and Domain Users as their primary group, and checks that primary group's effective domain privileges before granting ACLs. Existing domain-level personnel receive explicit reset denials, including direct, nested and primary-group privileges; an unresolved primary group stops provisioning. Privilege changes or new privileged users made outside the portal require the operator to recheck ACLs. Object ACLs do not constrain member values and cannot replace current portal authorization. A non-domain service account credential still has sensitive delegated rights.
+
+If a profile write succeeds but the following read fails, the form retains the saved result and request ID and asks for a reload. A late profile response after leaving the form cannot restore a signed-out browser identity.
+
+`domain_administration_enabled` defaults to false. Protected personnel/system groups require recent OIDC, an expiring one-use parameter confirmation and the signed-in person's own per-request LDAPS bind and native AD rights. That password is not stored across requests. This is not an MFA or process isolation claim, and the ordinary portal holds no permanent domain-wide writer credential. AD remains authoritative for custom ACL permissions.
 
 ## Storage, backup and upgrades
 

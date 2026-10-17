@@ -2,4 +2,4 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
-| [独立用户门户](archived/user-portal.md) | 首版原生 OIDC/API/LDAP 接线及固定测试主机验收 | 已完成（已归档） |
+| [独立用户门户](user-portal.md) | 界面、资料、ANAS 管理员及本人域权限；finance 固定制品验收 | 实施中 |

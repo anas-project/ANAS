@@ -13,14 +13,15 @@ type Session struct {
 }
 
 type Store struct {
-	mu        sync.Mutex
-	sessions  map[string]Session
-	flows     map[string]Flow
-	logoutIDs map[string]time.Time
+	mu            sync.Mutex
+	sessions      map[string]Session
+	flows         map[string]Flow
+	logoutIDs     map[string]time.Time
+	confirmations map[string]Confirmation
 }
 
 func newStore() *Store {
-	return &Store{sessions: map[string]Session{}, flows: map[string]Flow{}, logoutIDs: map[string]time.Time{}}
+	return &Store{sessions: map[string]Session{}, flows: map[string]Flow{}, logoutIDs: map[string]time.Time{}, confirmations: map[string]Confirmation{}}
 }
 
 func (s *Store) prune() {
@@ -38,6 +39,11 @@ func (s *Store) prune() {
 	for k, v := range s.logoutIDs {
 		if !v.After(now) {
 			delete(s.logoutIDs, k)
+		}
+	}
+	for k, v := range s.confirmations {
+		if !v.Expires.After(now) {
+			delete(s.confirmations, k)
 		}
 	}
 }
@@ -66,11 +72,34 @@ func (s *Store) delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.sessions, id)
+	for k, v := range s.confirmations {
+		if v.Session == id {
+			delete(s.confirmations, k)
+		}
+	}
 	for k, v := range s.flows {
 		if v.Session == id {
 			delete(s.flows, k)
 		}
 	}
+}
+
+func (s *Store) addConfirmation(key string, v Confirmation) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.prune()
+	if len(s.confirmations) >= 4096 {
+		return false
+	}
+	s.confirmations[key] = v
+	return true
+}
+func (s *Store) consumeConfirmation(key string) (Confirmation, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.confirmations[key]
+	delete(s.confirmations, key)
+	return v, ok && v.Expires.After(time.Now())
 }
 func (s *Store) addFlow(f Flow) bool {
 	s.mu.Lock()

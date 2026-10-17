@@ -2,15 +2,15 @@ api_version: "anas.test-cases/v2"
 topic: "user-portal"
 title: "独立用户门户验收用例"
 requirement_document: "modules/user_portal/dev-docs/requirements/user-portal.md"
-plan_document: "modules/user_portal/dev-docs/plans/archived/user-portal.md"
-requirement_scope: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-009", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-012", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-016", "PORTAL-R-017", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-040", "PORTAL-R-041"]
+plan_document: "modules/user_portal/dev-docs/plans/user-portal.md"
+requirement_scope: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-041", "PORTAL-R-042", "PORTAL-R-043", "PORTAL-R-044", "PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-047", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-054", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-060", "PORTAL-R-061"]
 cases:
   - id: "PORTAL-T-001"
     title: "协议、授权和失败关闭单元/契约"
     status: "active"
     level: "unit"
-    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-012", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-025", "PORTAL-R-035", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-040", "PORTAL-R-041"]
-    requirement_digest: "sha256:4060754a43956653ebd72aacedbafc2744ca88ed38288eb1a764c66abf1094a8"
+    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-025", "PORTAL-R-035", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-041"]
+    requirement_digest: "sha256:10bd5771ce666b5e688bbfc201e3bb5299ac95925967849afcc6f87b40d17430"
     implementation_digest: "sha256:eb3ab84b1897097106f2d5cedb80e78cdc12024a2d9b027d7991a065fc223cc4"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "https-test-server"]
@@ -34,9 +34,9 @@ cases:
     title: "真实页面、原生 OIDC 与目录操作"
     status: "active"
     level: "e2e"
-    requirements: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-009", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-013", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-017", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-039", "PORTAL-R-040", "PORTAL-R-041"]
-    requirement_digest: "sha256:1f5553893a779e73821d6a5c796c5ffd20020a50746de731a5757980ab61621b"
-    implementation_digest: "sha256:5c982f6de45d019d37831cfed5b728321e2ce7c9bccb6d292a34e2274f9c37d4"
+    requirements: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-039", "PORTAL-R-041"]
+    requirement_digest: "sha256:3ee2efcaee7b757199d830f3404a93554a36338409a1d77dc699bb3834e857bc"
+    implementation_digest: "sha256:1bde314437568f682801ed5822206fc5bd74bc26e8df064595ecfeff28a3fc30"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
     preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
@@ -61,7 +61,7 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-007", "PORTAL-R-020", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039"]
     requirement_digest: "sha256:a34c0af1019dc8e6a77336f03b3e8ad18e3953b8af227a01d6a1e97c1069b5c1"
-    implementation_digest: "sha256:22a34046702e454848a18d4dfd4ce73ea7a00cd4e99b6307c2964f4810ea4b4e"
+    implementation_digest: "sha256:64d996f4f941ee7299d2e5bbeba569839741f2c88fba47a6d5bd7e434b38937a"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
     preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
@@ -84,9 +84,9 @@ cases:
     title: "实际回调、保护和身份复用边界"
     status: "active"
     level: "e2e"
-    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-014", "PORTAL-R-015", "PORTAL-R-030"]
-    requirement_digest: "sha256:88812280037ae7845286f47b9d646e7ff07ae5906447ec412c00c705c95a679d"
-    implementation_digest: "sha256:5c982f6de45d019d37831cfed5b728321e2ce7c9bccb6d292a34e2274f9c37d4"
+    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-030"]
+    requirement_digest: "sha256:8b486f828f28db2c032c93545e4585a737c6f714c2487dd485886cf1312097b7"
+    implementation_digest: "sha256:1bde314437568f682801ed5822206fc5bd74bc26e8df064595ecfeff28a3fc30"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
     preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
@@ -109,9 +109,9 @@ cases:
     title: "门户实际 LDAP 适配器 TLS 与 ACL"
     status: "active"
     level: "e2e"
-    requirements: ["PORTAL-R-016", "PORTAL-R-017"]
-    requirement_digest: "sha256:ba79ae443d4b97ee964387c63c06ac3ad40aa1e7beb0b7375f554b79fc19efce"
-    implementation_digest: "sha256:9bbd0c65e563d60784b8cb0694a09dfa2b84c833d6a4bac81f96711d5e16053d"
+    requirements: ["PORTAL-R-016"]
+    requirement_digest: "sha256:2c9bfd8039bcca34a0e35da476086c926fec464e741a32b6a4478093ffe3434b"
+    implementation_digest: "sha256:825cc5c34bea39474e8bbf87c6f4e588e9e1b7b1205b5a6138f44422354e7b22"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
     preconditions: ["PORTAL_PROBE_ROOT/PORTAL_TEST_REMOTE_ROOT 指向独立夹具；原生 Go 验收指定 PORTAL_NATIVE_FIXTURE", "T-002 默认 browser；T-003 设置 PORTAL_TEST_MODE=faults；T-004 设置 boundary", "测试数据需预置；依次运行 browser、faults、原生目录、boundary，再核对最终审计；boundary 会重建身份，不得在它之后运行原生目录；凭据仅在 0700/0600 私有输入文件", "服务器内部模式设 PORTAL_TEST_LOCAL_FIXTURE=1、DOCKER_HOST 为该 run 的私有 socket，PORTAL_TEST_RESOLVED_IP 为 run.json 的 ip；使用锁定 Playwright 1.62.1 工具容器", "近期认证测试窗口默认 60 秒；PORTAL_TEST_RECENT_WINDOW_SECONDS 必须与隔离服务配置相同，生产默认 300 秒", "页面以 DOM 和实际 API 结果判定就绪，不能使用网络空闲代替认证结果"]
@@ -130,3 +130,53 @@ cases:
     cleanup: ["仅移除该 run 的 daemon、容器、namespace、数据和测试凭据；先归档公共源码与脱敏证据"]
     timeout: "15m"
     sensitive_data: "随机测试密码、token 和绑定凭据不进入报告、截图、源码或归档；仅记录稳定引用/结果"
+  - id: "PORTAL-T-006"
+    title: "资料、平台管理员与域级确认反例"
+    status: "active"
+    level: "unit"
+    requirements: ["PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059"]
+    requirement_digest: "sha256:768e062e220dd33d9d9a3c4f51409e33dcb57c7eda3c42f3eaea69f964e42ec7"
+    implementation_digest: "sha256:a9fac528caee9cb406946f8ebfe9a7156480e7ecaf28f264811421e160ab1e70"
+    fixture: "内存目录与 HTTPS 服务、无 Samba 写入的配置守卫和生产静态资源配模拟 API；不使用真实账号"
+    capabilities: ["go", "https-test-server", "python3", "playwright-chromium"]
+    preconditions: ["安装锁定的 Playwright；浏览器使用默认 Chromium 或 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 指定的独立测试进程"]
+    steps: ["执行完整入口", "核对真实 HTTP/目录结果及 UI；反例不得产生越界写入"]
+    implementation:
+      files: ["modules/user_portal/portal/administration_test.go", "modules/user_portal/tools/test_provision_directory.py", "test-env/playwright/user-portal-ui.test.mjs"]
+      commands: ["go test -race ./modules/user_portal/portal", "python3 modules/user_portal/tools/test_provision_directory.py", "node test-env/playwright/user-portal-ui.test.mjs"]
+    assertions: ["改字段、旧版本、同名角色、本人降权、最后管理员、改参/过期/重放、另一人密码与审计失败"]
+    oracle:
+      sources: ["return-value", "error-contract", "filesystem"]
+    negative_cases: ["改字段、旧版本、同名角色、本人降权、最后管理员、改参/过期/重放、另一人密码与审计失败"]
+    validity:
+      method: "counterexample"
+      commands: ["go test -race ./modules/user_portal/portal", "python3 modules/user_portal/tools/test_provision_directory.py", "node test-env/playwright/user-portal-ui.test.mjs"]
+      evidence: "改字段、旧版本、同名角色、本人降权、最后管理员、改参/过期/重放、另一人密码与审计失败"
+    cleanup: ["按对象 GUID 和 owned description 清理测试主体，保留无凭据验收摘要；现有服务只替换门户"]
+    timeout: "20m"
+    sensitive_data: "域密码、临时密码、令牌和服务绑定只在主机内处理，不进入报告/截图/命令行"
+  - id: "PORTAL-T-007"
+    title: "finance 真实目录、界面与平台管理验收"
+    status: "active"
+    level: "e2e"
+    requirements: ["PORTAL-R-042", "PORTAL-R-043", "PORTAL-R-044", "PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-047", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-054", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-060", "PORTAL-R-061"]
+    requirement_digest: "sha256:0f38c44cc96317603ff7a198752f82fdf2400c37788b93a76176e87778c9ffba"
+    implementation_digest: "sha256:588944aadc45ac8b9d0d2a6082bc745d83426967274e79c4fb5e36c3e4c2657d"
+    fixture: "本轮固定候选；finance 仅使用带专属标记和稳定标识的测试人员/组，不修改已有人员密码或成员关系"
+    capabilities: ["oidc", "ldaps", "casdoor", "private-browser"]
+    preconditions: ["候选源码、镜像和私有夹具路径已核对；原始凭据仅保留在测试主机；真实写入前须有目录专用账号/ACL 的明确授权；只读探针可独立运行", "privileged 夹具仅通过 AD 主组具有 Domain Admins 权限，写绑定使用修复后的 provision-directory.py 配置，原生测试必须验证该路径被保护"]
+    steps: ["执行完整入口", "核对真实 HTTP/目录结果及 UI；反例不得产生越界写入"]
+    implementation:
+      files: ["test-env/playwright/user-portal-account-management.mjs", "test-env/scripts/user-portal-account-fixture.py", "modules/user_portal/portal/account_native_test.go", "modules/user_portal/tools/provision-directory.py"]
+      commands: ["go test -tags portal_native ./modules/user_portal/portal -run TestNativeAdministrationReadOnly", "go test -tags portal_native ./modules/user_portal/portal -run TestNativeAccountManagement", "node test-env/playwright/user-portal-account-management.mjs"]
+    assertions: ["普通用户枚举、越界字段、并发覆盖、系统组混入、本人降权、域级凭据及确认旁路"]
+    oracle:
+      sources: ["ui", "api", "runtime", "report"]
+    negative_cases: ["普通用户枚举、越界字段、并发覆盖、系统组混入、本人降权、域级凭据及确认旁路"]
+    validity:
+      method: "counterexample"
+      commands: ["go test -tags portal_native ./modules/user_portal/portal -run TestNativeAdministrationReadOnly", "go test -tags portal_native ./modules/user_portal/portal -run TestNativeAccountManagement", "node test-env/playwright/user-portal-account-management.mjs"]
+      evidence: "普通用户枚举、越界字段、并发覆盖、系统组混入、本人降权、域级凭据及确认旁路"
+    cleanup: ["按对象 GUID 和 owned description 清理测试主体，保留无凭据验收摘要；部署前按计划核对实际受影响服务，不修改无关容器"]
+    timeout: "20m"
+    sensitive_data: "域密码、临时密码、令牌和服务绑定只在主机内处理，不进入报告/截图/命令行"
