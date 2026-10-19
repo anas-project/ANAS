@@ -1,3 +1,4 @@
+// TEST_CASES: PORTAL-T-001
 package main
 
 import (
@@ -73,6 +74,13 @@ func TestPublishIAMEndpointsDoesNotInventSAMLLogout(t *testing.T) {
 	if e["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_SELF_ACCOUNT_API_SCHEMA"] != "casdoor-account/v1" || e["ANAS_IAM_BINDING__PAPERLESS__OIDC_SELF_ACCOUNT_API_SCHEMA"] != "" {
 		t.Fatal("self-account API schema missing or retained across a protocol switch")
 	}
+	if got := e["ANAS_IAM_BINDING__NEXTCLOUD__OIDC_END_SESSION_URL"]; got != "https://auth.example:443/api/logout" {
+		t.Fatal("missing native end-session metadata", got)
+	}
+	if e["ANAS_IAM_BINDING__PAPERLESS__OIDC_END_SESSION_URL"] != "" {
+		t.Fatal("OIDC endpoint leaked into SAML")
+	}
+
 }
 
 func TestRenderInitDataRegistersDirectoryAndClients(t *testing.T) {

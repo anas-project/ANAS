@@ -1,7 +1,9 @@
+// TEST_CASES: PORTAL-T-001
 package main
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -97,5 +99,41 @@ func TestMLDisabledAndConfigurationFailsClosed(t *testing.T) {
 	delete(e, bindingPrefix+"OIDC_ISSUER_URL")
 	if _, err := render(e); err == nil {
 		t.Fatal("missing binding accepted")
+	}
+}
+
+func TestNativeEndSessionReturnsToRegisteredPortalCallback(t *testing.T) {
+	e := fixture()
+	e["IMMICH_BROWSER_LOGOUT_RETURN_URL"] = "https://portal.nas.test/signed-out?native=1"
+	e[bindingPrefix+"OIDC_END_SESSION_URL"] = "https://auth.nas.test/api/logout"
+	if err := calculate(e, map[string]string{}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := render(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		OAuth struct {
+			Endpoint string `json:"endSessionEndpoint"`
+		} `json:"oauth"`
+	}
+	if json.Unmarshal([]byte(body), &config) != nil {
+		t.Fatal("invalid JSON")
+	}
+	u, err := url.Parse(config.OAuth.Endpoint)
+	if err != nil || u.Host != "auth.nas.test" || u.Query().Get("post_logout_redirect_uri") != e["IMMICH_BROWSER_LOGOUT_RETURN_URL"] {
+		t.Fatal(config, err)
+	}
+	if !strings.Contains(e[clientPrefix+"POST_LOGOUT_REDIRECT_URIS"], e["IMMICH_BROWSER_LOGOUT_RETURN_URL"]) {
+		t.Fatal("unregistered callback")
+	}
+	delete(e, bindingPrefix+"OIDC_END_SESSION_URL")
+	if _, err := render(e); err == nil {
+		t.Fatal("missing native endpoint accepted")
+	}
+	e["IMMICH_BROWSER_LOGOUT_RETURN_URL"] = "https://evil.other/signed-out?native=1"
+	if err := validate(e); err == nil {
+		t.Fatal("external callback accepted")
 	}
 }

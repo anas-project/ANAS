@@ -88,7 +88,7 @@ func modifyProfile(conn *ldap.Conn, p Person, next Profile) string {
 func (d *LDAPDirectory) Profile(p Person, next Profile) string {
 	d.profileWrites.Lock()
 	defer d.profileWrites.Unlock()
-	if !next.valid() || p.System {
+	if !next.valid() || p.System || !underDN(p.DN, d.config.UsersDN) {
 		return "denied"
 	}
 	if d.config.ProfileBindDN == "" || d.config.ProfileBindPassword == "" {

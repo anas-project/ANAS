@@ -41,9 +41,11 @@ func publishIAMEndpoints(e map[string]string) error {
 		case "oidc":
 			e[prefix+"OIDC_ISSUER_URL"] = base
 			e[prefix+"OIDC_DISCOVERY_URL"] = base + "/.well-known/openid-configuration"
+			e[prefix+"OIDC_END_SESSION_URL"] = base + "/api/logout"
 			e[prefix+"OIDC_CAEP_EVENTS"] = "session-revoked"
 			e[prefix+"OIDC_SELF_ACCOUNT_API_SCHEMA"] = "casdoor-account/v1"
 		case "saml":
+			delete(e, prefix+"OIDC_END_SESSION_URL")
 			delete(e, prefix+"OIDC_CAEP_EVENTS")
 			delete(e, prefix+"OIDC_SELF_ACCOUNT_API_SCHEMA")
 			metadata := base + "/api/saml/metadata?application=admin/" + appName(app)

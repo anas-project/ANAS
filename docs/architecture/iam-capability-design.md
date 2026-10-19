@@ -628,3 +628,6 @@ docker tag  <mirror>/goauthentik/server:2024.10.5 ghcr.io/goauthentik/server:202
 `ylianst/meshcentral`、`goauthentik/server`。
 
 OIDC Provider 可在每个绑定发布 `OIDC_SELF_ACCOUNT_API_SCHEMA`，说明原生本人账户 API 的响应契约，而不是供消费者按 Module 名分支。当前 `casdoor-account/v1` 指 `/api/userinfo` 与 `/api/get-account` 的既有 Casdoor 格式、anas 组织状态/组/权限字段；不创建新 API。user_portal 缺失或不认识此格式即拒绝配置，仍只使用自己的绑定。
+
+
+可选的逐 Consumer OIDC Binding 字段 `OIDC_END_SESSION_URL` 表示 Provider 已验证的原生 end-session endpoint，与 discovery 一致；它不是回调页、通知接收端或任意推测的 `/logout`。目前 Casdoor 发布此字段，Consumer 仅在启用需要显式 native endpoint 的退出返回配置时要求它；未启用时沿用 discovery。

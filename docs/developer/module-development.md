@@ -433,3 +433,10 @@ IAM 消费者声明 application_catalog.consumes: true、limitations，以及固
 /run/anas/application-catalog 挂载和单独的公网 assets 挂载。render Hook 读取临时的
 ANAS_APP_CATALOG_FILE 并投射到已有原生 IAM 对象。源目录仍是事实来源，独立 user_portal 复用相同私有目录制品，按当前 IAM/AD 权限保护 API 和图标。
 细节见[目录设计](/architecture/app-catalog-design)。
+
+
+### 分组介绍与共享清单
+
+在所属 Module 的 `identity.groups` 列表声明 `id`、`name`（或 `name_from` / `names_from`）、`parent_dn_from`、`managed`、`category`、`order`、`risk`、`display_name` 和 `description`。英文必填，简体中文可选；`risk` 为 normal/resource/domain，只描述风险，不能决定目录授权。动态能力列表须声明 `select_prefix: <module>_`、`name_prefix: CAP_`，文本可用 `{name}`。`when` 引用已解析布尔开关；系统组仅由所选目录 Provider 声明 `sid` 或 `domain_rid`，不由清单创建。不要复制已有 `identity.application_group` 的 APP_ 名单。
+
+需要读取的 Compose Module 声明 `identity.group_catalog: true` 并挂载 `${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro`；禁止可写或 Web 公开目录。路径和摘要由 Core 设置。部署制品位置为 `.anas/deployments/<id>/shared/identity-groups/catalog.json`，可供多个 Module 读取，禁止消费者另写同步副本。成员关系和实际权限始终从 AD 获取。

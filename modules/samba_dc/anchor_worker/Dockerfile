@@ -48,8 +48,9 @@ RUN if [ "$CHINESE_BUILD_SPEEDUP" = "true" ] && [ -n "$APT_MIRROR_URL" ] ; then 
 
 COPY anchor_worker.py /app/anchor_worker.py
 COPY event_journal.py /app/event_journal.py
+COPY mail_policy.py /app/mail_policy.py
 
-RUN chmod 0555 /app/anchor_worker.py /app/event_journal.py
+RUN chmod 0555 /app/anchor_worker.py /app/event_journal.py /app/mail_policy.py
 
 USER 65534:65534
 ENTRYPOINT ["python3", "/app/anchor_worker.py"]

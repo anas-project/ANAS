@@ -107,6 +107,7 @@ recreate containers; database name/type use data_migrate and never silently move
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `immich.browser_logout_return_url` | string | — | `""` | `static` | `IMMICH_BROWSER_LOGOUT_RETURN_URL` | no | no | no | yes | `container_recreate` | Optional same-site portal logout callback; empty preserves the native return |
 | `immich.db_name` | string | — | `immich` | `static` | `IMMICH_DB_NAME` | no | no | no | no: `migrate-immich-database` | `data_migrate` | Application database name; changing it requires a matching media migration |
 | `immich.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `IMMICH_DB_TYPE` | no | no | no | no: `migrate-immich-database` | `data_migrate` | Shared PostgreSQL only |
 | `immich.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `photos` | `static` | `IMMICH_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Public photo service subdomain prefix |
@@ -206,3 +207,8 @@ On 2026-10-03 the isolated finance host passed administrator and ordinary-user b
 
 
 Automatic-event evidence pairs new `Modify/member` sequence99 with persistent subscriber cursor99, native LDAP/signed-delivery DONE tasks, the verified receiver cutoff and old Bearer/Cookie/API-key/share HTTP401, preserving media/bindings and unrelated credentials. The 300-second bound is for this healthy fixed-combination test; it does not establish 4GB support, general capacity or fault-propagation guarantees. Exhausted native task retries still require the existing task-management path.
+
+
+### Portal logout callback
+
+Set optional `browser_logout_return_url` to the same-site HTTPS portal `/signed-out?native=1`. The Hook registers that return URI and configures Immich `oauth.endSessionEndpoint` using the selected provider’s native `OIDC_END_SESSION_URL`, without hardcoding a provider path. Enabling this setting without native endpoint metadata fails closed; an empty setting retains native discovery. Immich deletes its current session, then the IAM return continues older-session cleanup in the portal without username-wide device revocation.

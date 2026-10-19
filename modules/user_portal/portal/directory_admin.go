@@ -2,6 +2,9 @@ package main
 
 import (
 	"errors"
+	"github.com/anas-project/ANAS/internal/appcatalog"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-ldap/ldap/v3"
@@ -37,7 +40,7 @@ func (d *LDAPDirectory) resolveAdministration() error {
 		if !underDN(g.DN, d.config.GroupsDN) {
 			continue
 		}
-		if category, ok := d.config.ManagedGroupNames[g.Name]; ok {
+		if category, ok := d.config.ManagedGroupNames[g.Name]; ok && (d.config.GroupCatalog.Schema == "" || g.Metadata != nil && g.Metadata.Managed) {
 			counts[g.Name]++
 			d.config.ManagedGroups[g.GUID] = category
 		}
@@ -86,38 +89,61 @@ func (d *LDAPDirectory) Groups() ([]Group, error) {
 			g.AdminRole = g.AdminRole || parent.GUID == d.config.AdminGroupGUID
 		}
 	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].Order != groups[j].Order {
+			return groups[i].Order < groups[j].Order
+		}
+		return groups[i].Name < groups[j].Name
+	})
 	return groups, nil
 }
 
-// ExecuteAs keeps a personal domain credential inside one request/connection.
-// The ordinary portal's service accounts are never promoted to domain admins.
-func (d *LDAPDirectory) ExecuteAs(actor Person, password string, op AdminOperation, target Person, group Group) string {
+// bindActor proves the operator's own domain password on one connection.
+func (d *LDAPDirectory) bindActor(actor Person, password string) (*ldap.Conn, string) {
 	if password == "" || len(password) > 1024 {
-		return "credentials_rejected"
+		return nil, "credentials_rejected"
 	}
 	conn, err := d.dial(actor.DN, password)
 	if err != nil {
 		if errors.Is(err, errDenied) {
-			return "credentials_rejected"
+			return nil, "credentials_rejected"
 		}
-		return "unavailable"
+		return nil, "unavailable"
 	}
-	defer conn.Close()
 	// Check the name actually used by Bind, rather than reading an unrelated
 	// expected GUID after the bind. A moved/reused DN must not authenticate a
 	// different principal while the expected actor still exists elsewhere.
 	res, err := conn.Search(ldap.NewSearchRequest(actor.DN, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 10, false, "(objectClass=user)", []string{d.config.AnchorAttribute, "objectSid", "objectGUID"}, nil))
 	if err != nil || len(res.Entries) != 1 {
-		return "denied"
+		conn.Close()
+		return nil, "denied"
 	}
 	boundGUID, err := guidString(res.Entries[0].GetRawAttributeValue("objectGUID"))
 	if err != nil || boundGUID != actor.GUID || res.Entries[0].GetAttributeValue(d.config.AnchorAttribute) != actor.Anchor || sidString(res.Entries[0].GetRawAttributeValue("objectSid")) != actor.SID {
-		return "credentials_rejected"
+		conn.Close()
+		return nil, "credentials_rejected"
 	}
+	return conn, ""
+}
+
+// ExecuteAs keeps a personal domain credential inside one request/connection.
+// The ordinary portal's service accounts are never promoted to domain admins.
+func (d *LDAPDirectory) ExecuteAs(actor Person, password string, op AdminOperation, target Person, group Group) OperationResult {
+	if target.System || !underDN(target.DN, d.config.UsersDN) {
+		return OperationResult{Directory: "denied"}
+	}
+	conn, code := d.bindActor(actor, password)
+	if code != "" {
+		return OperationResult{Directory: code}
+	}
+	defer conn.Close()
 	if op.Action == "profile.update" {
 		d.profileWrites.Lock()
 		defer d.profileWrites.Unlock()
-		return modifyProfile(conn, target, op.Profile)
+		return OperationResult{Directory: modifyProfile(conn, target, op.Profile)}
+	}
+	if op.Action == "groups.member.add" && group.DomainRisk {
+		return d.addDomainMember(conn, target, group)
 	}
 	guid := target.GUID
 	if strings.HasPrefix(op.Action, "groups.member.") {
@@ -137,7 +163,49 @@ func (d *LDAPDirectory) ExecuteAs(actor Person, password string, op AdminOperati
 	case "groups.member.remove":
 		req.Delete("member", []string{"<GUID=" + target.GUID + ">"})
 	default:
-		return "denied"
+		return OperationResult{Directory: "denied"}
 	}
-	return modificationResult(conn.Modify(req), req)
+	return OperationResult{Directory: modificationResult(conn.Modify(req), req)}
+}
+
+// Descriptions are presentation data. Native SID/ACL risk is computed separately.
+func (d *LDAPDirectory) describeGroups(groups []Group) {
+	domainSID := ""
+	for _, g := range groups {
+		if equalDN(g.DN, d.config.AdminGroupDN) {
+			parts := strings.Split(g.SID, "-")
+			if len(parts) > 1 {
+				domainSID = strings.Join(parts[:len(parts)-1], "-")
+			}
+		}
+	}
+	for i := range groups {
+		g := &groups[i]
+		for j := range d.config.GroupCatalog.Groups {
+			m := &d.config.GroupCatalog.Groups[j]
+			matches := m.Managed && equalDN(g.DN, m.DN) || m.SID != "" && g.SID == m.SID || m.DomainRID != 0 && domainSID != "" && g.SID == domainSID+"-"+strconv.Itoa(m.DomainRID)
+			if matches {
+				g.Metadata = m
+				g.Order = m.Order
+				break
+			}
+		}
+	}
+}
+func localizeGroup(g Group, language string) Group {
+	language = appcatalog.SelectLanguage(language, "", "")
+	if g.Metadata != nil {
+		g.Risk = g.Metadata.Risk
+		g.DisplayName = g.Metadata.DisplayName.Resolve(language)
+		g.Description = g.Metadata.Description.Resolve(language)
+	}
+	return g
+}
+
+func localizePerson(p Person, language string) Person {
+	p.Groups = append([]Group(nil), p.Groups...)
+	for i := range p.Groups {
+		p.Groups[i] = localizeGroup(p.Groups[i], language)
+	}
+	return p
 }

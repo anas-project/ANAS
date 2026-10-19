@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -77,6 +78,12 @@ func handle(req hookRequest) (hookResponse, error) {
 	return hookResponse{}, nil
 }
 func validate(e map[string]string) error {
+	if raw := e["IMMICH_BROWSER_LOGOUT_RETURN_URL"]; raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Scheme != "https" || u.User != nil || !strings.HasSuffix(u.Hostname(), "."+e["BASE_DOMAIN"]) || u.Path != "/signed-out" || u.RawQuery != "native=1" || u.Fragment != "" {
+			return fmt.Errorf("browser logout return URL must be the same-site HTTPS portal /signed-out?native=1 callback")
+		}
+	}
 	if db := e["IMMICH_DB_TYPE"]; db != "postgres" && db != "auto" {
 		return fmt.Errorf("Immich requires PostgreSQL")
 	}
@@ -126,7 +133,7 @@ func calculate(e, secrets map[string]string) error {
 	for key, value := range map[string]string{
 		"INTERFACE": "oidc", "CLIENT_ID": "immich", "CLIENT_SECRET": e["IMMICH_OIDC_CLIENT_SECRET"],
 		"REDIRECT_URIS":             e["IMMICH_DOMAIN_FULL"] + "/auth/login," + e["IMMICH_DOMAIN_FULL"] + "/user-settings,app.immich:///oauth-callback",
-		"POST_LOGOUT_REDIRECT_URIS": e["IMMICH_DOMAIN_FULL"] + "/auth/login",
+		"POST_LOGOUT_REDIRECT_URIS": e["IMMICH_DOMAIN_FULL"] + "/auth/login" + optionalCSV(e["IMMICH_BROWSER_LOGOUT_RETURN_URL"]),
 		"SCOPES":                    "openid,profile,email", "ATTRIBUTES": "sub:" + anchor + ":1,name:displayName:1,email:mail:1,anas_role:anasRole:1",
 		"ALLOW_GROUPS": allowGroups, "DOMAIN": e["IMMICH_DOMAIN"],
 		"OIDC_LOGOUT_URI": e["IMMICH_DOMAIN_FULL"] + "/api/oauth/backchannel-logout", "OIDC_LOGOUT_METHODS": "backchannel", "OIDC_LOGOUT_SESSION_REQUIRED": "false",
@@ -167,8 +174,28 @@ func render(e map[string]string) (string, error) {
 		"machineLearning": map[string]any{"enabled": e["IMMICH_MACHINE_LEARNING"] == "true", "urls": []string{"http://anas_immich_machine_learning:3003"}},
 		"job":             jobs,
 	}
+	if target := e["IMMICH_BROWSER_LOGOUT_RETURN_URL"]; target != "" {
+		endpoint, err := url.Parse(e[bindingPrefix+"OIDC_END_SESSION_URL"])
+		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil || endpoint.Fragment != "" {
+			return "", fmt.Errorf("browser logout requires the provider's native OIDC_END_SESSION_URL")
+		}
+		issuer, _ := url.Parse(e[bindingPrefix+"OIDC_ISSUER_URL"])
+		if issuer == nil || !strings.EqualFold(endpoint.Host, issuer.Host) {
+			return "", fmt.Errorf("native end-session endpoint must belong to the OIDC issuer")
+		}
+		query := endpoint.Query()
+		query.Set("post_logout_redirect_uri", target)
+		endpoint.RawQuery = query.Encode()
+		config["oauth"].(map[string]any)["endSessionEndpoint"] = endpoint.String()
+	}
 	bytes, err := json.MarshalIndent(config, "", "  ")
 	return string(bytes) + "\n", err
+}
+func optionalCSV(value string) string {
+	if value != "" {
+		return "," + value
+	}
+	return ""
 }
 func defaultValue(value, fallback string) string {
 	if value == "" {

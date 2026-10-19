@@ -699,7 +699,7 @@ case "$NEXTCLOUD_IAM_PROTOCOL" in
       --mapping-display-name=name \
       --mapping-email=email \
       --mapping-groups=groups \
-      --postlogouturi="$NEXTCLOUD_DOMAIN_FULL" \
+      --postlogouturi="${NEXTCLOUD_OIDC_POST_LOGOUT_URI:-$NEXTCLOUD_DOMAIN_FULL}" \
       --send-id-token-hint=1 \
       --group-provisioning=0
     # With a single provider, make OIDC the normal login path. The managed

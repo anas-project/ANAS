@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anas-project/ANAS/internal/directorymail"
+	"github.com/anas-project/ANAS/internal/groupcatalog"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -33,7 +35,9 @@ type Config struct {
 	LDAPURL, LDAPBindDN, LDAPBindPassword, BaseDN, UsersDN, GroupsDN, AnchorAttribute string
 	PasswordBindDN, PasswordBindPassword, GroupBindDN, GroupBindPassword              string
 	ProfileBindDN, ProfileBindPassword, AdminGroupDN, ServiceAccountsDN               string
+	CreateBindDN, CreateBindPassword, MailDomain, UPNSuffix                           string
 	Administration, DomainAdministration                                              bool
+	GroupCatalog                                                                      groupcatalog.Catalog
 	ManagedGroupNames                                                                 map[string]string
 	AdminGroup, AdminGroupGUID                                                        string
 	ManagedGroups                                                                     map[string]string
@@ -49,6 +53,35 @@ func loadConfig() (Config, error) {
 	e := func(k string) string { return strings.TrimSpace(os.Getenv("USER_PORTAL_" + k)) }
 	c := Config{URL: e("URL"), Issuer: e("ISSUER"), ClientID: e("CLIENT_ID"), ReauthClientID: e("REAUTH_CLIENT_ID"), Catalog: e("CATALOG"), CAFile: e("CA_FILE"), AuditDir: e("AUDIT_DIR"), Language: e("LANGUAGE"), LDAPURL: e("LDAP_URL"), LDAPBindDN: e("LDAP_BIND_DN"), LDAPBindPassword: os.Getenv("USER_PORTAL_LDAP_BIND_PASSWORD"), BaseDN: e("BASE_DN"), UsersDN: e("USERS_DN"), AnchorAttribute: e("ANCHOR_ATTRIBUTE"), PasswordBindDN: e("PASSWORD_BIND_DN"), PasswordBindPassword: os.Getenv("USER_PORTAL_PASSWORD_BIND_PASSWORD"), GroupBindDN: e("GROUP_BIND_DN"), GroupBindPassword: os.Getenv("USER_PORTAL_GROUP_BIND_PASSWORD"), ProxyHost: e("PROXY_HOST"), RecentWindow: 5 * time.Minute, SessionTTL: 2 * time.Hour, AuditMaxBytes: 64 << 20}
 	c.ProfileBindDN, c.ProfileBindPassword = e("PROFILE_BIND_DN"), os.Getenv("USER_PORTAL_PROFILE_BIND_PASSWORD")
+	c.CreateBindDN, c.CreateBindPassword = e("CREATE_BIND_DN"), os.Getenv("USER_PORTAL_CREATE_BIND_PASSWORD")
+	c.MailDomain, c.UPNSuffix = e("MAIL_DOMAIN"), e("UPN_SUFFIX")
+	if c.MailDomain != "" {
+		var err error
+		c.MailDomain, err = directorymail.Domain(c.MailDomain, "")
+		if err != nil {
+			return c, err
+		}
+	}
+	if c.CreateBindDN != "" || c.CreateBindPassword != "" {
+		var err error
+		c.UPNSuffix, err = directorymail.Domain(c.UPNSuffix, "")
+		if err != nil || c.MailDomain == "" || c.CreateBindDN == "" || c.CreateBindPassword == "" {
+			return c, errors.New("incomplete account creation configuration")
+		}
+	}
+	if file := e("GROUP_CATALOG"); file != "" {
+		var err error
+		c.GroupCatalog, err = groupcatalog.Read(file)
+		if err != nil {
+			return c, errors.New("identity group catalog unavailable")
+		}
+		c.ManagedGroupNames = map[string]string{}
+		for _, g := range c.GroupCatalog.Groups {
+			if g.Managed {
+				c.ManagedGroupNames[g.Name] = g.Category
+			}
+		}
+	}
 	c.AdminGroupDN, c.ServiceAccountsDN = e("ADMIN_GROUP_DN"), e("SERVICE_ACCOUNTS_DN")
 	for key, dst := range map[string]*bool{"ADMINISTRATION_ENABLED": &c.Administration, "DOMAIN_ADMINISTRATION_ENABLED": &c.DomainAdministration} {
 		if value := e(key); value != "" {
@@ -95,9 +128,12 @@ func loadConfig() (Config, error) {
 	if c.ClientID == "" || c.ReauthClientID == "" || c.LDAPBindDN == "" || c.LDAPBindPassword == "" || c.BaseDN == "" || c.UsersDN == "" || c.CAFile == "" || !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9-]*$`).MatchString(c.AnchorAttribute) {
 		return c, errors.New("incomplete portal configuration")
 	}
+	if !validUserBase(c.BaseDN, c.UsersDN) {
+		return c, errors.New("personnel scope must be an OU below the directory base")
+	}
 	if v := e("RECENT_WINDOW_SECONDS"); v != "" {
 		n, err := strconv.Atoi(v)
-		if err != nil || n < 5 || n > 900 {
+		if err != nil || n < 5 || n > 300 {
 			return c, errors.New("invalid recent authentication window")
 		}
 		c.RecentWindow = time.Duration(n) * time.Second
@@ -112,7 +148,7 @@ func loadConfig() (Config, error) {
 	for _, p := range []struct {
 		key string
 		dst any
-	}{{"RULES", &c.Rules}, {"PROTECTED_USERS", &c.ProtectedUsers}, {"PROTECTED_GROUPS", &c.ProtectedGroups}, {"PROTECTED_GROUP_NAMES", &c.ProtectedGroupNames}, {"MANAGED_GROUPS", &c.ManagedGroupNames}} {
+	}{{"RULES", &c.Rules}, {"PROTECTED_USERS", &c.ProtectedUsers}, {"PROTECTED_GROUPS", &c.ProtectedGroups}, {"PROTECTED_GROUP_NAMES", &c.ProtectedGroupNames}} {
 		if v := e(p.key); v != "" {
 			d := json.NewDecoder(strings.NewReader(v))
 			d.DisallowUnknownFields()
@@ -186,19 +222,24 @@ func has(values []string, value string) bool {
 }
 
 type Group struct {
-	Anchor        string   `json:"anchor"`
-	Reference     string   `json:"reference"`
-	Name          string   `json:"name"`
-	Direct        bool     `json:"direct"`
-	Sources       []string `json:"sources"`
-	DN, GUID, SID string   `json:"-"`
-	Members       []string `json:"-"`
-	Protected     bool     `json:"-"`
-	Primary       bool     `json:"primary,omitempty"`
-	Managed       bool     `json:"managed"`
-	Category      string   `json:"category"`
-	DomainRisk    bool     `json:"domain_risk"`
-	AdminRole     bool     `json:"admin_role"`
+	Anchor        string              `json:"anchor"`
+	Reference     string              `json:"reference"`
+	Name          string              `json:"name"`
+	DisplayName   string              `json:"display_name,omitempty"`
+	Description   string              `json:"description,omitempty"`
+	Risk          string              `json:"risk,omitempty"`
+	Metadata      *groupcatalog.Group `json:"-"`
+	Order         int                 `json:"-"`
+	Direct        bool                `json:"direct"`
+	Sources       []string            `json:"sources"`
+	DN, GUID, SID string              `json:"-"`
+	Members       []string            `json:"-"`
+	Protected     bool                `json:"-"`
+	Primary       bool                `json:"primary,omitempty"`
+	Managed       bool                `json:"managed"`
+	Category      string              `json:"category"`
+	DomainRisk    bool                `json:"domain_risk"`
+	AdminRole     bool                `json:"admin_role"`
 }
 
 type Person struct {

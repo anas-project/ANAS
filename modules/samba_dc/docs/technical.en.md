@@ -22,7 +22,7 @@ When no enabled Module declares capability codes, the capability-group list may 
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 4 |
 | `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r13` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
@@ -56,6 +56,7 @@ When no enabled Module declares capability codes, the capability-group list may 
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | no | yes | no | no: `migrate-default-mail-addresses` | `data_migrate` | Primary mail domain; inherits the AD domain when unset and reconciles personnel addresses without renaming directory identities |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
@@ -162,7 +163,7 @@ All 16 policy parameters declare `hot_reload`/`samba-password-policy`. The curre
 
 ## Identity and authorization data flow
 
-It is authoritative for people, groups, service identities, and identity anchors. Use LAM or Samba tools to create/disable users and manage groups. `svc_ldap` is read-only, `svc_password` may change ordinary-user passwords only in its delegated scope, and `svc_anchor` manages identity anchors.
+It is authoritative for people, groups, service identities, and identity anchors. Use LAM or Samba tools to create/disable users and manage groups. `svc_ldap` is read-only, `svc_password` may change ordinary-user passwords only in its delegated scope, and `svc_anchor` manages identity anchors and system primary addresses.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -259,3 +260,16 @@ zone, and an AD domain cannot be renamed in place.
 No personnel card is published: Directory and DNS protocols only; administration is published by LAM.
 
 The explicit ANAS group registry also includes Unix Admins. Registration marks ownership, not a low-risk permission: this group inherits infrastructure administrator rights and the portal must handle it through the domain-level path.
+
+### System primary addresses
+
+`mail_domain` defaults to the AD DNS domain. Bootstrap supplies `--mail-address` when creating the routine admin. The existing directory worker owns primary `mail` values for human accounts in the provider user OU and its descendants, using lowercase `username@domain`. It preflights registered mail/proxyAddresses conflicts before reconciliation, verifies writes and reports failures through its readiness check. Existing manual primary values in this scope are replaced by the system rule. Outside entries, service OUs, built-ins, trusts and computers are excluded. The writer receives only attribute-scoped mail rights in the personnel OU; anchor rights on groups do not confer mail rights there. No mailbox, alias, new identity schema or additional synchronization service is created. A suffix change affects mail only; operators must check readiness and remaining policy errors rather than infer success from container startup.
+
+A mail-suffix change currently uses the native config import → lock → render → apply workflow. Prepare a complete configuration with `modules.samba_dc.config.mail_domain`, review the affected modules and recovery point, then activate and verify worker readiness. The policy name `migrate-default-mail-addresses` is metadata, not a newly registered CLI command; ordinary `config set` is blocked for this data-migration setting. Existing mail and alias delivery migration is a later mail-backend task.
+
+
+## Single source for group declarations
+
+`identity.groups` in `module.yml` declares common group names, directory parents, categories, order, risk and bilingual descriptions, plus SID/RID-located descriptions of AD built-ins. Application groups reuse existing identity declarations; capability names come from their owning Module's declared list. Core compiles one deployment-scoped `shared/identity-groups/catalog.json`. Samba's `identity_groups.py` consumes the read-only catalog to create managed groups and maintain their English AD `description`. It does not modify built-ins, move existing same-name objects, or derive membership/ACL changes from metadata. Native bootstrap membership and rights policy remains explicit.
+
+`SAMBA_DC_APPLICATION_CATALOG_GROUPS` is a CSV projection of managed catalog names rather than a second Hook list. Missing or invalid catalogs and conflicting locators fail initialization without reverting to hardcoded defaults. Primary mail and identity-anchor maintenance retain their existing privilege boundaries.

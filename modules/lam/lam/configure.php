@@ -99,6 +99,12 @@ $profile['typeSettings']['attr_host'] = '#cn;#description;#location';
 $profile['typeSettings']['modules_host'] = 'windowsHost';
 $profile['typeSettings']['suffix_smbDomain'] = (string) getenv('SAMBA_DC_BASE_DN');
 $profile['moduleSettings']['windowsUser_domains'] = [(string) getenv('SAMBA_DC_DOMAIN')];
+// Primary addresses belong to the directory policy. Hiding mail also removes
+// LAM's native profile mapping; the directory worker fills LAM-created people.
+// Keep mail in the read-only user-list columns above.
+foreach (['windowsUser_hidemail', 'windowsUser_hideotherMailbox', 'windowsUser_hideproxyAddresses'] as $setting) {
+    $profile['moduleSettings'][$setting] = ['true'];
+}
 $profile['toolSettings']['treeViewSuffix'] = (string) getenv('SAMBA_DC_BASE_DN');
 writeJson($profilePath, $profile);
 

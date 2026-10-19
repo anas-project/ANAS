@@ -88,12 +88,13 @@ func main() {
 		peers = append(peers, a.Unmap())
 	}
 	policy, _ := json.Marshal(struct {
-		Rules                                []Rule
-		Users, Groups, Names                 []string
-		Administration, DomainAdministration bool
-		AdminGroup, AdminGUID, ProfileWriter string
-		Managed                              map[string]string
-	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.ManagedGroups})
+		Rules                                        []Rule
+		Users, Groups, Names                         []string
+		Administration, DomainAdministration         bool
+		AdminGroup, AdminGUID, ProfileWriter         string
+		CreateWriter, UsersDN, MailDomain, UPNSuffix string
+		Managed                                      map[string]string
+	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.CreateBindDN, c.UsersDN, c.MailDomain, c.UPNSuffix, c.ManagedGroups})
 	digest := sha256.Sum256(policy)
 	s := &Server{config: c, oidc: o, directory: directory, audit: journal, catalog: catalog, store: newStore(), limiter: newLimiter(), peers: peers, digest: hex.EncodeToString(digest[:])}
 	httpServer := &http.Server{Addr: ":8080", Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}

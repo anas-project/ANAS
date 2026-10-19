@@ -145,6 +145,7 @@ modules:
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 只读 LDAP 服务账号名 |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-ldap-bind-password` | `credential_rotate` | 只读 LDAP 服务账号密码 |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | 否 | 是 | 否 | 否：`migrate-default-mail-addresses` | `data_migrate` | 主邮箱后缀；缺省继承 AD 域，变更后维护指定人员 OU 的主地址，不重命名目录身份 |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 单个日志文件上限 |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | 否 | 是 | 否 | 否：`replace-domain-controller` | `immutable` | 域控制器 NetBIOS 名称 |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 密码回写服务账号名 |
@@ -227,3 +228,9 @@ Evidence / 证据：
 
 - [4.23.6 — protocol and command-line services without a Module UI](https://www.samba.org/samba/docs/current/man-html/)
 <!-- generated:localization:end -->
+
+### 系统主邮箱
+
+`mail_domain` 缺省继承 AD DNS 域。初始化新建日常管理员时直接传入 `--mail-address`。现有目录 Worker 为 Provider 用户 OU 及子 OU 内的人员维护小写 `用户名@后缀` 的 AD `mail`；先检查已有 mail/proxyAddresses 冲突，写后回读，失败反映在就绪检查。该范围既有手工主地址也由系统规则替换。范围外、服务 OU、内置主体、信任和计算机不参与。Worker 仅增加人员 OU 的 mail 属性写权限，组锚点权限不附带组邮箱权限。不创建邮箱、别名、新身份 schema 或额外同步服务。后缀变更仅改邮箱；运维须确认 Worker 就绪且无剩余规则错误，不能凭容器启动认定迁移成功。
+
+修改后缀当前使用原生 config import → lock → render → apply 流程：在完整配置的 `modules.samba_dc.config.mail_domain` 设置后缀，核对受影响模块与恢复点，激活后检查 Worker 就绪和剩余错误。`migrate-default-mail-addresses` 是策略标识，不是新增的已注册 CLI 命令；普通 config set 会被 data_migrate 策略拦截。实际邮件收发和旧址别名迁移另待邮件后端处理。

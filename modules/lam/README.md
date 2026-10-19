@@ -149,3 +149,7 @@ Evidence / 证据：
 
 - [9.6 — active entries in lam/config/language](https://github.com/LDAPAccountManager/lam/blob/9.6/lam/config/language)
 <!-- generated:localization:end -->
+
+### 系统管理的主邮箱
+
+使用 windowsUser 原生配置隐藏 mail、otherMailbox、proxyAddresses 的手工输入，人员列表仍显示 mail。LAM 建号后由 Samba 目录 Worker 的 Add 事件补全主地址，定期扫描兜底；它与门户建号同时写入有所区别，不属于 LAM 的 Add 事务。主地址和后缀均由系统管理，显示地址不代表收件箱或邮件服务已开通。直接 LDAP 工具及 LAM 配置管理员仍具有自身授权，操作时须遵守这一目录规则。

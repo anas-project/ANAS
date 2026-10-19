@@ -135,3 +135,7 @@ LAM 直接通过 LDAPS 工作。主登录页使用操作者自己的目录用户
 Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
 本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
 [目录设计](/architecture/app-catalog-design)。
+
+### 系统管理的主邮箱
+
+使用 windowsUser 原生配置隐藏 mail、otherMailbox、proxyAddresses 的手工输入，人员列表仍显示 mail。LAM 建号后由 Samba 目录 Worker 的 Add 事件补全主地址，定期扫描兜底；它与门户建号同时写入有所区别，不属于 LAM 的 Add 事务。主地址和后缀均由系统管理，显示地址不代表收件箱或邮件服务已开通。直接 LDAP 工具及 LAM 配置管理员仍具有自身授权，操作时须遵守这一目录规则。

@@ -15,6 +15,22 @@ category: app
 # real-deployment acceptance in AGENT-R-062..064 has reproducible evidence.
 status: developing
 applications_not_published: "Internal agent coordinator; no independent personnel UI."
+identity:
+  groups:
+    - id: capabilities
+      names_from: ANAS_IDENTITY_CAPABILITY_GROUPS
+      select_prefix: ai_agent_
+      name_prefix: CAP_
+      parent_dn_from: SAMBA_DC_BASE_CAP_DN
+      when: SAMBA_DC_CREATE_STRUCTURE
+      managed: true
+      category: capabilities
+      order: 10
+      risk: resource
+      display_name: {en: "{name}", zh-CN: "{name}"}
+      description:
+        en: "Grants the named AI Agent capability: execute approves execution, terminal allows terminal attachment, and a runtime name allows that runtime. Requires separate application access and resource authorization."
+        zh-CN: "授予名称所示的 AI Agent 能力：execute 允许批准执行，terminal 允许连接终端，运行时名称允许使用该运行时；仍需另行具有应用访问和资源权限。"
 runtime:
   type: compose
   compose_file: docker-compose.yml

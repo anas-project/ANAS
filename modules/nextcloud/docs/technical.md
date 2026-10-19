@@ -35,6 +35,7 @@
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nextcloud.browser_logout_return_url` | string | — | `""` | `static` | `NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL` | 否 | 否 | 否 | 是 | `container_recreate` | 可选的同站点门户退出回调；为空保留原生返回行为 |
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 应用数据库名 |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-nextcloud-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
@@ -259,3 +260,8 @@ Hook 测试覆盖默认值、显式覆盖、occ 参数类型和写入失败。�
 Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
 本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
 [目录设计](/architecture/app-catalog-design)。
+
+
+### 门户退出回调
+
+可选 `browser_logout_return_url` 设置为同站点 HTTPS 门户的 `/signed-out?native=1`。Hook 同时将地址加入 OIDC 注册并派生 `NEXTCLOUD_OIDC_POST_LOGOUT_URI`；原生 user_oidc SLS 返回该页，继续清理当前浏览器的旧应用会话。为空时保持原生返回 Nextcloud 首页。固定回调仅公开最小退出协议地址，不开放业务目录；跨站点导航需要点击继续。

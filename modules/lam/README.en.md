@@ -143,3 +143,7 @@ The main login is unavailable when the directory is down; there is currently no 
 ## Technical documentation
 
 See [technical documentation](docs/technical.en.md) for password storage, environment scope, hooks, networks, resources, and tests.
+
+### System-managed primary mail
+
+Native windowsUser settings hide `mail`, otherMailbox and proxyAddresses inputs; the user list still displays mail. LAM-created personnel receive the primary address through the Samba directory worker after the Add event (with periodic reconciliation as a fallback). Unlike portal creation, this is not part of LAM’s Add transaction. Mail values and the suffix are system-managed; an address does not prove that a mailbox or mail service is active. Direct LDAP tools and LAM configuration administrators remain privileged and must respect this directory policy.

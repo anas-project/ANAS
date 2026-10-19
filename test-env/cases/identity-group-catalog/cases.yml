@@ -1,0 +1,57 @@
+api_version: "anas.test-cases/v2"
+topic: "identity-group-catalog"
+title: "分组共享清单验收用例"
+requirement_document: "dev-docs/requirements/identity-group-catalog.md"
+plan_document: "dev-docs/plans/archived/identity-group-catalog.md"
+requirement_scope: ["GROUPCAT-R-001", "GROUPCAT-R-002", "GROUPCAT-R-003", "GROUPCAT-R-004", "GROUPCAT-R-005", "GROUPCAT-R-006"]
+cases:
+  - id: "GROUPCAT-T-001"
+    title: "分组声明、目录定位与只读共享契约"
+    status: "active"
+    level: "unit"
+    requirements: ["GROUPCAT-R-001", "GROUPCAT-R-002", "GROUPCAT-R-003", "GROUPCAT-R-005", "GROUPCAT-R-006"]
+    requirement_digest: "sha256:d03885c2080f2f375e7487422561dbad54baac6769ddd89326e87641db7c9a33"
+    implementation_digest: "sha256:7ebbee2b14f24cf83ac0dd66df12bb15b73e4663bba9538c6958ff00a6ac7e3f"
+    fixture: "固定 Module 声明和隔离 Go 目录替身"
+    capabilities: ["go"]
+    preconditions: ["本机临时 HTTPS 端口可用"]
+    steps: ["执行分组声明展开、定位和共享挂载反例"]
+    implementation:
+      files: ["internal/groupcatalog/catalog_test.go", "internal/runner/identity_groups_test.go", "modules/user_portal/portal/administration_test.go"]
+      commands: ["go test ./internal/groupcatalog ./internal/runner -run 'Test(IdentityCatalog|Expansion|RejectInvalidAndDuplicateCatalog)'", "go test ./modules/user_portal/portal -run TestGroupDescription"]
+    assertions: ["所属名称过滤、重复定位拒绝、英文必填、只读挂载、外部前缀不获得受管身份"]
+    oracle:
+      sources: ["ui", "api", "error-contract"]
+    negative_cases: ["可写和公开挂载拒绝；非本域同名系统组不匹配元数据"]
+    validity:
+      method: "counterexample"
+      commands: ["go test ./internal/groupcatalog ./internal/runner -run 'Test(IdentityCatalog|Expansion|RejectInvalidAndDuplicateCatalog)'"]
+      evidence: "对错误定位、写挂载、缺英文和伪前缀设反例断言"
+    cleanup: ["关闭隔离浏览器和本机测试服务"]
+    timeout: "5m"
+    sensitive_data: "仅模拟密码，无真实凭据"
+  - id: "GROUPCAT-T-002"
+    title: "finance 共享制品及无信任隔离域原生建组"
+    status: "active"
+    level: "e2e"
+    requirements: ["GROUPCAT-R-002", "GROUPCAT-R-004", "GROUPCAT-R-005"]
+    requirement_digest: "sha256:e20316076465a4f2a2b2bdc5dc32b82a9cf1c095f5f3434786636eb24ca8f9aa"
+    implementation_digest: "sha256:b6a6339e17d53bea8f96866f1b2c2b299408fd4ed57f4ceb651dee30ce73fec2"
+    fixture: "finance 指定测试服务和不发布端口、无网络、无生产信任的 owner.test 假域"
+    capabilities: ["docker", "samba", "playwright", "ldaps"]
+    preconditions: ["完整恢复点已验证；候选镜像与原生测试二进制已固定；不在 finance 域创建高权测试身份"]
+    steps: ["核对冻结清单及消费者只读挂载", "运行隔离域建组/描述/系统组不变及原生权限验证", "运行 finance 普通用户分组正反例和双语界面"]
+    implementation:
+      files: ["test-env/scripts/user-portal-owner-isolated.py", "test-env/playwright/user-portal-account-management.mjs"]
+      commands: ["python3 test-env/scripts/user-portal-owner-isolated.py --image ${GROUPCAT_TEST_IMAGE} --native-binary ${GROUPCAT_NATIVE_BINARY} --group-catalog ${GROUPCAT_CATALOG} --evidence-dir ${GROUPCAT_EVIDENCE_DIR}", "node test-env/playwright/user-portal-account-management.mjs"]
+    assertions: ["同一清单实际创建受管组和英文目录介绍；重复执行保留 GUID；不修改内置组；伪前缀和实际权限边界仍拒绝"]
+    oracle:
+      sources: ["runtime", "ui", "api", "report"]
+    negative_cases: ["目录之外的定位拒绝；未注册 APP_ 组不得获得受管权限"]
+    validity:
+      method: "counterexample"
+      commands: ["python3 test-env/scripts/user-portal-owner-isolated.py --image ${GROUPCAT_TEST_IMAGE} --native-binary ${GROUPCAT_NATIVE_BINARY} --group-catalog ${GROUPCAT_CATALOG} --evidence-dir ${GROUPCAT_EVIDENCE_DIR}"]
+      evidence: "实际报告必须包含隔离域执行和 finance 冻结制品/只读挂载证据，越界定位及伪前缀反例须拒绝"
+    cleanup: ["删除专用无网络假域容器/卷和普通测试主体；保留脱敏证据"]
+    timeout: "20m"
+    sensitive_data: "随机密码与私钥仅存在私有输入和内存，不进入报告或截图"

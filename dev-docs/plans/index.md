@@ -41,6 +41,8 @@
 
 | 文档 | 结论去向 | 状态 |
 | --- | --- | --- |
+| [分组共享清单](archived/identity-group-catalog.md) | [Module开发规范](../../docs/developer/module-development.md#分组介绍与共享清单)、Samba/门户技术文档及finance验收 | 已完成（已归档） |
+| [目录主邮箱与门户建号](archived/directory-primary-email.md) | [门户与邮箱设计](../../docs/architecture/portal-account-mail-administration.md)、[Samba技术文档](../../modules/samba_dc/docs/technical.md)；finance R7验收 | 已完成（已归档） |
 | [relational_database 扩展生命周期](archived/relational-database-extensions.md) | [扩展生命周期设计](../../docs/architecture/relational-database-extension-lifecycle.md)、Contract/Provider 文档及主机验收记录 | 已完成（已归档） |
 | [workspace 与备份体系](archived/workspace-backup.md) | [备份与恢复指南](../../docs/guide/backup-and-restore.md)、[backup 契约](../../docs/reference/contracts/backup.md) | 已完成（已归档） |
 | [项目审查整改](archived/project-quality-hardening.md) | Agent 规则、文档一致性、补偿闭环与验证门禁 | 已完成（已归档） |

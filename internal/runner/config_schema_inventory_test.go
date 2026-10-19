@@ -41,7 +41,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumImmichJobs := 16
 	maximumImmichVideos := 8
 	minimumRecentSeconds := 5
-	maximumRecentSeconds := 900
+	maximumRecentSeconds := 300
 	maximumAuditCapacityMB := 1024
 	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
@@ -92,6 +92,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"versitygw.root_secret_key":         {MinLength: &minimumSecretLength, MaxLength: &maximumSecretLength},
 		"samba_dc.max_log_size":             {Minimum: &minimumOne},
 		"samba_dc.domain":                   {Format: configschema.FormatDNSName},
+		"samba_dc.mail_domain":              {Format: configschema.FormatDNSName},
 		"vikunja.domain_prefix":             {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 	}
 	gotConstraints := map[string]configschema.Constraints{}
@@ -130,6 +131,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"nextcloud.locale":                {configschema.DefaultSourceInherited, "nextcloud calculate"},
 		"postgres.password":               {configschema.DefaultSourceGenerated, "calcPostgres"},
 		"samba_dc.domain":                 {configschema.DefaultSourceInherited, "validateDomainDNSConfig/calcSambaDC"},
+		"samba_dc.mail_domain":            {configschema.DefaultSourceInherited, "calcSambaDC"},
 		"samba_dc.realm":                  {configschema.DefaultSourceInherited, "calcSambaDC"},
 		"samba_dc.netbios_name":           {configschema.DefaultSourceRuntime, "calcSambaDC"},
 		"samba_dc.admin_password":         {configschema.DefaultSourceGenerated, "calcSambaDC"},
@@ -194,6 +196,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"nextcloud.locale":                true,
 		"postgres.password":               true,
 		"samba_dc.domain":                 true,
+		"samba_dc.mail_domain":            true,
 		"samba_dc.realm":                  true,
 		"samba_dc.netbios_name":           true,
 		"samba_dc.admin_password":         true,

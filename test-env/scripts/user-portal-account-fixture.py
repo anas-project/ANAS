@@ -22,6 +22,7 @@ assert re.fullmatch(r'pua[0-9a-f]{8}', f['prefix'])
 lp = LoadParm(); lp.load('/etc/samba/smb.conf')
 db = SamDB(url='/var/lib/samba/private/sam.ldb', session_info=system_session(), lp=lp)
 base = str(db.domain_dn())
+isolated_domain_privileges = base.lower() == 'dc=owner,dc=test' and f.get('allow_isolated_domain_privileges') is True
 assert base.lower() == f['base'].lower() == os.environ['SAMBA_DC_BASE_DN'].lower()
 marker = 'ANAS portal acceptance ' + f['prefix']
 anchor_attr = os.environ['SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE']
@@ -54,6 +55,7 @@ if action == 'baseline':
     data = [{'dn': str(row.dn), 'attributes': {key: [base64.b64encode(value).decode() for value in row[key]] for key in ['objectGUID','nTSecurityDescriptor','mS-DS-ConsistencyGuid',anchor_attr] if key in row}} for row in rows]
     print(json.dumps(data)); sys.exit(0)
 def primary_domain_admin(item):
+    assert isolated_domain_privileges, "high privilege fixtures require the isolated fake domain"
     assert item['username'] == f['prefix'] + 'privileged'
     rows = db.search(base=base, expression='(objectGUID=' + ldb.binary_encode(uuid.UUID(item['guid']).bytes_le) + ')', attrs=['description'])
     assert len(rows) == 1 and str(rows[0].dn).lower() == item['dn'].lower()
@@ -87,7 +89,7 @@ if action == 'references':
     print(json.dumps({'objects': [identity(str(row.dn)) for row in rows]})); sys.exit(0)
 
 # Every named test identity must be absent before this one-use preparation.
-for alias in ['normal', 'manager', 'domain', 'target', 'privileged', 'other']:
+for alias in ['normal', 'manager', 'domain', 'target', 'privileged', 'other', 'outside']:
     assert not db.search(base=base, expression='(sAMAccountName=' + f['prefix'] + alias + ')', attrs=['cn'])
 objects = []
 people_ou = 'OU=' + f['prefix'] + ',' + os.environ['SAMBA_DC_BASE_USERS_DN']
@@ -97,20 +99,23 @@ admin_ou = 'OU=' + f['prefix'] + ',' + admin_parent
 for dn in [people_ou, admin_ou]:
     db.create_ou(dn); replace(dn, 'description', [marker]); objects.append(identity(dn))
 users = {}
-for alias in ['normal', 'manager', 'domain', 'target', 'privileged', 'other']:
+for alias in ['normal', 'manager', 'domain', 'target', 'privileged', 'other', 'outside']:
     name = f['prefix'] + alias
-    parent = admin_ou if alias == 'target' else people_ou
+    parent = admin_ou if alias == 'outside' else people_ou
     relative = parent[:-(len(base) + 1)]
     db.newuser(name, f['passwords'][alias], userou=relative, description=marker)
     dn = 'CN=' + name + ',' + parent
     replace(dn, 'displayName', [name]); replace(dn, 'givenName', ['Portal']); replace(dn, 'sn', ['Acceptance'])
     replace(dn, 'userPrincipalName', [name + '@' + os.environ['SAMBA_DC_DOMAIN']])
     users[alias] = anchored(dn); objects.append(users[alias])
+# A registered address on a different, out-of-scope principal must block creation.
+replace(users['outside']['dn'], 'mail', [f['prefix'] + 'reserved@' + os.environ['SAMBA_DC_DOMAIN']])
 for alias in ['manager', 'domain', 'target', 'other']:
     member(os.environ['SAMBA_DC_ADMIN_GROUP_DN'], users[alias]['dn'])
-for alias in ['domain', 'privileged']:
-    member(group('Domain Admins'), users[alias]['dn'])
-primary_domain_admin(users['privileged'])
+if isolated_domain_privileges:
+    for alias in ['domain', 'privileged']:
+        member(group('Domain Admins'), users[alias]['dn'])
+    primary_domain_admin(users['privileged'])
 for alias in ['normal', 'manager', 'domain', 'privileged', 'other']:
     member(group('APP_nextcloud' if alias == 'normal' else 'APP_all'), users[alias]['dn'])
 # An APP_ prefix is deliberately insufficient to enter the managed registry.
@@ -128,4 +133,4 @@ pso = 'CN=' + f['prefix'] + ',CN=Password Settings Container,CN=System,' + base
 db.add({'dn':pso,'objectClass':['top','msDS-PasswordSettings'],'description':marker,'msDS-PasswordSettingsPrecedence':'1','msDS-PasswordReversibleEncryptionEnabled':'FALSE','msDS-PasswordHistoryLength':'5','msDS-PasswordComplexityEnabled':'TRUE','msDS-MinimumPasswordLength':'12','msDS-MinimumPasswordAge':'0','msDS-MaximumPasswordAge':'-25920000000000','msDS-LockoutThreshold':'10','msDS-LockoutObservationWindow':'-18000000000','msDS-LockoutDuration':'-18000000000','msDS-PSOAppliesTo':[p['dn'] for p in users.values()]})
 objects.append(identity(pso))
 replace(users['target']['dn'], 'lockoutTime', [str(int((time.time()+11644473600)*10000000))])
-print(json.dumps({'prefix':f['prefix'],'base':base,'users':users,'groups':{'extra':extra,'nested':nested},'objects':objects,'pso':pso}))
+print(json.dumps({'prefix':f['prefix'],'base':base,'users':users,'groups':{'extra':extra,'nested':nested},'objects':objects,'pso':pso,'domain_privileges':isolated_domain_privileges}))

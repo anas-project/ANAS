@@ -332,7 +332,7 @@ cases:
       - "TEMP-R-044"
       - "TEMP-R-045"
     requirement_digest: "sha256:d8f76774e4a2f1ae1daaf651b5f6912f655856bcf4ad10929966f10d56b451d9"
-    implementation_digest: "sha256:3f0278c3e866be1fd7b885275786473fd8d5b2eb5404e7b1b6b2026343fe64bc"
+    implementation_digest: "sha256:cad8f2bc8ac22515c0dbcc4d2a8eb4a5d05b3af42b055926b236a27eed6abf7c"
     fixture: "冻结deployment、切换journal与故障注入Compose"
     capabilities:
       - "go"
@@ -340,6 +340,7 @@ cases:
     steps:
       - "运行实现命令验证：全停启预览绑定digest；历史clone保持源制品且重建授权；停止与恢复阶段持久化"
       - "执行反例：未知phase、pending before_stop、candidate引用未释放均不得盲目恢复"
+      - "后续部署失败补偿不得重开历史 complete/restored/cleanup_deferred；核对注册表字节不变"
     implementation:
       files:
         - "internal/runner/temp_lifecycle_regression_test.go"
@@ -355,6 +356,7 @@ cases:
       - "全停启预览绑定digest；历史clone保持源制品且重建授权；停止与恢复阶段持久化"
       - "候选停止只释放候选deployment；旧root held租约仍active并由旧启动复用原Path和哨兵"
       - "真实 Main apply JSON 保留 down exit98、phase、project 首因，previous_restore 成功或失败分别报告，adapter保留既有退出码"
+      - "历史终态不被后续无关失败重新标为恢复失败，所有原注册表字段保持不变"
     oracle:
       sources:
         - "return-value"
@@ -368,7 +370,7 @@ cases:
       method: "fault-injection"
       commands:
         - "go test ./internal/runner -run TestTemporary -count=1"
-      evidence: "未知phase、pending before_stop、candidate引用未释放均不得盲目恢复"
+      evidence: "未知phase、pending before_stop、candidate引用未释放均不得盲目恢复；历史终态保护的三个场景在修复前均失败，修复后注册表字节保持不变"
     cleanup:
       - "临时目录和子进程由测试清理；只读审阅不操作服务"
     timeout: "10m"
@@ -990,7 +992,7 @@ cases:
       - "TEMP-R-029"
       - "TEMP-R-030"
     requirement_digest: "sha256:f0d5a471485af22b34598c07adb9443bcfaf9094f7db0af3bf9d70b023bda88d"
-    implementation_digest: "sha256:bd7a0e94a226275ff29ab18d05e33dac19210c665ed2206b636a8f8787644e0e"
+    implementation_digest: "sha256:2cc5e4a7862260bd817b133cc8012291f5ed0a663fd977f107c2b968cd77d1eb"
     fixture: "固定Collabora镜像和最小Nextcloud LLNG编辑栈"
     capabilities:
       - "go"

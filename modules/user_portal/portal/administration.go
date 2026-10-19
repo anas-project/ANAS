@@ -12,15 +12,22 @@ import (
 type accountDirectory interface {
 	Groups() ([]Group, error)
 	Profile(Person, Profile) string
-	ExecuteAs(Person, string, AdminOperation, Person, Group) string
+	ExecuteAs(Person, string, AdminOperation, Person, Group) OperationResult
+}
+
+// Changing the ANAS administrator role grants every application's highest role
+// and, behind the console's trusted proxy, host control. Keep an explicit,
+// one-time confirmation; a recent authentication suffices for this scoped write.
+func adminRoleChange(op AdminOperation, g Group) bool {
+	return strings.HasPrefix(op.Action, "groups.member.") && g.AdminRole
 }
 
 // This is a closed list of personnel actions, never an LDAP/command payload.
 type AdminOperation struct {
-	Action            string  `json:"action"`
-	Target            string  `json:"target"`
-	Group             string  `json:"group,omitempty"`
-	Reason            string  `json:"reason"`
+	Action string `json:"action"`
+	Target string `json:"target"`
+	Group  string `json:"group,omitempty"`
+
 	ForceChange       bool    `json:"force_change,omitempty"`
 	ExpectedDirect    bool    `json:"expected_direct,omitempty"`
 	Profile           Profile `json:"profile"`
@@ -40,6 +47,7 @@ func (op AdminOperation) digest() string {
 type Confirmation struct {
 	Session, ActorGUID, TargetGUID, GroupGUID, Digest string
 	Expires                                           time.Time
+	OwnershipTransfer                                 bool
 }
 
 func (s *Server) administrator(p Person) bool {
@@ -70,6 +78,7 @@ func (s *Server) adminGroups(w http.ResponseWriter, r *http.Request, actor, targ
 	}
 	result := []map[string]any{}
 	for _, g := range groups {
+		g = localizeGroup(g, r.URL.Query().Get("lang"))
 		if !g.Managed && r.URL.Query().Get("advanced") != "true" {
 			continue
 		}
@@ -82,20 +91,20 @@ func (s *Server) adminGroups(w http.ResponseWriter, r *http.Request, actor, targ
 		writable := !blocked && (!domain || s.config.DomainAdministration)
 		selfRole := actor.Anchor == target.Anchor && g.AdminRole
 		primary := g.SID == target.PrimaryGroupSID
-		result = append(result, map[string]any{"group": g, "direct": direct, "inherited": target.inGroup(g.Reference) && !direct, "primary": primary, "requires_domain": domain, "can_add": writable && !direct && !primary, "can_remove": writable && direct && !selfRole && !primary})
+		result = append(result, map[string]any{"group": g, "direct": direct, "inherited": target.inGroup(g.Reference) && !direct, "primary": primary, "requires_domain": domain, "requires_password": domain, "can_add": writable && !direct && !primary, "can_remove": writable && direct && !selfRole && !primary})
 	}
 	respond(w, 200, map[string]any{"groups": result, "advanced": r.URL.Query().Get("advanced") == "true"})
 }
 
 func (s *Server) operationTarget(actor Person, op AdminOperation, self bool) (Person, Group, bool, string) {
-	if strings.TrimSpace(op.Reason) == "" || len(op.Reason) > 512 || !anchorPattern.MatchString(op.Target) {
+	if !anchorPattern.MatchString(op.Target) {
 		return Person{}, Group{}, false, "invalid_request"
 	}
 	if !self && !s.administrator(actor) || self && (op.Action != "profile.update" || op.Target != actor.Anchor) {
 		return Person{}, Group{}, false, "access_denied"
 	}
 	p, err := s.directory.Person(op.Target)
-	if err != nil || p.System || has(s.config.ProtectedUsers, p.Anchor) && !self {
+	if err != nil || !s.managedPerson(p) || has(s.config.ProtectedUsers, p.Anchor) && !self {
 		return p, Group{}, false, "access_denied"
 	}
 	g := Group{}
@@ -233,22 +242,28 @@ func (s *Server) prepareOperation(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, code)
 		return
 	}
-	if !domain {
-		s.rejected(v.Subject, p.Anchor, op.Action, "domain_operator")
+	elevated := !domain && adminRoleChange(op, g)
+	rule := "domain_operator"
+	if elevated {
+		rule = "platform_admin_confirmed"
+	}
+	if !domain && !elevated {
+		s.rejected(v.Subject, p.Anchor, op.Action, rule)
 		failure(w, 400, "invalid_request")
 		return
 	}
 	if !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
-		s.rejected(v.Subject, p.Anchor, op.Action, "domain_operator")
+		s.rejected(v.Subject, p.Anchor, op.Action, rule)
 		failure(w, 403, "recent_authentication_required")
 		return
 	}
 	proof := randomID()
-	if !s.store.addConfirmation(proof, Confirmation{v.ID, actor.GUID, p.GUID, g.GUID, op.digest(), time.Now().Add(120 * time.Second)}) {
+	if !s.store.addConfirmation(proof, Confirmation{Session: v.ID, ActorGUID: actor.GUID, TargetGUID: p.GUID, GroupGUID: g.GUID, Digest: op.digest(), Expires: time.Now().Add(120 * time.Second), OwnershipTransfer: op.Action == "groups.member.add" && g.DomainRisk}) {
 		failure(w, 503, "capacity_reached")
 		return
 	}
-	respond(w, 200, map[string]any{"proof": proof, "expires_in": 120, "target": p.Username, "group": g.Name, "action": op.Action})
+	identityVersion := sha256.Sum256([]byte(p.GUID + "\x00" + g.GUID))
+	respond(w, 200, map[string]any{"identity_version": hex.EncodeToString(identityVersion[:]), "proof": proof, "expires_in": 120, "target": p.Username, "group": g.Name, "action": op.Action, "ownership_transfer": op.Action == "groups.member.add" && g.DomainRisk})
 }
 
 func (s *Server) executeOperation(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +297,7 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 			failure(w, 400, "invalid_request")
 			return
 		}
-		op.Action, op.Target, op.Reason = "profile.update", actor.Anchor, "self profile"
+		op.Action, op.Target = "profile.update", actor.Anchor
 	}
 	p, g, domain, code := s.operationTarget(actor, op, self)
 	if code != "" {
@@ -307,15 +322,25 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 		failure(w, 503, "identity_unavailable")
 		return
 	}
-	if domain {
+	elevated := !domain && adminRoleChange(op, g)
+	confirmed := "domain_operator"
+	if elevated {
+		confirmed = "platform_admin_confirmed"
+	}
+	if !domain && op.ActorPassword != "" {
+		s.rejected(v.Subject, p.Anchor, op.Action, confirmed)
+		failure(w, 400, "invalid_request")
+		return
+	}
+	if domain || elevated {
 		proof, valid := s.store.consumeConfirmation(op.Proof)
-		if !valid || proof.Session != v.ID || proof.ActorGUID != actor.GUID || proof.TargetGUID != p.GUID || proof.GroupGUID != g.GUID || proof.Digest != op.digest() {
-			s.rejected(v.Subject, p.Anchor, op.Action, "domain_operator")
+		if !valid || proof.Session != v.ID || proof.ActorGUID != actor.GUID || proof.TargetGUID != p.GUID || proof.GroupGUID != g.GUID || proof.Digest != op.digest() || proof.OwnershipTransfer != (op.Action == "groups.member.add" && g.DomainRisk) {
+			s.rejected(v.Subject, p.Anchor, op.Action, confirmed)
 			failure(w, 403, "confirmation_required")
 			return
 		}
-		if !s.passwordAttempt(r, actor.Anchor) || !s.limiter.allowIdentity(actor.Anchor) {
-			s.rejected(v.Subject, p.Anchor, op.Action, "domain_operator")
+		if domain && (!s.passwordAttempt(r, actor.Anchor) || !s.limiter.allowIdentity(actor.Anchor)) {
+			s.rejected(v.Subject, p.Anchor, op.Action, confirmed)
 			failure(w, 429, "rate_limited")
 			return
 		}
@@ -336,10 +361,10 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 	if self {
 		rule = "self"
 	}
-	if domain {
-		rule = "domain_operator"
+	if domain || elevated {
+		rule = confirmed
 	}
-	record := Record{Actor: actor.Anchor, Target: p.Anchor, Action: op.Action, Rule: rule, Group: op.Group, Reason: op.Reason}
+	record := Record{Actor: actor.Anchor, Target: p.Anchor, Action: op.Action, Rule: rule, Group: op.Group}
 	if op.Action == "password.reset" {
 		record.ForceChange = &op.ForceChange
 	}
@@ -354,33 +379,36 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 			}
 		}
 	}
-	s.write(w, r, record, func() string {
+	if domain && op.Action == "groups.member.add" && g.DomainRisk {
+		record.Ownership, record.Membership = "pending", "pending"
+	}
+	s.writeResult(w, r, record, func() OperationResult {
 		if !s.validWriteSession(r.Context(), v.ID, actor.Anchor, true) {
-			return "denied"
+			return OperationResult{Directory: "denied"}
 		}
 		freshActor, err := s.directory.Person(actor.Anchor)
 		if err != nil || freshActor.GUID != actor.GUID || !freshActor.canLogin() {
-			return "denied"
+			return OperationResult{Directory: "denied"}
 		}
 		fresh, freshGroup, needsDomain, errCode := s.operationTarget(freshActor, op, self)
-		if errCode != "" || fresh.GUID != p.GUID || freshGroup.GUID != g.GUID || needsDomain != domain {
-			return "conflict"
+		if errCode != "" || fresh.GUID != p.GUID || freshGroup.GUID != g.GUID || freshGroup.DomainRisk != g.DomainRisk || freshGroup.AdminRole != g.AdminRole || fresh.SID != p.SID || needsDomain != domain {
+			return OperationResult{Directory: "conflict"}
 		}
 		if domain {
 			return d.ExecuteAs(freshActor, op.ActorPassword, op, fresh, freshGroup)
 		}
 		switch op.Action {
 		case "profile.update":
-			return d.Profile(fresh, op.Profile)
+			return OperationResult{Directory: d.Profile(fresh, op.Profile)}
 		case "password.reset":
-			return s.directory.ResetPassword(fresh, op.temporaryPassword, op.ForceChange)
+			return OperationResult{Directory: s.directory.ResetPassword(fresh, op.temporaryPassword, op.ForceChange)}
 		case "account.unlock":
-			return s.directory.Unlock(fresh)
+			return OperationResult{Directory: s.directory.Unlock(fresh)}
 		case "groups.member.add":
-			return s.directory.Member(freshGroup, fresh, true)
+			return OperationResult{Directory: s.directory.Member(freshGroup, fresh, true)}
 		case "groups.member.remove":
-			return s.directory.Member(freshGroup, fresh, false)
+			return OperationResult{Directory: s.directory.Member(freshGroup, fresh, false)}
 		}
-		return "denied"
+		return OperationResult{Directory: "denied"}
 	}, op.temporaryPassword, false)
 }

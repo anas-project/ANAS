@@ -4,11 +4,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -35,7 +37,7 @@ func TestNativeAdministrationReadOnly(t *testing.T) {
 		t.Fatal("read-only configuration required")
 	}
 	c := f.Config
-	if c.PasswordBindPassword != "" || c.GroupBindPassword != "" || c.ProfileBindPassword != "" || f.ServerName == "" {
+	if c.PasswordBindPassword != "" || c.GroupBindPassword != "" || c.ProfileBindPassword != "" || c.CreateBindPassword != "" || f.ServerName == "" {
 		t.Fatal("read-only configuration required")
 	}
 	roots, err := x509.SystemCertPool()
@@ -113,7 +115,7 @@ func TestNativeAccountManagement(t *testing.T) {
 	if err != nil || json.Unmarshal(data, &f) != nil {
 		t.Fatal("private fixture unavailable")
 	}
-	if !strings.HasPrefix(f.Prefix, "pua") || len(f.Prefix) != 11 {
+	if !strings.HasPrefix(f.Prefix, "pua") || len(f.Prefix) != 11 || f.Anchors["outside"] == "" {
 		t.Fatal("owned fixture prefix required")
 	}
 	ca, err := os.ReadFile(f.Config.CAFile)
@@ -159,7 +161,13 @@ func TestNativeAccountManagement(t *testing.T) {
 		serviceSeen = serviceSeen || strings.HasPrefix(p.Username, "svc_portal_") || p.System
 	}
 	record("service and system accounts excluded", !serviceSeen)
-	record("cross-OU personnel included", !underDN(target.DN, d.config.UsersDN))
+	record("personnel in a child OU included", underDN(target.DN, d.config.UsersDN))
+	_, outsideError := d.Person(f.Anchors["outside"])
+	outsideSeen := false
+	for _, p := range people {
+		outsideSeen = outsideSeen || p.Anchor == f.Anchors["outside"]
+	}
+	record("personnel outside configured OU excluded from lookup and enumeration", outsideError != nil && !outsideSeen)
 	original := profileOf(target)
 	var wg sync.WaitGroup
 	results := make([]string, 2)
@@ -217,21 +225,127 @@ func TestNativeAccountManagement(t *testing.T) {
 	record("registered Unix Admins is still domain-risk", unix.Managed && unix.DomainRisk)
 	record("ordinary group writer cannot change system group", builtin.GUID != "" && d.Member(builtin, target, true) == "denied")
 	op := AdminOperation{Action: "account.unlock"}
-	record("platform role does not supply domain ACL rights", d.ExecuteAs(manager, f.ManagerPassword, op, protected, Group{}) == "denied")
-	record("another user's password cannot bind operator", d.ExecuteAs(domain, f.ManagerPassword, op, protected, Group{}) == "credentials_rejected")
+	record("platform role does not supply domain ACL rights", d.ExecuteAs(manager, f.ManagerPassword, op, protected, Group{}).Directory == "denied")
+	record("another user's password cannot bind operator", d.ExecuteAs(domain, f.ManagerPassword, op, protected, Group{}).Directory == "credentials_rejected")
 	staleActor := domain
 	staleActor.DN = manager.DN
-	record("stale or reused bind DN cannot substitute another principal", d.ExecuteAs(staleActor, f.ManagerPassword, op, protected, Group{}) == "credentials_rejected")
-	record("personal domain ACL operation succeeds", d.ExecuteAs(domain, f.Password, op, protected, Group{}) == "saved")
+	record("stale or reused bind DN cannot substitute another principal", d.ExecuteAs(staleActor, f.ManagerPassword, op, protected, Group{}).Directory == "credentials_rejected")
+	record("personal domain ACL operation succeeds", d.ExecuteAs(domain, f.Password, op, protected, Group{}).Directory == "saved")
 	protected = person("privileged")
 	old := profileOf(protected)
 	op = AdminOperation{Action: "profile.update", Profile: Profile{"Domain", "Test", "Domain Test"}}
-	record("personal domain profile operation succeeds", d.ExecuteAs(domain, f.Password, op, protected, Group{}) == "saved")
+	record("personal domain profile operation succeeds", d.ExecuteAs(domain, f.Password, op, protected, Group{}).Directory == "saved")
 	protected = person("privileged")
 	record("profile writer can restore tagged privileged name", d.Profile(protected, old) == "saved")
 	out := filepath.Join(filepath.Dir(path), "native-account-results.json")
 	encoded, _ := json.MarshalIndent(map[string]any{"checks": checks}, "", "  ")
 	if os.WriteFile(out, encoded, 0600) != nil {
 		t.Fatal("cannot retain safe native results")
+	}
+}
+
+// Creation runs against the shipped adapter and owned names only. The cleanup
+// inventory is written before any Add, so unknown results are reconciled by
+// identity/name rather than replaying a create or password operation.
+func TestNativeAccountManagementCreation(t *testing.T) {
+	path := os.Getenv("PORTAL_ACCOUNT_FIXTURE")
+	if path == "" {
+		t.Skip("owned account fixture not supplied")
+	}
+	if !strings.HasPrefix(path, "/home/whl/anas-portal-admin-") || filepath.Base(path) != "native.private.json" {
+		t.Fatal("owned fixture path required")
+	}
+	var f struct {
+		Config     Config `json:"config"`
+		ServerName string `json:"server_name"`
+		Prefix     string `json:"prefix"`
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(data, &f) != nil || !regexp.MustCompile(`^pua[0-9a-f]{8}$`).MatchString(f.Prefix) {
+		t.Fatal("owned creation fixture unavailable")
+	}
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		t.Fatal("system trust unavailable")
+	}
+	ca, err := os.ReadFile(f.Config.CAFile)
+	if err != nil || !roots.AppendCertsFromPEM(ca) {
+		t.Fatal("fixture CA unavailable")
+	}
+	d := &LDAPDirectory{config: f.Config, tls: &tls.Config{RootCAs: roots, ServerName: f.ServerName, MinVersion: tls.VersionTLS12}}
+	type plannedAccount struct {
+		Username string `json:"username"`
+		Anchor   string `json:"anchor"`
+		Binary   []byte `json:"-"`
+	}
+	if err := d.resolveAdministration(); err != nil {
+		t.Fatal("registered role unavailable")
+	}
+	planned := []plannedAccount{}
+	for _, suffix := range []string{"native0", "native1"} {
+		binary := make([]byte, 16)
+		if _, err := rand.Read(binary); err != nil {
+			t.Fatal("identity unavailable")
+		}
+		anchor, _ := guidString(binary)
+		planned = append(planned, plannedAccount{f.Prefix + suffix, anchor, binary})
+	}
+	encoded, _ := json.Marshal(map[string]any{"prefix": f.Prefix, "planned_accounts": planned})
+	if os.WriteFile(filepath.Join(filepath.Dir(path), "native-created-users.private.json"), encoded, 0600) != nil {
+		t.Fatal("cleanup inventory unavailable")
+	}
+	checks := map[string]bool{}
+	for i, plannedAccount := range planned {
+		username, binary, anchor := plannedAccount.Username, plannedAccount.Binary, plannedAccount.Anchor
+		password := "Aa1!" + randomID()
+		creator := &LDAPDirectory{config: d.config, tls: d.tls}
+		if i == 1 {
+			creator.config.MailDomain = "hlong.wang"
+		}
+		op := NewAccount{Username: username, Profile: Profile{"Native", "Create", "Native Create"}, ForceChange: i == 1}
+		if result := creator.Create(op, anchor, binary, password); result != "saved" {
+			t.Fatal("native create failed", result)
+		}
+		p, err := d.Person(anchor)
+		if err != nil {
+			t.Fatal("created principal unavailable")
+		}
+		checks[username+":mail_and_identity"] = p.Anchor == anchor && p.GUID != "" && p.Email == username+"@"+creator.config.MailDomain && equalDN(p.DN, "CN="+username+","+f.Config.UsersDN)
+		reader, err := d.read()
+		if err != nil {
+			t.Fatal("UPN verification unavailable")
+		}
+		upn, err := reader.Search(ldap.NewSearchRequest("<GUID="+p.GUID+">", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 10, false, "(objectClass=user)", []string{"userPrincipalName"}, nil))
+		reader.Close()
+		checks[username+":mail_domain_does_not_rename_upn"] = err == nil && len(upn.Entries) == 1 && upn.Entries[0].GetAttributeValue("userPrincipalName") == username+"@"+f.Config.UPNSuffix
+		checks[username+":ordinary_person"] = !p.Administrator && !p.DomainRisk && !p.System && strings.HasSuffix(p.PrimaryGroupSID, "-513")
+		checks[username+":password_state"] = p.PasswordStateKnown && p.MustChangePassword == op.ForceChange
+		op.Profile.DisplayName = "Must not replace existing account"
+		checks[username+":conflict_without_reset"] = creator.Create(op, anchor, binary, "Aa1!"+randomID()) == "conflict"
+		fresh, err := d.Person(anchor)
+		checks[username+":conflict_preserves_identity_profile"] = err == nil && fresh.GUID == p.GUID && fresh.DisplayName == "Native Create"
+		if !op.ForceChange {
+			proof, err := d.dial(p.DN, password)
+			if proof != nil {
+				proof.Close()
+			}
+			checks[username+":initial_password_still_valid"] = err == nil
+		}
+	}
+	reserved := NewAccount{Username: f.Prefix + "reserved", Profile: Profile{DisplayName: "Reserved"}}
+	binary := make([]byte, 16)
+	if _, err := rand.Read(binary); err != nil {
+		t.Fatal("identity unavailable")
+	}
+	anchor, _ := guidString(binary)
+	checks["registered_mail_collision_rejected"] = d.Create(reserved, anchor, binary, "Aa1!"+randomID()) == "conflict"
+	result, _ := json.MarshalIndent(map[string]any{"checks": checks}, "", "  ")
+	if os.WriteFile(filepath.Join(filepath.Dir(path), "native-creation-results.json"), result, 0600) != nil {
+		t.Fatal("safe result unavailable")
+	}
+	for name, pass := range checks {
+		if !pass {
+			t.Error(name)
+		}
 	}
 }

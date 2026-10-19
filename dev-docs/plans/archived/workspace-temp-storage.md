@@ -2,7 +2,7 @@
 doc_type: plan
 status: done
 created: 2026-09-30
-updated: 2026-10-08
+updated: 2026-10-15
 ---
 
 # Workspace 临时存储实施计划
@@ -72,3 +72,22 @@ M0—M3 保留 Source44 的历史基线，M4 使用最后一轮独立基线。40
 需求覆盖/catalog、需求及计划索引、文档状态和 diff 检查通过。稳定配置、临时目录、生命周期、备份恢复及 Collabora 文档已同步。
 
 无剩余适用验收阻塞。后续修改按需求矩阵回归；若新增必要判据或改变确认范围，先确认需求再实施。
+
+### 2026-10-15：历史终态被后续失败补偿重新打开
+
+finance 门户部署的容量预检失败暴露 TEMP-R-016 / TEMP-T-008 的恢复缺陷：
+`failTemporaryActivation` 对未切换临时根的后续失败同样调用 `recordTemporaryRecoveryPhase`，
+把已有历史终态改成 `recovery_failed`，下一次操作因此误入历史转换恢复并被活动 deployment 不匹配拦住。
+`recordTemporaryRecoveryPhase` 现在保留 `complete`、`restored`、`cleanup_deferred`，
+未确认停止钩子的写前记录与未完成转换仍按既有规则拒绝自动恢复。
+
+新增 `TestTemporaryRecoveryDoesNotReopenCompletedTransition`：修改前三个终态分支均失败，
+修复后全部 `^TestTemporary` 单元测试通过（13.173 秒）；
+三层差异审阅确认需求未改变、新增断言直接核对注册表完整字节，夹具不复制被测决策；
+同步 TEMP-T-008 的实现摘要、步骤和有效性证据，并从 catalog 重新生成 README。
+源码 `internal/runner/temp_switch.go` SHA-256 为
+`0c1a8edce3f56941b7d637c9cfcb1b8db9858e9b83ef88eec722ec5f1992c6db`。
+这是现有恢复规则的缺陷修复，不新增需求、不将本次单元结果视作重跑 40 项实机矩阵。
+finance 的原注册表另存私有证据后，核实历史转换两端均非当前活动部署、当前根已是目标根、
+无目标容器和待确认清理标记，仅把历史记录恢复为 `cleanup_deferred`，保留所有租约和内容。
+同一冻结部署的后续启动与本机制品记录见[门户部署记录](../../../modules/user_portal/dev-docs/plans/archived/user-portal.md#12-finance-既有测试栈部署2026-10-15)。

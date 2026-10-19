@@ -87,6 +87,9 @@ func applicationReferenceAllowed(mod Module, key string) bool {
 }
 
 func validateApplicationManifest(mod Module) error {
+	if err := validateIdentityGroupManifest(mod); err != nil {
+		return err
+	}
 	if len(mod.Applications) > 0 && mod.ApplicationsNotPublished != "" {
 		return fmt.Errorf("module %s declares applications and a no-entry reason", mod.Name)
 	}
@@ -366,7 +369,7 @@ func (a *app) planApplicationCatalog() (string, error) {
 func (a *app) validateCatalogEndpoint() error {
 	hasConsumer := false
 	for _, name := range a.order {
-		if a.reg[name].ApplicationCatalog.Consumes {
+		if a.reg[name].ApplicationCatalog.Consumes || a.reg[name].IdentityGroupCatalog {
 			hasConsumer = true
 		}
 	}

@@ -1,0 +1,132 @@
+api_version: "anas.test-cases/v2"
+topic: "directory-primary-email"
+title: "目录主邮箱与门户建号验收用例"
+requirement_document: "dev-docs/requirements/directory-primary-email.md"
+plan_document: "dev-docs/plans/archived/directory-primary-email.md"
+requirement_scope: ["MAIL-R-001", "MAIL-R-002", "MAIL-R-003", "MAIL-R-004", "MAIL-R-005", "MAIL-R-006", "MAIL-R-007"]
+cases:
+  - id: "MAIL-T-001"
+    title: "地址规则与生产初始化参数"
+    status: "active"
+    level: "unit"
+    requirements: ["MAIL-R-001", "MAIL-R-002", "MAIL-R-006"]
+    requirement_digest: "sha256:e1b8b75fece9acf3a17e2c49d60ea4c3b1ec071dd4c0cd239120fcb707675f05"
+    implementation_digest: "sha256:8e9f0674dc598f42719afd3826d9c1e387dd7819c029e345efafb1275243c07a"
+    fixture: "原生用例仅使用用户已授权 finance 测试栈的临时 OU/账号；凭据保留在同机私有文件"
+    capabilities: ["go", "bash"]
+    preconditions: ["e2e 必须核对私有输入、候选源码和镜像基线；设置 PORTAL_MAIL_ROOT/PORTAL_ACCOUNT_ROOT；T-005 在选定 Samba DC 容器执行，可经标准输入传送同一源码；迁移实验先于生产 Worker 激活执行"]
+    steps: ["执行固定入口，核对正反例及目录回读结果"]
+    implementation:
+      files: ["internal/directorymail/address_test.go", "modules/samba_dc/hook/mail_defaults_test.go"]
+      commands: ["go test ./internal/directorymail ./modules/samba_dc/hook"]
+    assertions: ["非法域名/用户名失败，后缀不改 AD 身份；实际初始化区块新建才传入 mail"]
+    oracle:
+      sources: ["return-value", "runtime", "report"]
+    negative_cases: ["非法域名/用户名失败，后缀不改 AD 身份；实际初始化区块新建才传入 mail"]
+    validity:
+      method: "counterexample"
+      commands: ["go test ./internal/directorymail ./modules/samba_dc/hook"]
+      evidence: "非法域名/用户名失败，后缀不改 AD 身份；实际初始化区块新建才传入 mail"
+    cleanup: ["临时主体按私有稳定引用清理，恢复测试范围外字段；保留无凭据结果和源码摘要"]
+    timeout: "10m"
+    sensitive_data: "密码/令牌/绑定凭据仅在 0700/0600 私有文件和同机输入处理，不进入 Git、截图或报告"
+  - id: "MAIL-T-002"
+    title: "邮箱维护计划、冲突与写入失败"
+    status: "active"
+    level: "unit"
+    requirements: ["MAIL-R-004", "MAIL-R-006", "MAIL-R-007"]
+    requirement_digest: "sha256:5d5893d59d5b5dd2dd89d4a91f3bafcd941fd87d98280278eb6b4eef54d73d43"
+    implementation_digest: "sha256:7e2d97b93afff4210f59708e066260fa48857d0267cdbed73ad9164372e469dc"
+    fixture: "原生用例仅使用用户已授权 finance 测试栈的临时 OU/账号；凭据保留在同机私有文件"
+    capabilities: ["python3"]
+    preconditions: ["e2e 必须核对私有输入、候选源码和镜像基线；设置 PORTAL_MAIL_ROOT/PORTAL_ACCOUNT_ROOT；T-005 在选定 Samba DC 容器执行，可经标准输入传送同一源码；迁移实验先于生产 Worker 激活执行"]
+    steps: ["执行固定入口，核对正反例及目录回读结果"]
+    implementation:
+      files: ["modules/samba_dc/anchor_worker/test_mail_policy.py"]
+      commands: ["python3 modules/samba_dc/anchor_worker/test_mail_policy.py"]
+    assertions: ["地址碰撞在写入前拒绝；身份移动/改名拒绝；未知写结果不重放、不宣称成功"]
+    oracle:
+      sources: ["return-value", "runtime", "report"]
+    negative_cases: ["地址碰撞在写入前拒绝；身份移动/改名拒绝；未知写结果不重放、不宣称成功"]
+    validity:
+      method: "counterexample"
+      commands: ["python3 modules/samba_dc/anchor_worker/test_mail_policy.py"]
+      evidence: "地址碰撞在写入前拒绝；身份移动/改名拒绝；未知写结果不重放、不宣称成功"
+    cleanup: ["临时主体按私有稳定引用清理，恢复测试范围外字段；保留无凭据结果和源码摘要"]
+    timeout: "10m"
+    sensitive_data: "密码/令牌/绑定凭据仅在 0700/0600 私有文件和同机输入处理，不进入 Git、截图或报告"
+  - id: "MAIL-T-003"
+    title: "finance 原生迁移与最小邮箱权限"
+    status: "active"
+    level: "e2e"
+    requirements: ["MAIL-R-001", "MAIL-R-004", "MAIL-R-006", "MAIL-R-007"]
+    requirement_digest: "sha256:db78b9493ea6c7b62bb7974ee997948e4907ef6bb30f0a80547f812587626eb3"
+    implementation_digest: "sha256:8dca9d755ce99a6b2ee15d42c948d8cdc44b4eade9fcd9d8c357982e8c97b5d6"
+    fixture: "原生用例仅使用用户已授权 finance 测试栈的临时 OU/账号；凭据保留在同机私有文件"
+    capabilities: ["samba", "docker", "python3-ldap", "private-input"]
+    preconditions: ["e2e 必须核对私有输入、候选源码和镜像基线；设置 PORTAL_MAIL_ROOT/PORTAL_ACCOUNT_ROOT；T-005 在选定 Samba DC 容器执行，可经标准输入传送同一源码；迁移实验先于生产 Worker 激活执行"]
+    steps: ["执行固定入口，核对正反例及目录回读结果"]
+    implementation:
+      files: ["test-env/scripts/directory-primary-mail-native.py"]
+      commands: ["python3 test-env/scripts/directory-primary-mail-native.py"]
+    assertions: ["临时 OU 默认地址及后缀迁移；冲突无部分写入；越界 mail ACL 和只读写入拒绝；身份/姓名/密码状态/组不变"]
+    oracle:
+      sources: ["return-value", "runtime", "report"]
+    negative_cases: ["临时 OU 默认地址及后缀迁移；冲突无部分写入；越界 mail ACL 和只读写入拒绝；身份/姓名/密码状态/组不变"]
+    validity:
+      method: "counterexample"
+      commands: ["python3 test-env/scripts/directory-primary-mail-native.py"]
+      evidence: "临时 OU 默认地址及后缀迁移；冲突无部分写入；越界 mail ACL 和只读写入拒绝；身份/姓名/密码状态/组不变"
+    cleanup: ["临时主体按私有稳定引用清理，恢复测试范围外字段；保留无凭据结果和源码摘要"]
+    timeout: "10m"
+    sensitive_data: "密码/令牌/绑定凭据仅在 0700/0600 私有文件和同机输入处理，不进入 Git、截图或报告"
+  - id: "MAIL-T-004"
+    title: "门户真实创建与系统邮箱只读展示"
+    status: "active"
+    level: "e2e"
+    requirements: ["MAIL-R-003", "MAIL-R-005", "MAIL-R-006"]
+    requirement_digest: "sha256:5faf909d01a66e43edcec804eb6d6d4e56cb61d2c9e81bb56723544896eb6095"
+    implementation_digest: "sha256:15c55f5146fd0c33a832baebd0f54bebd1674170437eb70a0f13e085ebef6a61"
+    fixture: "原生用例仅使用用户已授权 finance 测试栈的临时 OU/账号；凭据保留在同机私有文件"
+    capabilities: ["playwright-chromium", "casdoor", "samba", "private-input"]
+    preconditions: ["e2e 必须核对私有输入、候选源码和镜像基线；设置 PORTAL_MAIL_ROOT/PORTAL_ACCOUNT_ROOT；T-005 在选定 Samba DC 容器执行，可经标准输入传送同一源码；迁移实验先于生产 Worker 激活执行"]
+    steps: ["执行固定入口，核对正反例及目录回读结果"]
+    implementation:
+      files: ["test-env/playwright/user-portal-account-management.mjs"]
+      commands: ["node test-env/playwright/user-portal-account-management.mjs"]
+    assertions: ["门户不接受任意邮箱/DN；创建时邮箱/临时密码/身份同时生效；重名不覆盖；普通用户无建号权；此入口不代替 LAM 浏览器验收"]
+    oracle:
+      sources: ["return-value", "runtime", "report"]
+    negative_cases: ["门户不接受任意邮箱/DN；创建时邮箱/临时密码/身份同时生效；重名不覆盖；普通用户无建号权；此入口不代替 LAM 浏览器验收"]
+    validity:
+      method: "counterexample"
+      commands: ["node test-env/playwright/user-portal-account-management.mjs"]
+      evidence: "门户不接受任意邮箱/DN；创建时邮箱/临时密码/身份同时生效；重名不覆盖；普通用户无建号权；此入口不代替 LAM 浏览器验收"
+    cleanup: ["临时主体按私有稳定引用清理，恢复测试范围外字段；保留无凭据结果和源码摘要"]
+    timeout: "10m"
+    sensitive_data: "密码/令牌/绑定凭据仅在 0700/0600 私有文件和同机输入处理，不进入 Git、截图或报告"
+  - id: "MAIL-T-005"
+    title: "Samba 原生初始化邮箱参数与用户类创建授权"
+    status: "active"
+    level: "e2e"
+    requirements: ["MAIL-R-002", "MAIL-R-003"]
+    requirement_digest: "sha256:6ec3f65bd75e3740808e3a2a7f265231a19ea9f0aabe2a1d033b18d562ed9d3f"
+    implementation_digest: "sha256:0789adef77850ad5ee1bd868e79284f6f1f3b3bc34167d1a77b7d29a2c8acf83"
+    fixture: "finance 临时 OU 验证普通用户类授权；完全断网假域执行镜像内生产管理员创建分支，所有高权主体仅在假域"
+    capabilities: ["samba", "private-input", "docker", "go", "openssl"]
+    preconditions: ["e2e 必须核对私有输入、候选源码和镜像基线；设置 PORTAL_MAIL_ROOT/PORTAL_ACCOUNT_ROOT；T-005 在选定 Samba DC 容器执行，可经标准输入传送同一源码；迁移实验先于生产 Worker 激活执行"]
+    steps: ["执行固定入口，核对正反例及目录回读结果"]
+    implementation:
+      files: ["test-env/scripts/directory-mail-creation-proof.py", "test-env/scripts/user-portal-owner-isolated.py"]
+      commands: ["python3 test-env/scripts/directory-mail-creation-proof.py", "python3 test-env/scripts/user-portal-owner-isolated.py --image \"$PORTAL_OWNER_IMAGE\" --native-binary \"$PORTAL_OWNER_BINARY\" --evidence-dir \"$PORTAL_OWNER_EVIDENCE\""]
+    assertions: ["镜像内生产管理员分支直接写主邮箱，LDAPS立即可读，独立后缀与既有账号不覆写；CC user 单次 Add 可含密码/mail/锚点且不能创建组"]
+    oracle:
+      sources: ["return-value", "runtime", "report"]
+    negative_cases: ["镜像内生产管理员分支直接写主邮箱，LDAPS立即可读，独立后缀与既有账号不覆写；CC user 单次 Add 可含密码/mail/锚点且不能创建组"]
+    validity:
+      method: "counterexample"
+      commands: ["python3 test-env/scripts/directory-mail-creation-proof.py"]
+      evidence: "镜像内生产管理员分支直接写主邮箱，LDAPS立即可读，独立后缀与既有账号不覆写；CC user 单次 Add 可含密码/mail/锚点且不能创建组"
+    cleanup: ["临时主体按私有稳定引用清理，恢复测试范围外字段；保留无凭据结果和源码摘要"]
+    timeout: "10m"
+    sensitive_data: "密码/令牌/绑定凭据仅在 0700/0600 私有文件和同机输入处理，不进入 Git、截图或报告"

@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `25`
-- Declared parameters: `210` total (`18` global and `192` Module-owned; `188` structured Module parameters and `4` bare `env.*` parameters)
-- Resolution phases: `input_required` `2`, `must_resolve` `34`, unknown types `0`
-- Type distribution: `bool` `28`, `enum` `29`, `int` `34`, `string` `119`
-- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `9`, `none` `9`, `runtime` `5`, `static` `169`
+- Declared parameters: `215` total (`18` global and `197` Module-owned; `193` structured Module parameters and `4` bare `env.*` parameters)
+- Resolution phases: `input_required` `2`, `must_resolve` `35`, unknown types `0`
+- Type distribution: `bool` `28`, `enum` `29`, `int` `34`, `string` `124`
+- Default-source distribution: `generated` `10`, `host` `8`, `inherited` `10`, `none` `9`, `runtime` `5`, `static` `173`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -199,7 +199,7 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `39`.
+Current explicit portable constraints: `40`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
@@ -233,10 +233,11 @@ Current explicit portable constraints: `39`.
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
+| `samba_dc.mail_domain` | <code>format=&#34;dns_name&#34;</code> |
 | `samba_dc.max_log_size` | <code>minimum=1</code> |
 | `traefik.base_port` | <code>minimum=1; maximum=65535</code> |
 | `user_portal.audit_capacity_mb` | <code>minimum=1; maximum=1024</code> |
-| `user_portal.recent_window_seconds` | <code>minimum=5; maximum=900</code> |
+| `user_portal.recent_window_seconds` | <code>minimum=5; maximum=300</code> |
 | `versitygw.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
 | `versitygw.region` | <code>min_length=1; max_length=64; pattern=&#34;^[A-Za-z0-9][A-Za-z0-9._-]*$&#34;</code> |
 | `versitygw.root_access_key` | <code>min_length=3; max_length=64; pattern=&#34;^[A-Za-z0-9._-]+$&#34;</code> |
@@ -255,7 +256,7 @@ Current explicit portable constraints: `39`.
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
 | `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
-| `immich` | 7 | `immich.db_name`<br>`immich.db_type`<br>`immich.domain_prefix`<br>`immich.iam_protocol`<br>`immich.job_concurrency`<br>`immich.machine_learning`<br>`immich.video_concurrency` |
+| `immich` | 8 | `immich.browser_logout_return_url`<br>`immich.db_name`<br>`immich.db_type`<br>`immich.domain_prefix`<br>`immich.iam_protocol`<br>`immich.job_concurrency`<br>`immich.machine_learning`<br>`immich.video_concurrency` |
 | `incus` | 7 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.lan_extra_subnets`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
@@ -263,13 +264,13 @@ Current explicit portable constraints: `39`.
 | `mariadb` | 3 | `mariadb.adminer_enabled`<br>`mariadb.forward_auth_interface`<br>`mariadb.root_password` |
 | `meshcentral` | 5 | `meshcentral.db_name`<br>`meshcentral.db_type`<br>`meshcentral.domain_prefix`<br>`meshcentral.iam_protocol`<br>`meshcentral.mps_port` |
 | `netbird` | 2 | `netbird.domain_prefix`<br>`netbird.iam_protocol` |
-| `nextcloud` | 15 | `nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.files_trash_delete`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.trashbin_retention_obligation`<br>`nextcloud.upload_max_size` |
+| `nextcloud` | 16 | `nextcloud.browser_logout_return_url`<br>`nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.files_trash_delete`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.trashbin_retention_obligation`<br>`nextcloud.upload_max_size` |
 | `oauth2_proxy` | 4 | `oauth2_proxy.console_proxy_enabled`<br>`oauth2_proxy.console_proxy_port`<br>`oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
 | `postgres` | 4 | `postgres.adminer_enabled`<br>`postgres.forward_auth_interface`<br>`postgres.password`<br>`postgres.username` |
-| `samba_dc` | 40 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
+| `samba_dc` | 41 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.mail_domain`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
 | `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
-| `user_portal` | 16 | `user_portal.administration_enabled`<br>`user_portal.audit_capacity_mb`<br>`user_portal.delegation_rules`<br>`user_portal.domain_administration_enabled`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.profile_bind_dn`<br>`user_portal.profile_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
+| `user_portal` | 18 | `user_portal.administration_enabled`<br>`user_portal.audit_capacity_mb`<br>`user_portal.create_bind_dn`<br>`user_portal.create_bind_password`<br>`user_portal.delegation_rules`<br>`user_portal.domain_administration_enabled`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.profile_bind_dn`<br>`user_portal.profile_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds` |
 | `versitygw` | 5 | `versitygw.domain_prefix`<br>`versitygw.read_only`<br>`versitygw.region`<br>`versitygw.root_access_key`<br>`versitygw.root_secret_key` |
 | `vikunja` | 5 | `vikunja.db_name`<br>`vikunja.db_type`<br>`vikunja.domain_prefix`<br>`vikunja.iam_protocol`<br>`vikunja.language` |
 <!-- generated:configuration-owners:end -->
@@ -305,9 +306,9 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 <!-- generated:configuration-effects:start -->
 | Module parameter effect | Parameters | Change outcome |
 | --- | ---: | --- |
-| `container_recreate` | 126 | Re-render and recreate the affected container or Compose project |
+| `container_recreate` | 130 | Re-render and recreate the affected container or Compose project |
 | `credential_rotate` | 9 | Use a credential-rotation transaction to update application state and the Secret Store together |
-| `data_migrate` | 18 | Migrate persistent data, a database, or membership before activation |
+| `data_migrate` | 19 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
 | `immutable` | 3 | Use a replacement or dedicated migration workflow |
 | `reconcile` | 20 | Reconcile application, API, or file state through the Module lifecycle |

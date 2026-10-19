@@ -78,6 +78,7 @@ Provider 在启动应用前提供固定 `vector`、`earthdistance` 及依赖；�
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `immich.browser_logout_return_url` | string | — | `""` | `static` | `IMMICH_BROWSER_LOGOUT_RETURN_URL` | 否 | 否 | 否 | 是 | `container_recreate` | 可选的同站点门户退出回调；为空保留原生返回行为 |
 | `immich.db_name` | string | — | `immich` | `static` | `IMMICH_DB_NAME` | 否 | 否 | 否 | 否：`migrate-immich-database` | `data_migrate` | 应用独立数据库名；修改需匹配媒体迁移 |
 | `immich.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `IMMICH_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-immich-database` | `data_migrate` | 仅共享 PostgreSQL |
 | `immich.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `photos` | `static` | `IMMICH_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 公开照片服务子域名前缀 |

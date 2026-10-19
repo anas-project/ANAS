@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-// Execute the production capability block without touching a Samba database or
-// /run. Only its directory writes are replaced with records of their arguments.
+// Run the production bootstrap block with directory/native commands stubbed.
+// Group metadata is now supplied by the catalog, rather than a second CSV loop.
 func runStructureCapabilityGroups(t *testing.T, environment []string) ([]byte, error) {
 	t.Helper()
 	script, err := os.ReadFile(filepath.Join("..", "samba_dc", "root", "usr", "local", "bin", "structure.sh"))
@@ -19,87 +19,39 @@ func runStructureCapabilityGroups(t *testing.T, environment []string) ([]byte, e
 		t.Fatal(err)
 	}
 	text := string(script)
-	start := strings.Index(text, "# Application capability groups.")
-	end := strings.Index(text, "\n# auto create ldap structure")
+	start := strings.Index(text, "# Group names, directory locations")
+	end := strings.Index(text, "# deal with admin")
 	if start < 0 || end <= start {
-		t.Fatal("production capability block was not found")
+		t.Fatal("production catalog bootstrap not found")
 	}
-	optionsStart := strings.Index(text, "\nset ")
-	if optionsStart < 0 {
-		t.Fatal("production shell options were not found")
-	}
-	options := strings.SplitN(text[optionsStart+1:], "\n", 2)[0]
-	command := options + `
-create_ou() { printf 'ou\t%s\t%s\n' "$1" "$2"; }
-create_group() { printf 'group\t%s\t%s\n' "$1" "$2"; }
+	command := `set -euo pipefail
+python3(){ [ "$1" = /usr/local/bin/identity_groups.py ] && printf 'catalog\n'; }
+create_ou(){ :; }
+add_to_group(){ :; }
+remove_from_group(){ :; }
+net(){ :; }
 ` + text[start:end] + "\nprintf 'continued\\n'\n"
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "LC_ALL=C"}, environment...)
 	return cmd.CombinedOutput()
 }
-
 func TestStructureOptionalCapabilityGroups(t *testing.T) {
-	for _, test := range []struct {
-		name        string
-		structure   string
-		groups      []string
-		wantRecords string
-	}{
-		{name: "absent", structure: "true"},
-		{name: "empty", structure: "true", groups: []string{"ANAS_IDENTITY_CAPABILITY_GROUPS="}},
-		{
-			name: "nonempty", structure: "true",
-			groups: []string{"ANAS_IDENTITY_CAPABILITY_GROUPS=ai_agent_execute,,nextcloud_admin"},
-			wantRecords: "Create capability ou & groups\n" +
-				"ou\tOU=Groups\tDC=temp-edit,DC=test\n" +
-				"ou\tOU=Cap\tOU=Groups,DC=temp-edit,DC=test\n" +
-				"group\tCAP_ai_agent_execute\tOU=Cap,OU=Groups\n" +
-				"group\tCAP_nextcloud_admin\tOU=Cap,OU=Groups\n",
-		},
-		{name: "disabled_absent", structure: "false"},
-		{name: "disabled_nonempty", structure: "false", groups: []string{"ANAS_IDENTITY_CAPABILITY_GROUPS=ai_agent_execute"}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			environment := append([]string{
-				"SAMBA_DC_CREATE_STRUCTURE=" + test.structure,
-				"SAMBA_DC_BASE_DN=DC=temp-edit,DC=test",
-			}, test.groups...)
-			output, err := runStructureCapabilityGroups(t, environment)
-			if err != nil {
-				t.Fatalf("production capability block failed: %v\n%s", err, output)
-			}
-			if got, want := string(output), test.wantRecords+"continued\n"; got != want {
-				t.Fatalf("production capability operations = %q, want %q", got, want)
-			}
-		})
+	for _, enabled := range []string{"true", "false"} {
+		output, err := runStructureCapabilityGroups(t, []string{"SAMBA_DC_CREATE_STRUCTURE=" + enabled, "SAMBA_DC_APP_FILTER=false", "SAMBA_DC_BASE_DN=DC=temp-edit,DC=test", "SAMBA_DC_ADMIN_GROUP_NAME=Admins", "SAMBA_DC_WORKGROUP=TEMP", "SAMBA_DC_ADMINISTRATOR_NAME=Administrator", "SAMBA_DC_ADMINISTRATOR_PASSWORD=fixture"})
+		if err != nil || string(output) != "catalog\ncontinued\n" {
+			t.Fatalf("catalog bootstrap failed: %s %v", output, err)
+		}
 	}
 }
-
 func TestStructureCapabilityGroupsRejectMissingRequiredEnvironment(t *testing.T) {
-	for _, test := range []struct {
-		name        string
-		environment []string
-		missing     string
-	}{
-		{name: "structure_switch", environment: []string{"SAMBA_DC_BASE_DN=DC=temp-edit,DC=test"}, missing: "SAMBA_DC_CREATE_STRUCTURE"},
-		{
-			name: "base_dn",
-			environment: []string{
-				"SAMBA_DC_CREATE_STRUCTURE=true",
-				"ANAS_IDENTITY_CAPABILITY_GROUPS=ai_agent_execute",
-			},
-			missing: "SAMBA_DC_BASE_DN",
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			output, err := runStructureCapabilityGroups(t, test.environment)
-			if err == nil {
-				t.Fatalf("missing required %s was accepted: %s", test.missing, output)
-			}
-			text := string(output)
-			if !strings.Contains(text, test.missing+": unbound variable") || strings.Contains(text, "continued\n") || strings.Contains(text, "group\t") {
-				t.Fatalf("missing required %s did not stop the production block: %s", test.missing, output)
-			}
-		})
+	for _, missing := range []string{"SAMBA_DC_CREATE_STRUCTURE", "SAMBA_DC_BASE_DN"} {
+		env := []string{"SAMBA_DC_APP_FILTER=false"}
+		if missing != "SAMBA_DC_CREATE_STRUCTURE" {
+			env = append(env, "SAMBA_DC_CREATE_STRUCTURE=true")
+		}
+		output, err := runStructureCapabilityGroups(t, env)
+		if err == nil || !strings.Contains(string(output), missing+": unbound variable") || strings.Contains(string(output), "continued\n") {
+			t.Fatalf("missing %s did not stop bootstrap: %s %v", missing, output, err)
+		}
 	}
 }

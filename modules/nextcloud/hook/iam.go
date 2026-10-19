@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -29,6 +30,13 @@ const (
 // the deployment selected.
 func publishClientRegistration(e map[string]string, allowGroups string, secrets *secretStore) error {
 	protocol := defaultValue(defaultValue(e[iamBindingPrefix+"INTERFACE"], e["NEXTCLOUD_IAM_PROTOCOL"]), "oidc")
+	returnURL := e["NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL"]
+	if returnURL != "" {
+		u, err := url.Parse(returnURL)
+		if err != nil || u.Scheme != "https" || u.User != nil || !strings.HasSuffix(u.Hostname(), "."+e["BASE_DOMAIN"]) || u.Path != "/signed-out" || u.RawQuery != "native=1" || u.Fragment != "" || protocol != "oidc" {
+			return fmt.Errorf("browser logout return URL requires OIDC and the same-site HTTPS portal /signed-out?native=1 callback")
+		}
+	}
 	// calculate may be applied repeatedly to the same environment during a
 	// protocol or domain migration. Rebuild the protocol-specific registration
 	// so the selected provider never sees endpoints from the previous mode.
@@ -55,7 +63,11 @@ func publishClientRegistration(e map[string]string, allowGroups string, secrets 
 		e[iamClientPrefix+"CLIENT_ID"] = e["NEXTCLOUD_OIDC_CLIENT_ID"]
 		e[iamClientPrefix+"CLIENT_SECRET"] = secret
 		e[iamClientPrefix+"REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/apps/user_oidc/code"
+		e["NEXTCLOUD_OIDC_POST_LOGOUT_URI"] = defaultValue(returnURL, e["NEXTCLOUD_DOMAIN_FULL"])
 		e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] = e["NEXTCLOUD_DOMAIN_FULL"]
+		if returnURL != "" {
+			e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"] += "," + returnURL
+		}
 		e[iamClientPrefix+"OIDC_LOGOUT_URI"] = e["NEXTCLOUD_DOMAIN_FULL"] + "/index.php/apps/user_oidc/backchannel-logout/anas"
 		e[iamClientPrefix+"OIDC_LOGOUT_METHODS"] = "backchannel"
 		e[iamClientPrefix+"OIDC_LOGOUT_SESSION_REQUIRED"] = "true"

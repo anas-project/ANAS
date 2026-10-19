@@ -79,6 +79,8 @@ Module 通过 `temporary_directories` 显式声明可丢弃目录。默认根为
 
 已提交切换的旧目录清理失败会记录为 `cleanup_deferred` 并报告 `temp_cleanup_pending`，后续停启、应用配置和再次切换仍可执行。旧目录租约继续保留，可在故障解除后显式 GC；未提交切换、未确认的停止钩子或目标挂载核验失败仍阻止自动恢复。普通定向启动只预检选中模块及其依赖范围；定向重启在停止前完成相同范围的临时存储预检。
 
+已完成、已恢复或仅待清理的历史切换保持终态；后续部署的失败补偿不会将它们重新标为恢复失败。
+
 ```bash
 anas temp status -w /srv/anas
 anas temp gc --dry-run -w /srv/anas --json

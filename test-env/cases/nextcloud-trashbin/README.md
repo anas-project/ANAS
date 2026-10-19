@@ -20,7 +20,7 @@
 - 级别：`unit`
 - 覆盖需求：`NCT-R-001`、`NCT-R-002`
 - 需求复核摘要：`sha256:a7dc6092fb1ecfb9f3442e553d4f6770dde6124ed25d7d0a81b6f34e32968cd1`
-- 实现复核摘要：`sha256:e3e2478c5071267fb09cac2c2638543f401826c5b174d58cbee8a1b28df8a339`
+- 实现复核摘要：`sha256:da80c703e1653896f3c8a838a0ace2ef1c4228aee5b3f7ccf6245bdf558a8626`
 - Fixture：Hook 输入和真实 task.sh 回收站配置块；occ 替身只记录调用与注入失败
 - 目标能力：`go`、`bash`
 - Oracle 来源：`return-value`、`error-contract`

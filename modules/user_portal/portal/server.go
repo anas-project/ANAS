@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
+	"github.com/anas-project/ANAS/modules/user_portal/browserlogout"
 )
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +134,7 @@ func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /health", s.health)
 	m.HandleFunc("GET /{$}", s.page)
+	m.HandleFunc("GET /signed-out", s.page)
 	m.HandleFunc("GET /static/", s.static)
 	m.HandleFunc("GET /login", s.login)
 	m.HandleFunc("GET /oidc/callback", s.callback)
@@ -146,10 +148,13 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/apps", s.apps)
 	m.HandleFunc("GET /api/assets/{name}/{size}", s.asset)
 	m.HandleFunc("GET /api/users", s.users)
+	m.HandleFunc("POST /api/users", s.createUser)
 	m.HandleFunc("GET /api/users/{anchor}", s.user)
 	m.HandleFunc("GET /api/groups", s.groups)
 	m.HandleFunc("GET /api/audit", s.auditQuery)
 	m.HandleFunc("POST /api/logout", s.logout)
+	m.HandleFunc("POST /api/logout/complete", s.logout)
+	m.HandleFunc("GET "+browserlogout.Path, s.browserLogout)
 	m.HandleFunc("POST /api/reauth", s.reauth)
 	m.HandleFunc("POST /api/password/change", s.changePassword)
 	m.HandleFunc("POST /api/password/recover", s.recoverPassword)
@@ -162,7 +167,16 @@ func (s *Server) Handler() http.Handler {
 		// Cross-origin IAM and application links still receive no Referer.
 		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' "+s.config.Issuer+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self' "+s.config.Issuer)
+		frameSources := ""
+		session, hasSession := s.session(r)
+		if hasSession && !session.Anonymous || r.URL.Path == "/signed-out" {
+			if targets, err := browserlogout.Targets(s.catalog, s.config.URL); err == nil {
+				for _, target := range targets {
+					frameSources += " " + target.Origin
+				}
+			}
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self' "+s.config.Issuer+"; frame-src 'self'"+frameSources+"; frame-ancestors 'none'; base-uri 'none'; form-action 'self' "+s.config.Issuer)
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip, parseErr := netip.ParseAddr(host)
 		trusted := false
@@ -173,7 +187,7 @@ func (s *Server) Handler() http.Handler {
 			failure(w, 403, "untrusted_proxy")
 			return
 		}
-		if r.URL.Path != "/health" {
+		if r.URL.Path != "/health" && r.URL.Path != browserlogout.Path {
 			if !equivalentOrigin("https://"+r.Host, s.config.URL) {
 				failure(w, 403, "invalid_host")
 				return
@@ -314,8 +328,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.delete(v.ID)
 	cookie(w, sessionCookie, "", -1)
-	// The browser receives only this validated native endpoint, never a token.
-	respond(w, 200, map[string]string{"iam_endpoint": s.oidc.logout, "local": "logged_out"})
+	s.logoutResponse(w, !v.Anonymous || r.URL.Path == "/api/logout/complete")
 }
 
 func (s *Server) backchannel(w http.ResponseWriter, r *http.Request) {
@@ -360,8 +373,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 				actions = append(actions, a)
 			}
 		}
+		if s.creationEnabled() {
+			actions = append(actions, "user.create")
+		}
 	}
-	respond(w, 200, map[string]any{"person": p, "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
+	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
@@ -459,6 +475,9 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, p := range people {
+		if !s.managedPerson(p) {
+			continue
+		}
 		if !s.administrator(actor) && authorize(s.config.Rules, actor, p, "users.read", "") == "" {
 			continue
 		}
@@ -500,11 +519,11 @@ func (s *Server) user(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := s.directory.Person(r.PathValue("anchor"))
-	if err != nil || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
+	if err != nil || !s.managedPerson(target) || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
 		failure(w, 403, "access_denied")
 		return
 	}
-	respond(w, 200, map[string]any{"person": target, "actions": s.targetActions(actor, target), "profile_version": profileVersion(target), "requires_domain": target.DomainRisk, "administration": s.administrator(actor), "domain_administration": s.administrator(actor) && s.config.DomainAdministration})
+	respond(w, 200, map[string]any{"person": localizePerson(target, r.URL.Query().Get("lang")), "actions": s.targetActions(actor, target), "profile_version": profileVersion(target), "requires_domain": target.DomainRisk, "administration": s.administrator(actor), "domain_administration": s.administrator(actor) && s.config.DomainAdministration})
 }
 
 func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
@@ -513,7 +532,7 @@ func (s *Server) groups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := s.directory.Person(r.URL.Query().Get("target"))
-	if err != nil || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
+	if err != nil || !s.managedPerson(target) || !s.administrator(actor) && authorize(s.config.Rules, actor, target, "users.read", "") == "" {
 		failure(w, 403, "access_denied")
 		return
 	}
@@ -563,7 +582,7 @@ func (s *Server) auditQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, p := range people {
-			permittedTargets[p.Anchor] = true
+			permittedTargets[p.Anchor] = s.managedPerson(p)
 		}
 	}
 	for _, rule := range s.config.Rules {
@@ -586,12 +605,12 @@ func (s *Server) auditQuery(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, person := range people {
-			permittedTargets[person.Anchor] = authorize(s.config.Rules, actor, person, "audit.read", "") != ""
+			permittedTargets[person.Anchor] = s.managedPerson(person) && authorize(s.config.Rules, actor, person, "audit.read", "") != ""
 		}
 		break
 	}
 	for _, record := range s.audit.list() {
-		if record.Target == actor.Anchor || record.Target == "" && record.Actor == actor.Anchor {
+		if record.Target == actor.Anchor || record.Target == "" && record.Actor == actor.Anchor || record.Action == "user.create" && record.Actor == actor.Anchor {
 			allowed = append(allowed, record)
 			continue
 		}
@@ -638,7 +657,18 @@ func (s *Server) rejected(actor, target, action, rule string) {
 	_ = s.audit.append(Record{ID: randomID(), Time: time.Now().UTC(), Phase: "result", Actor: actor, Target: target, Action: action, Rule: rule, Directory: "denied", ConfigDigest: s.digest})
 }
 
+// OperationResult preserves each step of a domain membership change.
+type OperationResult struct {
+	Directory  string
+	Ownership  string
+	Membership string
+}
+
 func (s *Server) write(w http.ResponseWriter, r *http.Request, record Record, operation func() string, temporaryPassword string, invalidate bool) {
+	s.writeResult(w, r, record, func() OperationResult { return OperationResult{Directory: operation()} }, temporaryPassword, invalidate)
+}
+
+func (s *Server) writeResult(w http.ResponseWriter, r *http.Request, record Record, operation func() OperationResult, temporaryPassword string, invalidate bool) {
 	record.ID = randomID()
 	record.Time = time.Now().UTC()
 	record.Phase = "intent"
@@ -647,7 +677,12 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, record Record, op
 		respond(w, 503, map[string]string{"request_id": record.ID, "directory": "not_attempted", "audit": "unavailable"})
 		return
 	}
-	outcome := operation()
+	details := operation()
+	if record.Ownership != "" && details.Ownership == "" {
+		details.Ownership, details.Membership = "not_attempted", "not_attempted"
+	}
+	outcome := details.Directory
+	record.Ownership, record.Membership = details.Ownership, details.Membership
 	record.Time = time.Now().UTC()
 	record.Phase = "result"
 	record.Directory = outcome
@@ -657,8 +692,14 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, record Record, op
 		auditStatus = "unavailable"
 	}
 	result := map[string]any{"request_id": record.ID, "directory": outcome, "audit": auditStatus, "iam": "pending", "external_sessions": "unverified"}
+	if details.Ownership != "" {
+		result["ownership"], result["membership"] = details.Ownership, details.Membership
+	}
 	if outcome == "saved" && temporaryPassword != "" {
 		result["temporary_password"] = temporaryPassword
+	}
+	if record.Action == "user.create" {
+		result["target"] = record.Target
 	}
 	if outcome == "saved" && invalidate {
 		if v, ok := s.session(r); ok {
@@ -821,7 +862,7 @@ func (s *Server) adminGuard(w http.ResponseWriter, r *http.Request, targetAnchor
 	}
 	target, err := s.directory.Person(targetAnchor)
 	rule := authorize(s.config.Rules, actor, target, action, group)
-	if err != nil || target.Protected || rule == "" {
+	if err != nil || !s.managedPerson(target) || target.Protected || rule == "" {
 		s.rejected(v.Subject, targetAnchor, action, rule)
 		failure(w, 403, "access_denied")
 		return v, actor, target, rule, false
@@ -863,10 +904,9 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Reason string `json:"reason"`
-		Force  bool   `json:"force_change"`
+		Force bool `json:"force_change"`
 	}
-	if !decode(r, &b) || strings.TrimSpace(b.Reason) == "" || len(b.Reason) > 512 {
+	if !decode(r, &b) {
 		s.rejected(v.Subject, target.Anchor, "password.reset", rule)
 		failure(w, 400, "invalid_request")
 		return
@@ -877,7 +917,7 @@ func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	password := "Aa1!" + randomID()[:28]
-	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: "password.reset", Rule: rule, Reason: b.Reason, ForceChange: &b.Force}, func() string {
+	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: "password.reset", Rule: rule, ForceChange: &b.Force}, func() string {
 		p, ok := s.freshWrite(r.Context(), v.ID, actor, target, "password.reset", "", rule)
 		if !ok {
 			return "denied"
@@ -894,14 +934,13 @@ func (s *Server) unlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Reason string `json:"reason"`
 	}
-	if !decode(r, &b) || strings.TrimSpace(b.Reason) == "" || len(b.Reason) > 512 {
+	if !decode(r, &b) {
 		s.rejected(v.Subject, target.Anchor, "account.unlock", rule)
 		failure(w, 400, "invalid_request")
 		return
 	}
-	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: "account.unlock", Rule: rule, Reason: b.Reason}, func() string {
+	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: "account.unlock", Rule: rule}, func() string {
 		p, ok := s.freshWrite(r.Context(), v.ID, actor, target, "account.unlock", "", rule)
 		if !ok {
 			return "denied"
@@ -917,9 +956,8 @@ func (s *Server) member(w http.ResponseWriter, r *http.Request) {
 		Target         string `json:"target"`
 		Add            bool   `json:"add"`
 		ExpectedDirect bool   `json:"expected_direct"`
-		Reason         string `json:"reason"`
 	}
-	if !decode(r, &b) || strings.TrimSpace(b.Reason) == "" || len(b.Reason) > 512 {
+	if !decode(r, &b) {
 		v, _ := s.session(r)
 		s.rejected(v.Subject, "", "groups.member", "")
 		failure(w, 400, "invalid_request")
@@ -940,7 +978,7 @@ func (s *Server) member(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, "access_denied")
 		return
 	}
-	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: action, Rule: rule, Group: anchor, Reason: b.Reason, ExpectedDirect: &b.ExpectedDirect}, func() string {
+	s.write(w, r, Record{Actor: v.Subject, Target: target.Anchor, Action: action, Rule: rule, Group: anchor, ExpectedDirect: &b.ExpectedDirect}, func() string {
 		p, ok := s.freshWrite(r.Context(), v.ID, actor, target, action, anchor, rule)
 		if !ok {
 			return "denied"

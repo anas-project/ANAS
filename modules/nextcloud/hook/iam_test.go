@@ -1,6 +1,10 @@
+// TEST_CASES: PORTAL-T-001
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestApplyNextcloudOIDCBinding(t *testing.T) {
 	e := map[string]string{
@@ -115,5 +119,19 @@ func TestNextcloudProtocolSwitchRebuildsRegistration(t *testing.T) {
 		if got := e[iamClientPrefix+suffix]; got != "" {
 			t.Errorf("stale SAML %s = %q after OIDC switch", suffix, got)
 		}
+	}
+}
+
+func TestNativeLogoutReturnIsRegisteredAndProjected(t *testing.T) {
+	e := map[string]string{"NEXTCLOUD_DOMAIN_FULL": "https://nc.example.test:9000", "BASE_DOMAIN": "example.test", "NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL": "https://portal.example.test:9000/signed-out?native=1"}
+	if err := publishClientRegistration(e, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if e["NEXTCLOUD_OIDC_POST_LOGOUT_URI"] != e["NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL"] || !strings.Contains(e[iamClientPrefix+"POST_LOGOUT_REDIRECT_URIS"], e["NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL"]) {
+		t.Fatal("native return not registered/projected")
+	}
+	e["NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL"] = "https://evil.other/signed-out?native=1"
+	if err := publishClientRegistration(e, "", &secretStore{values: map[string]string{}}); err == nil {
+		t.Fatal("external callback accepted")
 	}
 }

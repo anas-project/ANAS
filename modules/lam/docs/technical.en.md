@@ -144,3 +144,7 @@ source, categories and permission facts. Runner generates seven PNG sizes and an
 catalog; only explicitly declared IAM consumers receive it. Local-auth entry visibility does not protect
 the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
 [catalog design](/architecture/app-catalog-design).
+
+### System-managed primary mail
+
+Native windowsUser settings hide `mail`, otherMailbox and proxyAddresses inputs; the user list still displays mail. LAM-created personnel receive the primary address through the Samba directory worker after the Add event (with periodic reconciliation as a fallback). Unlike portal creation, this is not part of LAM’s Add transaction. Mail values and the suffix are system-managed; an address does not prove that a mailbox or mail service is active. Direct LDAP tools and LAM configuration administrators remain privileged and must respect this directory policy.

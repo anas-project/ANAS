@@ -2,13 +2,15 @@
 doc_type: plan
 status: implementing
 created: 2026-10-03
-updated: 2026-10-09
+updated: 2026-10-19
 ---
 
 # Immich Module 实施计划
 
-> 2026-10-10 当前范围：Authentik 已按用户要求从仓库移除；保留历史版本/证据，当前新部署选择 Casdoor。更新后的 PG r5 / Immich r2 / Casdoor r12 harness 只有本机验证，尚未实机重跑，不能继承下文不同制品的通过结论。
+> 2026-10-10 历史范围：Authentik 已按用户要求从仓库移除；保留历史版本/证据，当前新部署选择 Casdoor。更新后的 PG r5 / Immich r2 / Casdoor r12 harness 只有本机验证，尚未实机重跑，不能继承下文不同制品的通过结论。
 
+
+当前核查（2026-10-19）：用户的旧 Immich 网页会话在门户退出后刷新仍返回认证 API 200；正常网页、较早授权与新 IAM 会话必须补测。历史有效 Logout Token/接收端检查仍保留，但不代表退出通知覆盖全部既有会话。新增仓库 T-010 及逐来源结果见[门户计划 §20](../../../../modules/user_portal/dev-docs/plans/archived/user-portal.md#20-2026-10-19-e2e-覆盖核查分类范围调整与旧会话反例)。本轮 finance 的 admin 已有系统生成邮箱，不能再把该主机缺邮箱当作当前阻塞；新域初始化按目录主邮箱计划验收。真实移动端与跨主题完整矩阵继续待验，M2/M3 不标完成。
 
 验收依据是[需求矩阵](../requirements/immich-module.md)，实现见[技术文档](../../docs/technical.md)。
 固定 Immich 3.2.4、PG 18.4/pgvector 0.8.2、Valkey 9.1.1；版本变化须重审补丁锚点和上游行为。
@@ -17,7 +19,7 @@ updated: 2026-10-09
 | 里程碑 | 需求 ID | 状态 |
 | --- | --- | --- |
 | M1：Module、配置与入口保护 | R-006、R-013—R-014 | 已完成 |
-| M2：原生 OIDC、唯一绑定与退出 | R-001—R-005、R-008—R-009 | 实施中；Casdoor 全新服务器完整套件及两角色网页已通过；最新 master 服务器复验通过；生产管理员缺邮箱、移动端待验收 |
+| M2：原生 OIDC、唯一绑定与退出 | R-001—R-005、R-008—R-009 | 实施中；历史 aa1944a b13 首装及两角色网页通过；当前旧 IAM 会话联动缺口、移动端待验收 |
 | M3：媒体、撤权、队列与 ANAS 恢复 | R-007、R-010—R-012 | 实施中；Casdoor 全新上传/升级/失败与 SIGKILL/完整恢复及恢复后撤权已通过；移动端待验收 |
 
 ## 检查表
@@ -96,7 +98,7 @@ harness 定向测试和实际Hook编译通过；测试副本来自受管SCRAM Pr
 - 内部测试CA的浏览器夹具未通过ServiceWorker/PWA注册；未声明PWA安装/离线可用，也没有整机容量测试或4GB支持结论。
 - 新装、重复apply、重启、原生身份、扩展维护/失败/SIGKILL精确重试、匹配旧/新及当前CA组合全workspace恢复、两角色浏览器和五种目录功能均有真实主机分轮通过证据。自动事件不手工同步时71.206秒完成旧四类凭据撤销，满足本次健康固定组合300秒验收上限；不声明故障/容量普遍保证。
 - 最新 master aa1944a 的 b13 单轮全新安装完整 suite 已通过，17 组检查及恢复后五种自动撤权均通过。历史失败报告仍保留，不能将历史进行中记录作为当前结论。
-- finance 已正式部署 Immich；生产目录管理员缺少 mail，原生 OAuth 回调 HTTP400（OAuth profile does not have an email address），应用仍为零用户。等待用户指定邮箱或选择现有服务联系邮箱后，仅补齐现有目录账号资料并由原生同步接入；生产首次建号和上传尚未通过。
+- 历史接入阻塞：finance 管理员曾因缺少 mail，原生 OAuth 回调 HTTP400（OAuth profile does not have an email address），当时应用为零用户。2026-10-19 已确认系统生成邮箱和 admin 应用用户存在，此项不再作为当前阻塞；不据此推断当前制品的媒体或移动端验收已完成。
 - 最新 Linux/Btrfs 完整 Runner 包通过（120.683秒），相关 Hook/helper、补丁及文档门禁通过。本地 macOS 完整 Runner 仍受 rsync/Linux 文件系统条件限制而失败；未执行最新全仓库 go test ./...，不得声称全仓库 Go 测试通过。
 - 本轮按用户授权临时暂停限定的 28 个 finance/旧测试容器，测试后全部按原 ID/镜像恢复健康（restored=true、restore_errors=[]）。随后正式 apply 更新 finance，现有 16 个常驻服务健康，目录初始化任务正常退出 0。隔离工作区、备份、报告和任务代理仍保留；未操作无关部署，未提交或推送。
 

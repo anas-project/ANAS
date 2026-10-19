@@ -64,6 +64,7 @@ config:
     machine_learning: true
     job_concurrency: 2
     video_concurrency: 1
+    browser_logout_return_url: ""
   types:
     domain_prefix:
       kind: string
@@ -72,6 +73,7 @@ config:
         max_length: 63
         pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
     db_name: string
+    browser_logout_return_url: string
     db_type:
       enum: [auto, postgres]
     iam_protocol:
@@ -94,6 +96,10 @@ config:
     - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
     - TRAEFIK_BASE_PORT
   changes:
+    browser_logout_return_url:
+      effect: container_recreate
+      apply: recreate-immich
+      description: Register the portal callback and configure the native OIDC end-session return together.
     domain_prefix:
       effect: container_recreate
       apply: recreate-immich

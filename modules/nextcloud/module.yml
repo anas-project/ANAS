@@ -102,9 +102,11 @@ config:
     trashbin_retention_obligation: "60,365"
     db_type: auto
     iam_protocol: auto
+    browser_logout_return_url: ""
   types:
     domain_prefix: string
     db_name: string
+    browser_logout_return_url: string
     phone_region: string
     rm_skeleton_files: bool
     # Nextcloud accepts named log levels as well as the numeric default.
@@ -179,6 +181,10 @@ config:
     # recovery administrator is module-local and never reuses Samba's password.
     - SAMBA_DC_PASSWORD_BIND_PASSWORD
   changes:
+    browser_logout_return_url:
+      effect: container_recreate
+      apply: recreate-nextcloud
+      description: Register and apply the portal callback for native OIDC browser logout.
     db_type:
       effect: data_migrate
       apply: migrate-nextcloud-database

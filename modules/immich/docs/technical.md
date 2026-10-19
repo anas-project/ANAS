@@ -90,6 +90,7 @@ storageLabelClaim=""、backup.database.enabled=false 和队列并发。配置变
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `immich.browser_logout_return_url` | string | — | `""` | `static` | `IMMICH_BROWSER_LOGOUT_RETURN_URL` | 否 | 否 | 否 | 是 | `container_recreate` | 可选的同站点门户退出回调；为空保留原生返回行为 |
 | `immich.db_name` | string | — | `immich` | `static` | `IMMICH_DB_NAME` | 否 | 否 | 否 | 否：`migrate-immich-database` | `data_migrate` | 应用独立数据库名；修改需匹配媒体迁移 |
 | `immich.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `IMMICH_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-immich-database` | `data_migrate` | 仅共享 PostgreSQL |
 | `immich.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `photos` | `static` | `IMMICH_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 公开照片服务子域名前缀 |
@@ -171,3 +172,8 @@ Authentik 专属流程已退役，共用 Python 文件仅供 Casdoor harness 导
 
 
 自动事件验收核对新 `Modify/member` 事件seq99、监听持久cursor99、原生LDAP与签名通知DONE任务、接收端已验签截止以及旧Bearer/Cookie/API key/分享401，保留媒体/绑定和无关用户。300秒是本次健康固定组合的测试上限，不表示4GB、整机容量或故障传播保证；原生任务默认重试耗尽后需经既有任务入口处理。
+
+
+### 门户退出回调
+
+可选 `browser_logout_return_url` 设置为同站点 HTTPS 门户的 `/signed-out?native=1`。Hook 将地址登记为退出返回 URI，并通过所选 Provider 的原生 `OIDC_END_SESSION_URL` 配置 Immich `oauth.endSessionEndpoint`；不硬编码 Provider 路径。缺少该原生元数据时拒绝启用此配置，为空时继续使用原生 discovery。Immich 原生退出删除当前 session，IAM 返回门户后继续清理其他旧会话；不按用户名撤销其他设备。

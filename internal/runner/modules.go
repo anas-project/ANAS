@@ -8,6 +8,7 @@ import (
 	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/configschema"
 	"github.com/anas-project/ANAS/internal/deployment"
+	"github.com/anas-project/ANAS/internal/groupcatalog"
 )
 
 type Module struct {
@@ -58,6 +59,8 @@ type Module struct {
 	IdentityAppGroup       bool
 	IdentityRoles          map[string]string
 	IdentityGroupsFrom     string
+	IdentityGroups         []groupcatalog.Declaration
+	IdentityGroupCatalog   bool
 	IdentityProvisioning   *IdentityProvisioning
 	IdentityAuthentication *IdentityAuthentication
 	ManagementSurfaces     []ManagementSurface

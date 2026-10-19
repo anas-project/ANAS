@@ -5,7 +5,7 @@
 2026-10-14 用户要求只读分析根盘是否需要清理；该次检查没有删除或迁移既有文件，没有清理既有 Docker 镜像、卷或容器。
 2026-10-15 用户授权提交门户修复、迁移旧 Incus 测试目录并清理根盘日志；执行记录见文末。
 主机 `ln.hlong.wang:2200`，hostname `liannong`；以下是检查时状态，不能替代执行清理前的再次核验。
-门户本轮隔离环境及其构建/验收结果仍归[门户计划](../../modules/user_portal/dev-docs/plans/user-portal.md)，不在本评估重复登记。
+门户本轮隔离环境及其构建/验收结果仍归[门户计划](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)，不在本评估重复登记。
 
 ## 原评估结论（清理前）
 
@@ -122,7 +122,7 @@ ID、名称、镜像、HostConfig（不含 LogConfig）、挂载、端口、状�
 
 门户的安全验收证据、公开源码和正式镜像三份归档仍位于
 `/data/anas-user-portal-e2e-test-20261014-f2ac813b/`，大小及 SHA-256 均与执行前一致，
-也与[门户计划 §11](../../modules/user_portal/dev-docs/plans/user-portal.md)登记值一致。
+也与[门户计划 §11](../../modules/user_portal/dev-docs/plans/archived/user-portal.md)登记值一致。
 维护目录的 `maintenance-summary.json` 汇总最终结论；`maintenance-evidence-manifest.json`
 登记检查、迁移、日志和差异归因等 13 份证据的文件摘要，其自身 SHA-256 为
 `f47eec99026009cf9993fbde42e884453f81356be4c2cf84263aafb214f9ffe6`。

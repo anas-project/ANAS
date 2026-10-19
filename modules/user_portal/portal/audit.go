@@ -14,21 +14,24 @@ import (
 )
 
 type Record struct {
-	ID             string    `json:"id"`
-	Time           time.Time `json:"time"`
-	Phase          string    `json:"phase"`
-	Actor          string    `json:"actor"`
-	Target         string    `json:"target"`
-	Action         string    `json:"action"`
-	Rule           string    `json:"rule,omitempty"`
-	Group          string    `json:"group,omitempty"`
-	Reason         string    `json:"reason,omitempty"`
-	Directory      string    `json:"directory,omitempty"`
-	IAM            string    `json:"iam,omitempty"`
-	ConfigDigest   string    `json:"config_digest"`
-	ForceChange    *bool     `json:"force_change,omitempty"`
-	ExpectedDirect *bool     `json:"expected_direct,omitempty"`
-	ChangedFields  []string  `json:"changed_fields,omitempty"`
+	ID     string    `json:"id"`
+	Time   time.Time `json:"time"`
+	Phase  string    `json:"phase"`
+	Actor  string    `json:"actor"`
+	Target string    `json:"target"`
+	Action string    `json:"action"`
+	Rule   string    `json:"rule,omitempty"`
+	Group  string    `json:"group,omitempty"`
+	// Reason is retained only to read historical audit records.
+	Reason         string   `json:"reason,omitempty"`
+	Directory      string   `json:"directory,omitempty"`
+	Ownership      string   `json:"ownership,omitempty"`
+	Membership     string   `json:"membership,omitempty"`
+	IAM            string   `json:"iam,omitempty"`
+	ConfigDigest   string   `json:"config_digest"`
+	ForceChange    *bool    `json:"force_change,omitempty"`
+	ExpectedDirect *bool    `json:"expected_direct,omitempty"`
+	ChangedFields  []string `json:"changed_fields,omitempty"`
 }
 
 // Journal contains only stable references and outcomes. Passwords, tokens,
@@ -174,6 +177,9 @@ func (j *Journal) list() []Record {
 	for i := range result {
 		if result[i].Phase == "intent" && !finished[result[i].ID] {
 			result[i].Directory = "unknown"
+			if result[i].Ownership != "" {
+				result[i].Ownership, result[i].Membership = "unknown", "unknown"
+			}
 		}
 	}
 	return result

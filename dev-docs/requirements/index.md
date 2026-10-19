@@ -4,6 +4,8 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [分组共享清单](identity-group-catalog.md) | Module 声明、共享只读清单、Samba 同源建组与门户介绍 | 6/6 已完成 |
+| [目录主邮箱与门户建号](directory-primary-email.md) | 系统生成主邮箱、独立邮箱后缀、指定人员 OU、原生创建与已有地址迁移 | 7/7 已完成 |
 | [relational_database 扩展生命周期要求](relational-database-extensions.md) | 最小 PostgreSQL 扩展声明、固定版本、权限和就绪、受控升级与 ANAS 恢复 | 19/19 已完成 |
 | [项目审查整改要求](project-quality-hardening.md) | 共享 Agent 规则、补偿失败、索引语义与前端门禁 | 6/6 已完成 |
 | [应用目录要求](app-catalog.md) | 非 IAM/多入口、用户与管理两级分组、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer、Casdoor 优先与独立门户交付 | 0/39 已完成 |

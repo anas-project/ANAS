@@ -301,7 +301,7 @@ func TestNextcloudOIDCIsDefaultAndPreservesLDAPProvisioning(t *testing.T) {
 	if !strings.Contains(string(task), "--send-id-token-hint=1") {
 		t.Fatal("OIDC logout must identify the session to the provider")
 	}
-	if !strings.Contains(string(task), `--postlogouturi="$NEXTCLOUD_DOMAIN_FULL"`) {
+	if !strings.Contains(string(task), `--postlogouturi="${NEXTCLOUD_OIDC_POST_LOGOUT_URI:-$NEXTCLOUD_DOMAIN_FULL}"`) {
 		t.Fatal("OIDC logout must return only to the registered Nextcloud URI")
 	}
 }

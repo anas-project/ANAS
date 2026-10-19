@@ -235,3 +235,6 @@ the target URL. Native IAM display limitations and end-to-end acceptance are tra
 Public PKCE consumers register `PUBLIC_CLIENT=true` and receive no application API secret. Native import may generate a provider-side secret; the portal does not consume it. Native `tokenFields` includes `Groups` for current UserInfo groups. `REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` create a separate client with automatic sign-in and signin session disabled; the consumer still checks signed auth_time and identity consistency.
 
 The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1`. The portal checks this API contract rather than branching on IAM module names; it continues using existing native self-account APIs. The portal has a `no_prior_release` inventory baseline, with no earlier-version upgrade result claimed.
+
+
+OIDC bindings optionally publish `OIDC_END_SESSION_URL` for consumers that configure native logout returns. It matches the current native discovery `/api/logout` endpoint and is cleared for SAML. This changes Module metadata only; it adds no upstream Casdoor patch.

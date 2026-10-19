@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-28
-updated: 2026-09-13
+updated: 2026-10-19
 ---
 
 # Module IAM 双向登出实施计划
@@ -112,3 +112,32 @@ Authentik 的专属需求与用例已经废弃，原脚本已移除、不可执�
 - 原记录： /  R-009  /  `server-vikunja-e2e.sh`、`vikunja-browser.spec.mjs`  /  Authentik + Vikunja `2.4.0`  /  2026-08-24  /  通过：正常 RP logout 与 IAM-down 本地优先失效 2/2  /
 - 原记录： /  R-011  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + NetBird Dashboard `2.90.9`  /  —  /  待执行：通过前保持“上游支持、待接入”  /
 - 原记录： /  R-013  /  `server-iam-logout-matrix-e2e.sh`  /  Authentik + oauth2-proxy `7.15.3`  /  —  /  待执行：暂停 IAM 后验证网关 Cookie 清理  /
+
+
+## 9. 2026-10-19 finance 当前浏览器联动复验
+
+本轮按用户要求在 finance 的 10000 入口验证现有门户、Casdoor、Nextcloud OIDC 与 Immich；未新增 Casdoor/Nextcloud 补丁。门户基线是部署 `20261018T194224Z-f4c09715`，镜像 `sha256:4b5bc59177b8ba3281cc327c5891a6be349a2b7de76684bb241da7954eafc06e`。其余制品标识及宿主健康记录在 finance `/home/whl/anas-portal-session-20261019/evidence/`。只使用标记的随机测试用户；原生 OIDC/API 回调签发真实 Cookie，未注入会话、伪造 auth_time 或用登录页外观推断退出。
+
+| 需求/检查范围 | 入口与原始结果 | 2026-10-19 结论 |
+| --- | --- | --- |
+| LOGOUT-R-029 当前会话功能路径 | `native-cross-sls.json`；Nextcloud `user_oidc` 原生 `/apps/user_oidc/sls` | 四个服务退出前均为同一身份的有效会话；退出后门户/Nextcloud/Immich 的受保护 API 均 401，IAM 无账号；重新访问门户进入 IAM，未静默恢复。功能路径通过，不代表统一矩阵全绿 |
+| LOGOUT-R-030 当前会话联动观察 | `cross-logout-final.json` 的 portal 场景 | 门户退出后 IAM/门户/Immich 先失效，首次 Nextcloud 仍有效；等待后第二次 Nextcloud 为 401，再访问也未恢复。证明异步联动，未单独验证 exact sid、多浏览器隔离、token 重放或错误签名 |
+| 独立本地认证边界 | 当前应用目录：Collabora 管理、Traefik 管理为 local；Adminer 未启用 | 不声称本地管理凭据会随 IAM 登出，不把可见卡片当作已认证会话 |
+
+测试更正：早期脚本在缺少退出菜单链接时退回 Nextcloud 通用 `/logout`，观察到它只结束 Nextcloud 本地会话；此结果不能代替用户菜单的 OIDC 单点退出结论。固定 `user_oidc` 的 Backend 为 OIDC 会话提供 `/sls`，该入口先清本地会话再使用 discovery 的 end_session_endpoint。统一测试的 OIDC fallback 因此改为 `OC.generateUrl('/apps/user_oidc/sls')`，SAML fallback 保留原路径。原先断言未放宽；统一固定版本矩阵本轮没有完整重跑，M1/M2 保持实施中。
+
+宿主限制：经用户授权重启现有测试 Samba DC 后 LDAP 曾恢复，随后再次健康超时；观测到主机 load 48.81、swap 约 4 GiB、I/O 等待 34–37%。本轮功能正例有独立原始 API 结果支撑，不据此宣布宿主健康或此前全部回归通过。早期账号回归失败、浏览器导航等待与 SSH 转发失效记录均保留。门户功能及清理结果继续记在[门户计划 §19](../../modules/user_portal/dev-docs/plans/archived/user-portal.md#19-2026-10-19-退出主页分级验证与跨应用退出检查)，完整矩阵仍按本计划原标准验收。
+
+
+最终证据与清理：同一 finance 目录的 `final-browser-evidence.tgz`，SHA256 `5d66b14b029e5cd2807ac6f0c486a05fdf1bb2368e58ca87f9c4c58c8a814ffb`，含 106 个成员及摘要清单；计划及最后门禁在 `final-closure/`。两轮 16 个 IAM 名称均已停用/删除或不存在，活动身份 0；原 67 个目录身份/安全/锚点不变，其他 30 个容器及 8 恢复点保留，4 个正式受限绑定保留；测试密码及 SSH 转发已清理。最后 Samba/门户/anchor/dirwatch healthy，但资源压力未根治，完整矩阵仍未完成。
+
+
+## 10. 2026-10-19 旧网页会话反例与覆盖补齐
+
+用户报告门户退出后 Immich 仍可使用。本轮通过当前 Chrome 的真实刷新确认 `/api/users/me` 等受保护请求仍为 200，不能归为纯页面缓存。§9 的同批 API 授权/Cookie 检查保留为当时局部证据，**不得扩展为任意既有网页会话都能退出**。只读查询显示该 Immich 会话使用较早的授权，父会话与近期门户授权不同，原 OIDC Token 为一小时而 RP 会话未设 expiresAt；未根据 Token 已到期直接推断 RP 会话失效。
+
+新增稳定入口 [PORTAL-T-010](../../test-env/cases/user-portal/README.md)，实际执行 `test-env/playwright/user-portal-logout.mjs`。默认检查分类及门户/Nextcloud/Immich 三个退出来源、旧 Bearer、刷新和另一浏览器隔离，并增加仅丢失 IAM Cookie 与缓存登录数据后正常重新登录、保留旧 RP Cookie 的场景。没有完成原生网页前置认证的运行不得记作登出结果，5xx/无身份字段不能算退出。旧会话场景的产品范围/新增流程需用户确认，不擅自改成撤销该用户所有设备，也不放宽 exact sid 与重放要求。
+
+当前结果与失败明细统一记录在[门户计划 §20](../../modules/user_portal/dev-docs/plans/archived/user-portal.md#20-2026-10-19-e2e-覆盖核查分类范围调整与旧会话反例)。M1/M2 继续实施中，完整固定 Provider 矩阵和真实移动端未因此完成。本轮未新增 Casdoor 源码补丁。
+
+最终定向驱动已通过原凭据 200、仅 IAM 站点数据丢失、旧 RP Cookie 保留及 IAM 正常重新认证的前置对照；门户退出后观测到门户 401、IAM 明确未登录，Nextcloud/Immich 仍 200。这是可重复的 IAM 会话变化后的联动缺口；有效 Logout Token 的签名及接收端处理仍按既有矩阵独立验收。还需按确认后的范围补齐流程，不能用撤销其他设备来规避隔离要求。最终结果、刷新和旧凭据状态继续由门户计划收口。

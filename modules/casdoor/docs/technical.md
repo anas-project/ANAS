@@ -213,3 +213,6 @@ Casdoor 初始化仍会补齐客户端字段；列表 API 返回密钥掩码，�
 公开 PKCE 消费方的注册使用 `PUBLIC_CLIENT=true`，不向其交付应用 API secret。原生导入可能生成 Provider 自有 secret；门户不消费它。原生 `tokenFields` 包含 `Groups`，以便 UserInfo 返回当前组。`REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` 创建关闭自动登录与 signin session 的独立客户端，近期认证仍由消费方检查签名 auth_time 和身份一致。
 
 账户 API 格式由 `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1` 声明；门户按绑定契约检查，不按 IAM Module 名分支。它仍依赖现有原生本人 API，不扩展 API 权限。门户以 `no_prior_release` 登记首次发布基线，不宣称存在旧版本升级通过结果。
+
+
+OIDC Binding 可选发布 `OIDC_END_SESSION_URL`，值为当前原生 discovery 对应的 `/api/logout`，供需要配置原生退出返回的 Consumer 使用；SAML Binding 清除此字段。只调整 Module 元数据，不新增 Casdoor 上游补丁。

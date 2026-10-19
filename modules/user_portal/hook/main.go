@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
+	"github.com/anas-project/ANAS/modules/user_portal/browserlogout"
 )
 
 type request struct {
@@ -83,6 +84,8 @@ func handle(r request) (response, error) {
 		"USER_PORTAL_LDAP_BIND_DN": e["SAMBA_DC_LDAP_BIND_DN"], "USER_PORTAL_LDAP_BIND_PASSWORD": e["SAMBA_DC_LDAP_BIND_PASSWORD"],
 		"USER_PORTAL_BASE_DN": e["SAMBA_DC_BASE_DN"], "USER_PORTAL_USERS_DN": e["SAMBA_DC_BASE_USERS_DN"], "USER_PORTAL_GROUPS_DN": e["SAMBA_DC_BASE_GROUPS_DN"],
 		"USER_PORTAL_ANCHOR_ATTRIBUTE": e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
+		"USER_PORTAL_MAIL_DOMAIN":      e["SAMBA_DC_MAIL_DOMAIN"],
+		"USER_PORTAL_UPN_SUFFIX":       e["SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN"],
 	}
 	names := []string{"Unix Admins"}
 	for _, key := range []string{"SAMBA_DC_ADMIN_GROUP_NAME", "SAMBA_DC_FS_ADMIN_GROUP_NAME"} {
@@ -94,25 +97,17 @@ func handle(r request) (response, error) {
 	out.Env["USER_PORTAL_PROTECTED_GROUP_NAMES"] = string(data)
 	out.Env["USER_PORTAL_ADMIN_GROUP_DN"] = e["SAMBA_DC_ADMIN_GROUP_DN"]
 	out.Env["USER_PORTAL_SERVICE_ACCOUNTS_DN"] = e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
-	managed := map[string]string{}
-	for _, name := range strings.Split(e["SAMBA_DC_APPLICATION_CATALOG_GROUPS"], ",") {
-		if name == "" {
-			continue
-		}
-		category := "access"
-		if strings.HasPrefix(name, "APP_") {
-			category = "applications"
-		}
-		if strings.HasPrefix(name, "CAP_") {
-			category = "capabilities"
-		}
-		if name == e["SAMBA_DC_ADMIN_GROUP_NAME"] || name == "Unix Admins" {
-			category = "roles"
-		}
-		managed[name] = category
-	}
-	data, _ = json.Marshal(managed)
-	out.Env["USER_PORTAL_MANAGED_GROUPS"] = string(data)
 	out.Env["USER_PORTAL_LANGUAGE"] = appcatalog.SelectLanguage(e["USER_PORTAL_LANGUAGE"], "", e["DEFAULT_LANGUAGE"])
+	if r.Phase == "render_env" {
+		catalog, err := appcatalog.FromEnvironment(e)
+		if err != nil {
+			return out, err
+		}
+		targets, err := browserlogout.Targets(catalog, base)
+		if err != nil {
+			return out, err
+		}
+		out.Env["USER_PORTAL_LOGOUT_HOST_RULE"] = browserlogout.Rule(targets, base)
+	}
 	return out, nil
 }

@@ -1,6 +1,6 @@
 # ANAS 用户门户
 
-独立门户用于有权限的应用、本人账号、LDAP 改密与范围受限的用户管理。首版验收基线保留在配套计划；本轮资料与管理员扩展正在 finance 复验。
+独立门户用于有权限的应用、本人账号、LDAP 改密与范围受限的用户管理。资料、系统主邮箱、建号与管理员扩展已实现，验收基线保留在配套计划。
 
 ## 快速信息
 
@@ -50,15 +50,15 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 ### 资料与 ANAS 管理员管理
 
-个人资料允许修改名、姓、显示名；邮箱、登录名、锚点只读，未接邮件模块不提供别名写入。资料在写入前逐字复核版本及旧值，门户内串行写入；同一 LDAP Modify 检查旧属性值。外部目录工具的并发不属于全局事务保证。用户应用分类开关记住当前浏览器偏好；密码/资料结果显示在表单旁。未支持语言仍回退英文。
+个人资料允许修改名、姓、显示名；邮箱、登录名、锚点只读，未接邮件模块不提供别名写入。资料在写入前逐字复核版本及旧值，门户内串行写入；同一 LDAP Modify 检查旧属性值。外部目录工具的并发不属于全局事务保证。分类开关同时控制用户应用和后台管理的小分类，保留两大组并记住当前浏览器偏好；密码/资料结果显示在表单旁。未支持语言仍回退英文。
 
 `administration_enabled` 使用目录 Provider 注册的管理员组并绑定稳定标识，不以 Casdoor 原生管理员或名称前缀授权。默认管理列表只展示明确注册的 ANAS 组，按应用、能力、文件资源和角色分类；高级视图说明系统权限风险。不能重置本人密码、移出自身管理员路径或移除最后一个可确认的可用管理员。计算机、服务和信任主体不进入人员管理。
 
-启用写入前，部署者在选定 Samba DC 内运行 `tools/provision-directory.py`，以私有标准输入提供确认串、实际 base_dn 和 profile/reset/group 三个随机密码；确认串为 `provision-user-portal-scoped-writers`。脚本创建 `svc_portal_profile`、`svc_portal_reset`、`svc_portal_group`，只增加特定属性/对象 ACL，不给服务账号域角色、不修改已有服务密码。随后将三个 DN/密码填入对应门户配置并重新部署。输入须保留在 0700 目录/0600 文件，不进入命令行、Git 或日志。该脚本是管理员运行的目录配置工具，不是门户 API。
+启用写入前，部署者在选定 Samba DC 内运行 `tools/provision-directory.py`，以私有标准输入提供确认串、实际 base_dn 和 profile/reset/group/create 四个随机密码；确认串为 `provision-user-portal-scoped-writers`。脚本创建 `svc_portal_profile`、`svc_portal_reset`、`svc_portal_group`、`svc_portal_create`，只增加特定属性/对象 ACL，不给服务账号域角色、不修改已有服务密码。随后将四个 DN/密码填入对应门户配置并重新部署。输入须保留在 0700 目录/0600 文件，不进入命令行、Git 或日志。该脚本是管理员运行的目录配置工具，不是门户 API。
 
 姓名绑定只写三个姓名属性；密码绑定写普通人员的 reset/pwdLastSet/lockoutTime；成员绑定只写已注册且非域级组的 member。初始配置显式拒绝密码绑定管理现有域级人员。以后在门户外新增高权限人员或更改权限边界时，部署者须重新核对 ACL；目录 ACL 不能按 member 值限制目标，也不能代替门户每次动态权限检查。服务账号没有全域权限不代表凭据泄露没有风险。
 
-`domain_administration_enabled` 默认关闭；开启后受保护人员/系统组走独立确认：近期 OIDC、限时一次性参数确认、同一登录人员的本人 LDAPS 绑定、原生 AD ACL。密码只用于一个请求，不跨请求保存；不是 MFA 或进程隔离的保证。普通门户不长期持有全域管理凭据。组关系之外的自定义 ACL 权限仍以 AD 的最终拒绝/允许为准。
+`domain_administration_enabled` 默认关闭；开启后受保护人员/系统组走独立确认：近期 OIDC、限时一次性参数确认、同一登录人员的本人 LDAPS 绑定、原生 AD ACL。密码只用于一个请求，不跨请求保存；不是 MFA 或进程隔离的保证。推荐的专用受限绑定配置不长期持有全域管理凭据。组关系之外的自定义 ACL 权限仍以 AD 的最终拒绝/允许为准。
 
 ## 管理员登录与 IAM 故障恢复
 
@@ -78,6 +78,8 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `user_portal.administration_enabled` | bool | — | `true` | `static` | `USER_PORTAL_ADMINISTRATION_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 启用受管 ANAS 管理员角色；实际写入仍要求专属 ACL 和绑定 |
 | `user_portal.audit_capacity_mb` | int | `1..1024` | `64` | `static` | `USER_PORTAL_AUDIT_CAPACITY_MB` | 否 | 否 | 否 | 是 | `container_recreate` | 私有审计容量；满额关闭写入 |
+| `user_portal.create_bind_dn` | string | — | `""` | `static` | `USER_PORTAL_CREATE_BIND_DN` | 否 | 否 | 否 | 是 | `container_recreate` | 在 Provider 用户 OU 创建普通人员的指定授权绑定 DN |
+| `user_portal.create_bind_password` | string | — | `""` | `static` | `USER_PORTAL_CREATE_BIND_PASSWORD` | 否 | 否 | 是 | 是 | `container_recreate` | 创建绑定密码；不交付浏览器 |
 | `user_portal.delegation_rules` | string | — | `[]` | `static` | `USER_PORTAL_DELEGATION_RULES` | 否 | 否 | 否 | 是 | `container_recreate` | 完整委派规则 JSON 数组；默认关闭 |
 | `user_portal.domain_administration_enabled` | bool | — | `false` | `static` | `USER_PORTAL_DOMAIN_ADMINISTRATION_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 显式启用本人域权限和逐次凭据验证；默认关闭 |
 | `user_portal.domain_prefix` | string | — | `portal` | `static` | `USER_PORTAL_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 门户域名前缀 |
@@ -91,7 +93,7 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 | `user_portal.profile_bind_password` | string | — | `""` | `static` | `USER_PORTAL_PROFILE_BIND_PASSWORD` | 否 | 否 | 是 | 是 | `container_recreate` | 资料专属写绑定密码；不交付浏览器 |
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护分组的 anchor JSON 数组 |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护人员的 anchor JSON 数组 |
-| `user_portal.recent_window_seconds` | int | `5..900` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | 否 | 否 | 否 | 是 | `container_recreate` | 近期认证窗口；默认 300 秒 |
+| `user_portal.recent_window_seconds` | int | `5..300` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | 否 | 否 | 否 | 是 | `container_recreate` | 近期认证窗口；默认 300 秒 |
 
 `delegation_rules` 是 JSON 数组：每条包含 id、operator_groups、actions、target_users、target_user_groups、editable_groups，引用为稳定 anchor。动作固定为 users.read、password.reset、account.unlock、groups.member.add、groups.member.remove、audit.read。空目标不授权，规则不能拼接。操作者组、范围组与其保护关系不可修改。
 
@@ -103,7 +105,7 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 
 审计默认容量 64 MiB，可用 audit_capacity_mb 调整。满额时先停止门户、备份并人工核对未完成记录，再按受管维护流程导出；不要直接删除未完成记录。当前没有自动轮转/清理接口。
 
-单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/user-portal.md)。
+单实例；重启要求重新登录。每次 LDAP 写入前重新核验，GUID 单成员修改不提供跨对象事务保证。Traefik 地址改变后需要重启门户更新精确可信 peer。测试入口见技术文档，完整验收见[门户计划](dev-docs/plans/archived/user-portal.md)。
 
 ## 时区与语言
 
@@ -128,3 +130,17 @@ Evidence / 证据：
 <!-- generated:localization:end -->
 
 中英文即时切换，不支持的所选语言使用英文。技术细节见[技术文档](docs/technical.md)。
+
+### 系统主邮箱与建号
+
+`samba_dc.mail_domain` 缺省继承 AD DNS 域。例如 finance.hlong.wang 的 admin 获得 `admin@finance.hlong.wang`；设置为 hlong.wang 后，指定人员 OU 的主地址按 `用户名@hlong.wang` 维护。它不改变 AD 域、UPN、登录名或锚点。`mail` 完全由系统管理，页面不接受手工主地址；地址存在不代表邮件服务已经开通。
+
+人员枚举、详情、姓名、密码、分组及域级操作均以 Provider 的用户 OU 及子 OU 为边界。ANAS 管理员可用“新建用户”创建普通人员；后端使用 `create_bind_dn/password` 指定的授权绑定，而不是使用前台操作者的域权限。推荐独立 `svc_portal_create`，仅授予用户 OU 的 user 创建权限。配置账号也可已有相应 AD 授权；门户角色和后端目录授权分别检查。若指定域管理员作为创建绑定，门户进程会长期持有该账号既有权限，逐次域级验证并不能隔离这份凭据；默认专用受限绑定可避免这一点。
+
+`POST /api/users` 只接收 `username`、三项 `profile`、`force_change`。登录名限 20 位 ASCII 字母、数字、下划线、点、连字符，并须能组成系统邮箱。邮箱、UPN 后缀、目标 DN、初始随机密码和锚点由服务器决定，一次原生 LDAP Add 写入；不授予管理组。该动作需要近期认证、CSRF、当前管理员权限和持久审计；冲突或结果未知不得自动重试。临时密码只在成功响应显示一次，默认要求下次修改。
+
+建号授权边界：finance Samba 4.23.6 的专用创建者同时成为新用户对象所有者，能修改该对象的 DACL（访问控制表）；临时原生 Owner Rights 规则未移除该能力。因此仅配置子对象创建 ACL 不能证明与后续高权限账号严格隔离。门户在添加域风险组成员前，使用操作者本人域绑定将用户对象所有者移交给同域 Domain Admins，回读确认后再添加成员；成员操作失败保留新所有者，分别报告结果。移交不会撤销自定义创建绑定已有的其他 ACL 或组权限。没有向正式 OU 添加全局 Owner Rights 规则，也没有新增 Casdoor 补丁，详情见[技术文档](docs/technical.md#域风险组的对象所有权)。
+
+普通用户操作和 ANAS 管理员角色变更可复用 5 分钟内真实认证；角色变更仍须页内一次性确认，无需重复密码。系统/操作系统权限组及受保护账号操作保留每次本人域密码和原生 AD 权限验证。本人改密仍需原密码。退出结果页提供“返回主页”，IAM 失败保留重试且不报告完整成功。跨应用退出的实测范围及限制见配套计划 §19。
+
+退出结果会分别显示 IAM 及已接入原生退出桥的应用；超时或仍有有效会话时显示未确认，并提供重试和返回主页。当前退出桥支持 Nextcloud、Immich，清理当前浏览器的旧会话，不撤销其他设备。应用原生发起来源及 finance 实机结果见配套计划，不据此宣称全 Module 矩阵已经完成。

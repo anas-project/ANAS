@@ -509,3 +509,8 @@ Admins 不自动取得账号写权，生产名单由配置显式给出。
 详细机制见 [门户设计](/architecture/user-portal-design)，新增判据的规范来源为
 [PORTAL-R-001—R-041](https://github.com/anas-project/ANAS/blob/master/modules/user_portal/dev-docs/requirements/user-portal.md)，
 不替代原 APPCAT 矩阵。
+
+
+### 退出协议的独立最小元数据
+
+2026-10-19 用户确认：为清理当前浏览器的旧会话，固定退出回调可以匿名读取已部署应用的域名与固定退出协议路径；已有登录用户退出也可读取。该元数据独立于业务目录，没有名称、图标、简介、权限、文档及业务 URL。APPCAT-R-014 的完整目录、用户目录 API 和资产过滤继续生效；具体机制及当前验收范围见[门户设计](/architecture/user-portal-design)。

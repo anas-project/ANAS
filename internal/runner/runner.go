@@ -16,6 +16,7 @@ import (
 	"github.com/anas-project/ANAS/internal/compose"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/dns"
+	"github.com/anas-project/ANAS/internal/groupcatalog"
 )
 
 type app struct {
@@ -113,6 +114,8 @@ type app struct {
 	// this path while a deployment is rendered in staging so values they derive
 	// never contain the temporary staging path.
 	artifactRoot             string
+	identityGroupCatalog     *groupcatalog.Catalog
+	identityGroupDigest      string
 	applicationCatalog       *appcatalog.Catalog
 	applicationCatalogAssets *appcatalog.Assets
 	applicationCatalogFiles  map[string][]byte
@@ -1150,6 +1153,9 @@ func (a *app) calculate() error {
 	if err := a.validateIAMClientRegistrations(); err != nil {
 		return err
 	}
+	if err := a.prepareIdentityGroupCatalog(); err != nil {
+		return fmt.Errorf("identity groups: %w", err)
+	}
 	if err := a.prepareApplicationCatalog(); err != nil {
 		return fmt.Errorf("application catalog: %w", err)
 	}
@@ -1184,6 +1190,9 @@ func (a *app) renderAll(work string) error {
 	if err := os.MkdirAll(work, 0755); err != nil {
 		return err
 	}
+	if err := a.renderIdentityGroupCatalog(work); err != nil {
+		return err
+	}
 	if err := a.renderApplicationCatalog(work); err != nil {
 		return fmt.Errorf("application catalog: %w", err)
 	}
@@ -1206,11 +1215,12 @@ func (a *app) renderAll(work string) error {
 		env["MODULE_NAME"] = name
 		env["ANAS_MODULE_RUNTIME_STATE_PATH"] = a.moduleRuntimeStatePath(name)
 		a.catalogRenderEnvironment(mod, work, env)
+		a.identityGroupRenderEnvironment(mod, work, env)
 		resp, err := a.runHook(mod, "render_env", a.releaseDirFor(name), a.localAdminHookEnv(name, env))
 		if err != nil {
 			return err
 		}
-		for _, key := range []string{"ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST"} {
+		for _, key := range []string{"ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST", "ANAS_IDENTITY_GROUPS_DIR", "ANAS_IDENTITY_GROUPS_DIGEST"} {
 			if value, ok := resp.Env[key]; ok && value != env[key] {
 				return fmt.Errorf("%s render hook changed runner-owned catalog environment", name)
 			}
@@ -1232,6 +1242,11 @@ func (a *app) renderAll(work string) error {
 				}
 			}
 			if err := validateCatalogComposeMount(filepath.Join(dir, mod.ComposeFile)); err != nil {
+				return err
+			}
+		}
+		if mod.IdentityGroupCatalog {
+			if err := validateIdentityGroupMount(filepath.Join(dir, mod.ComposeFile)); err != nil {
 				return err
 			}
 		}

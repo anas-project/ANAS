@@ -13,6 +13,7 @@ import (
 	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/config"
 	"github.com/anas-project/ANAS/internal/configschema"
+	"github.com/anas-project/ANAS/internal/groupcatalog"
 	"gopkg.in/yaml.v3"
 )
 
@@ -323,6 +324,8 @@ type manifestFeatures struct {
 // such as LDAPS is declared here. AppGroup is deliberately explicit: a daemon
 // may query a directory without representing an interactive application.
 type manifestIdentity struct {
+	Groups         []groupcatalog.Declaration      `yaml:"groups"`
+	GroupCatalog   bool                            `yaml:"group_catalog"`
 	Roles          map[string]string               `yaml:"roles"`
 	GroupsFrom     string                          `yaml:"groups_from"`
 	Interfaces     []string                        `yaml:"interfaces"`
@@ -635,7 +638,7 @@ func registryReservedRuntimeKeys(reg map[string]Module) []string {
 	}
 
 	add(registryReservedNamespaceKeys()...)
-	add("ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST")
+	add("ANAS_APP_CATALOG_FILE", "ANAS_APP_CATALOG_DIR", "ANAS_APP_CATALOG_DIGEST", "ANAS_IDENTITY_GROUPS_DIR", "ANAS_IDENTITY_GROUPS_DIGEST")
 	add(configCoreReservedRuntimeKeys()...)
 
 	identityInterfaces := map[string]bool{}
@@ -1079,6 +1082,8 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		IdentityAppGroup:         manifest.Identity.AppGroup,
 		IdentityRoles:            manifest.Identity.Roles,
 		IdentityGroupsFrom:       manifest.Identity.GroupsFrom,
+		IdentityGroups:           manifest.Identity.Groups,
+		IdentityGroupCatalog:     manifest.Identity.GroupCatalog,
 		IdentityProvisioning:     provisioning,
 		IdentityAuthentication:   authentication,
 		ManagementSurfaces:       managementSurfaces,

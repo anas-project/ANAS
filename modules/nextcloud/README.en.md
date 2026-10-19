@@ -161,6 +161,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `nextcloud.browser_logout_return_url` | string | — | `""` | `static` | `NEXTCLOUD_BROWSER_LOGOUT_RETURN_URL` | no | no | no | yes | `container_recreate` | Optional same-site portal logout callback; empty preserves the native return |
 | `nextcloud.db_name` | string | — | `nextcloud` | `static` | `NEXTCLOUD_DB_NAME` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | The database name is materialized during installation. |
 | `nextcloud.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `NEXTCLOUD_DB_TYPE` | no | no | no | no: `migrate-nextcloud-database` | `data_migrate` | Changing the environment does not migrate an installed Nextcloud database. |
 | `nextcloud.domain_prefix` | string | — | `nc` | `static` | `NEXTCLOUD_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | Trusted domains, SSO metadata, and proxy routes must be updated together. |

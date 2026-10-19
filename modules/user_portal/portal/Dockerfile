@@ -3,7 +3,12 @@ FROM --platform=$BUILDPLATFORM ${DOCKER_HUB_REGISTRY}/library/golang:1.26-alpine
 WORKDIR /src
 COPY --from=shared go.mod go.sum ./
 COPY --from=shared internal/appcatalog ./internal/appcatalog
+COPY --from=shared internal/groupcatalog ./internal/groupcatalog
 COPY --from=shared internal/securefs ./internal/securefs
+COPY --from=shared internal/directorymail ./internal/directorymail
+COPY --from=shared internal/configschema ./internal/configschema
+COPY --from=shared internal/localization ./internal/localization
+COPY --from=shared modules/user_portal/browserlogout ./modules/user_portal/browserlogout
 COPY . ./modules/user_portal/portal
 ARG TARGETOS
 ARG TARGETARCH

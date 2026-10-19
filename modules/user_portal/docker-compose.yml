@@ -40,11 +40,15 @@ services:
       USER_PORTAL_GROUP_BIND_PASSWORD: ${USER_PORTAL_GROUP_BIND_PASSWORD}
       USER_PORTAL_PROFILE_BIND_DN: ${USER_PORTAL_PROFILE_BIND_DN}
       USER_PORTAL_PROFILE_BIND_PASSWORD: ${USER_PORTAL_PROFILE_BIND_PASSWORD}
+      USER_PORTAL_CREATE_BIND_DN: ${USER_PORTAL_CREATE_BIND_DN}
+      USER_PORTAL_CREATE_BIND_PASSWORD: ${USER_PORTAL_CREATE_BIND_PASSWORD}
+      USER_PORTAL_MAIL_DOMAIN: ${USER_PORTAL_MAIL_DOMAIN}
+      USER_PORTAL_UPN_SUFFIX: ${USER_PORTAL_UPN_SUFFIX}
       USER_PORTAL_ADMINISTRATION_ENABLED: ${USER_PORTAL_ADMINISTRATION_ENABLED}
       USER_PORTAL_DOMAIN_ADMINISTRATION_ENABLED: ${USER_PORTAL_DOMAIN_ADMINISTRATION_ENABLED}
       USER_PORTAL_ADMIN_GROUP_DN: ${USER_PORTAL_ADMIN_GROUP_DN}
       USER_PORTAL_SERVICE_ACCOUNTS_DN: ${USER_PORTAL_SERVICE_ACCOUNTS_DN}
-      USER_PORTAL_MANAGED_GROUPS: ${USER_PORTAL_MANAGED_GROUPS}
+      USER_PORTAL_GROUP_CATALOG: /run/anas/identity-groups/catalog.json
       USER_PORTAL_RULES: ${USER_PORTAL_DELEGATION_RULES}
       USER_PORTAL_PROTECTED_USERS: ${USER_PORTAL_PROTECTED_USERS}
       USER_PORTAL_PROTECTED_GROUPS: ${USER_PORTAL_PROTECTED_GROUPS}
@@ -54,6 +58,7 @@ services:
       USER_PORTAL_PROXY_HOST: ${TRAEFIK_HOSTNAME}
       USER_PORTAL_TRUSTED_FORWARDERS: ${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS}
     volumes:
+      - "${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro"
       - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
       - "${DATA_PATH}/user_portal:/var/lib/anas-user-portal"
@@ -70,6 +75,11 @@ services:
       - "traefik.http.routers.user_portal.entrypoints=https"
       - "traefik.http.routers.user_portal.rule=Host(`${USER_PORTAL_DOMAIN}`)"
       - "traefik.http.routers.user_portal.tls=true"
+      - "traefik.http.routers.user_portal_logout.entrypoints=https"
+      - "traefik.http.routers.user_portal_logout.rule=${USER_PORTAL_LOGOUT_HOST_RULE}"
+      - "traefik.http.routers.user_portal_logout.priority=1000"
+      - "traefik.http.routers.user_portal_logout.tls=true"
+      - "traefik.http.routers.user_portal_logout.service=user_portal"
       - "traefik.http.services.user_portal.loadbalancer.server.port=8080"
 networks:
   default:

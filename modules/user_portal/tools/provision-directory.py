@@ -48,14 +48,20 @@ def attribute_guid(name):
 
 acl_changes = 0
 
-def ace(dn, text):
+def ace(dn, text, remove=False):
     global acl_changes
     row = db.search(base=dn, scope=ldb.SCOPE_BASE, attrs=['nTSecurityDescriptor'], controls=['sd_flags:1:4'])[0]
     descriptor = ndr_unpack(security.descriptor, row['nTSecurityDescriptor'][0])
     wanted = security.descriptor.from_sddl('D:' + text, security.dom_sid(db.get_domain_sid())).dacl.aces[0]
-    if any(ndr_pack(old) == ndr_pack(wanted) for old in descriptor.dacl.aces):
+    present = any(ndr_pack(old) == ndr_pack(wanted) for old in descriptor.dacl.aces)
+    if present == (not remove):
         return
-    descriptor.dacl_add(wanted)
+    if remove:
+        original = descriptor.as_sddl(security.dom_sid(db.get_domain_sid()))
+        assert text in original, 'cannot remove an owned ACE without an exact match'
+        descriptor = security.descriptor.from_sddl(original.replace(text, ''), security.dom_sid(db.get_domain_sid()))
+    else:
+        descriptor.dacl_add(wanted)
     message = ldb.Message()
     message.dn = ldb.Dn(db, dn)
     message['nTSecurityDescriptor'] = ldb.MessageElement([ndr_pack(descriptor)], ldb.FLAG_MOD_REPLACE, 'nTSecurityDescriptor')
@@ -76,7 +82,7 @@ def validate_writer(row):
 services = {}
 service_dns = []
 created = []
-for kind, expected_name in [('profile', 'svc_portal_profile'), ('reset', 'svc_portal_reset'), ('group', 'svc_portal_group')]:
+for kind, expected_name in [('profile', 'svc_portal_profile'), ('reset', 'svc_portal_reset'), ('group', 'svc_portal_group'), ('create', 'svc_portal_create')]:
     password = input_data['passwords'][kind]
     assert isinstance(password, str) and 24 <= len(password) <= 256
     attrs = ['objectSid', 'description', 'memberOf', 'primaryGroupID', 'userAccountControl']
@@ -122,6 +128,14 @@ domain_users_sid = str(db.get_domain_sid()) + '-513'
 assert domain_users_sid in by_sid and not privileged(by_sid[domain_users_sid]), 'service primary group must not grant domain roles'
 assert all(not privileged(dn) for dn in service_dns), 'service writer must not inherit domain roles'
 
+# Only user objects can be created; the application fixes their DN below this
+# OU and their ordinary account attributes. This grants no group/computer/OU
+# creation, existing-password reset, or domain role.
+user_schema = db.search(base=schema, expression='(&(objectClass=classSchema)(lDAPDisplayName=user))', attrs=['schemaIDGUID'])
+assert len(user_schema) == 1
+user_class_guid = str(ndr_unpack(misc.GUID, user_schema[0]['schemaIDGUID'][0]))
+ace(people_base, '(OA;CI;CC;' + user_class_guid + ';;' + services['create'] + ')')
+
 registered = set(filter(None, os.environ['SAMBA_DC_APPLICATION_CATALOG_GROUPS'].split(',')))
 # The provider's older registry omitted this explicitly created infrastructure
 # group. It is classified as privileged and NEVER delegated to the group writer.
@@ -135,6 +149,10 @@ for group in groups:
 profile_guids = [attribute_guid(attr) for attr in ['givenName', 'sn', 'displayName']]
 reset_guid = '00299570-246d-11d0-a768-00aa006e0529'
 reset_properties = [attribute_guid(attr) for attr in ['pwdLastSet', 'lockoutTime']]
+anchor_writer = db.search(base=os.environ['SAMBA_DC_ANCHOR_BIND_DN'], scope=ldb.SCOPE_BASE, attrs=['objectSid'])[0]
+anchor_sid = str(ndr_unpack(security.dom_sid, anchor_writer['objectSid'][0]))
+mail_guid = attribute_guid('mail')
+ace(people_base, '(OA;CI;WP;' + mail_guid + ';;' + anchor_sid + ')')
 # New ordinary people inherit attribute-scoped rights. Protected people below
 # receive explicit denials for password/reset attributes, not a full-control ACE.
 for guid in profile_guids:
@@ -149,9 +167,18 @@ primary_protected = 0
 people = db.search(base=base, expression='(&(objectClass=user)(!(objectClass=computer)))', attrs=['objectGUID', 'objectSid', 'mS-DS-ConsistencyGuid', anchor_attr, 'userAccountControl', 'primaryGroupID'])
 for person in people:
     dn = str(person.dn)
+    if not under(dn, people_base):
+        # Remove only this tool's prior explicit ordinary-write allows. Older
+        # versions delegated human accounts outside the now-confirmed OU.
+        for guid in profile_guids:
+            ace(dn, '(OA;;WP;' + guid + ';;' + services['profile'] + ')', remove=True)
+        for access, guid in [('CR', reset_guid)] + [('WP', guid) for guid in reset_properties]:
+            ace(dn, '(OA;;' + access + ';' + guid + ';;' + services['reset'] + ')', remove=True)
+        continue
     sid = str(ndr_unpack(security.dom_sid, person['objectSid'][0]))
     if under(dn, service_base) or sid.rsplit('-', 1)[-1] in {'501', '502'} or int(str(person['userAccountControl'][0])) & 0x3800:
         continue
+    ace(dn, '(OA;;WP;' + mail_guid + ';;' + anchor_sid + ')')
     binary = person.get('mS-DS-ConsistencyGuid', person['objectGUID'])[0]
     expected = str(uuid.UUID(bytes_le=bytes(binary)))
     if person.get(anchor_attr):

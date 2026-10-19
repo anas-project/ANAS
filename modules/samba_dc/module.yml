@@ -13,6 +13,138 @@ category: identity
 status: release
 applications_not_published: "Directory and DNS protocols only; administration is published by LAM."
 identity:
+  group_catalog: true
+  groups:
+    - id: platform-admin
+      name: Admins
+      parent_dn_from: SAMBA_DC_BASE_GROUPS_ROLE_DN
+      managed: true
+      when: SAMBA_DC_CREATE_STRUCTURE
+      category: roles
+      order: 10
+      risk: normal
+      display_name: {en: "ANAS administrators", zh-CN: "ANAS 管理员"}
+      description: {en: "Manages ANAS applications and portal users. Domain operations still require the operator’s own AD permissions.", zh-CN: "管理 ANAS 应用与门户人员；域级操作仍要求操作者本人具备相应 AD 权限。"}
+    - id: unix-admin
+      name: Unix Admins
+      parent_dn_from: SAMBA_DC_BASE_GROUPS_ROLE_DN
+      managed: true
+      when: SAMBA_DC_CREATE_STRUCTURE
+      category: roles
+      order: 20
+      risk: domain
+      display_name: {en: "Domain infrastructure administrators", zh-CN: "域基础设施管理员"}
+      description: {en: "Nested in Administrators and granted disk operator rights. This grants domain and host infrastructure privileges.", zh-CN: "嵌套于 Administrators，并具有磁盘操作权限，授予域和主机基础设施管理能力。"}
+    - id: file-admin
+      name: FS Admins
+      parent_dn_from: SAMBA_DC_BASE_GROUPS_ACCESS_DN
+      managed: true
+      when: SAMBA_DC_CREATE_STRUCTURE
+      category: access
+      order: 10
+      risk: resource
+      display_name: {en: "File administrators", zh-CN: "文件管理员"}
+      description: {en: "Root-equivalent access to Samba file resources; may bypass ordinary file permissions.", zh-CN: "对 Samba 文件资源具有相当于 root 的访问权限，可能绕过普通文件权限。"}
+    - id: share-write
+      name: FS Share RW
+      parent_dn_from: SAMBA_DC_BASE_GROUPS_ACCESS_DN
+      managed: true
+      when: SAMBA_DC_CREATE_STRUCTURE
+      category: access
+      order: 20
+      risk: normal
+      display_name: {en: "Shared files: read and write", zh-CN: "共享文件读写"}
+      description: {en: "Read and write access to the shared data directory. Does not grant ANAS or domain administration.", zh-CN: "允许读写共享数据目录，不授予 ANAS 或域管理权限。"}
+    - id: all-applications
+      name: APP_all
+      parent_dn_from: SAMBA_DC_BASE_APP_DN
+      managed: true
+      when: SAMBA_DC_APP_FILTER
+      category: applications
+      order: 0
+      risk: normal
+      display_name: {en: "All applications", zh-CN: "所有应用"}
+      description: {en: "Grants entry to all current and future group-filtered applications. Application-specific administration is separate.", zh-CN: "允许进入当前及以后启用的所有按组过滤的应用；应用内部管理权限另行控制。"}
+    - id: domain-admins
+      name: Domain Admins
+      domain_rid: 512
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Domain Admins", zh-CN: "Domain Admins"}
+      description: {en: "Full administration of this AD domain.", zh-CN: "拥有当前 AD 域的完整管理权限。"}
+    - id: domain-users
+      name: Domain Users
+      domain_rid: 513
+      managed: false
+      category: system
+      risk: normal
+      display_name: {en: "Domain Users", zh-CN: "Domain Users"}
+      description: {en: "Default primary group for ordinary domain users. A primary group cannot be removed as direct membership.", zh-CN: "普通域用户的默认主要组；主要组不能按直接成员关系移除。"}
+    - id: schema-admins
+      name: Schema Admins
+      domain_rid: 518
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Schema Admins", zh-CN: "Schema Admins"}
+      description: {en: "May modify the AD forest schema; changes can affect the entire forest.", zh-CN: "可以修改 AD 林架构，变更可能影响整个林。"}
+    - id: enterprise-admins
+      name: Enterprise Admins
+      domain_rid: 519
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Enterprise Admins", zh-CN: "Enterprise Admins"}
+      description: {en: "Forest-wide administration across AD domains.", zh-CN: "具有跨 AD 域的林级管理权限。"}
+    - id: policy-owners
+      name: Group Policy Creator Owners
+      domain_rid: 520
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Group Policy Creator Owners", zh-CN: "Group Policy Creator Owners"}
+      description: {en: "Creates group policies; policies can change domain user and computer behavior.", zh-CN: "可以创建组策略，策略可能改变域用户与计算机行为。"}
+    - id: builtin-admins
+      name: Administrators
+      sid: S-1-5-32-544
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Administrators", zh-CN: "Administrators"}
+      description: {en: "Built-in administrators with broad control of the domain controller.", zh-CN: "内置管理员，对域控制器具有广泛控制权。"}
+    - id: account-operators
+      name: Account Operators
+      sid: S-1-5-32-548
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Account Operators", zh-CN: "Account Operators"}
+      description: {en: "Delegated management of directory accounts; may grant sensitive account control.", zh-CN: "可管理目录账号，可能取得敏感账号控制权。"}
+    - id: server-operators
+      name: Server Operators
+      sid: S-1-5-32-549
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Server Operators", zh-CN: "Server Operators"}
+      description: {en: "Administration of domain server operations.", zh-CN: "管理域服务器运行。"}
+    - id: print-operators
+      name: Print Operators
+      sid: S-1-5-32-550
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Print Operators", zh-CN: "Print Operators"}
+      description: {en: "Administration of domain printing services; may affect the host.", zh-CN: "管理域打印服务，可能影响主机。"}
+    - id: backup-operators
+      name: Backup Operators
+      sid: S-1-5-32-551
+      managed: false
+      category: system
+      risk: domain
+      display_name: {en: "Backup Operators", zh-CN: "Backup Operators"}
+      description: {en: "May back up and restore data while bypassing ordinary file permissions.", zh-CN: "备份和恢复数据时可能绕过普通文件权限。"}
   roles:
     platform_admin: SAMBA_DC_ADMIN_GROUP_NAME
   groups_from: SAMBA_DC_APPLICATION_CATALOG_GROUPS
@@ -30,6 +162,7 @@ upgrade:
 config:
   must_resolve:
     - domain
+    - mail_domain
     - realm
     - netbios_name
     - admin_password
@@ -105,6 +238,11 @@ config:
       constraints:
         format: dns_name
       default_source: inherited
+    mail_domain:
+      kind: string
+      constraints:
+        format: dns_name
+      default_source: inherited
     application_dns_mode:
       enum:
         - auto
@@ -167,6 +305,10 @@ config:
       kind: string
       default_source: generated
   changes:
+    mail_domain:
+      effect: data_migrate
+      apply: migrate-default-mail-addresses
+      description: Primary email domain, inherited from the AD DNS domain unless configured; changing it reconciles primary addresses in the configured personnel OU without renaming the AD domain.
     domain:
       effect: immutable
       apply: replace-directory-domain

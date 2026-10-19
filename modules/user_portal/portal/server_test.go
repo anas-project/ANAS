@@ -124,6 +124,7 @@ func newFixture(t *testing.T) *fixture {
 	}))
 	t.Cleanup(f.iam.Close)
 	c := Config{URL: "https://portal.example", Issuer: f.iam.URL, ClientID: "portal", ReauthClientID: "portal-reauth", RecentWindow: 5 * time.Minute, SessionTTL: time.Hour, AuditDir: filepath.Join(t.TempDir(), "audit"), AuditMaxBytes: 1 << 20, Rules: []Rule{{ID: "helpdesk", OperatorGroups: []string{"operator-group"}, Actions: []string{"users.read", "password.reset", "account.unlock", "audit.read", "groups.member.add", "groups.member.remove"}, TargetUserGroups: []string{"scope-group"}, EditableGroups: []string{"editable-group"}}}}
+	c.UsersDN, c.BaseDN = "OU=People,DC=example", "DC=example"
 	o, err := newOIDC(context.Background(), c, f.iam.Client())
 	if err != nil {
 		t.Fatal(err)
@@ -238,18 +239,18 @@ func TestDelegationDoesNotCombineRulesOrProtectTargetScopePeople(t *testing.T) {
 func TestAuditIntentFailurePreventsWriteAndResultFailureClosesWrites(t *testing.T) {
 	f := newFixture(t)
 	f.server.audit.maxBytes = 1
-	r := f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support","force_change":false}`)
+	r := f.request("POST", "/api/users/target-anchor/reset", `{"force_change":false}`)
 	if r.Code != 503 || f.directory.writes != 0 {
 		t.Fatal("write issued without audit intent")
 	}
 	f.server.audit.broken = false
 	f.server.audit.maxBytes = 1 << 20
 	f.directory.beforeWrite = func() { f.server.audit.mu.Lock(); f.server.audit.broken = true; f.server.audit.mu.Unlock() }
-	r = f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support","force_change":false}`)
+	r = f.request("POST", "/api/users/target-anchor/reset", `{"force_change":false}`)
 	if r.Code != 200 || !strings.Contains(r.Body.String(), `"directory":"saved"`) || !strings.Contains(r.Body.String(), `"audit":"unavailable"`) {
 		t.Fatal(r.Code, r.Body.String())
 	}
-	r = f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support","force_change":false}`)
+	r = f.request("POST", "/api/users/target-anchor/reset", `{"force_change":false}`)
 	if r.Code != 503 || f.directory.writes != 1 {
 		t.Fatal("writes continued after result failure")
 	}
@@ -260,7 +261,7 @@ func TestProtectedRecentCSRFAndUnknownFieldsRejectWrites(t *testing.T) {
 	p := f.directory.people["target-anchor"]
 	p.Protected = true
 	f.directory.people[p.Anchor] = p
-	if f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support"}`).Code != 403 {
+	if f.request("POST", "/api/users/target-anchor/reset", `{}`).Code != 403 {
 		t.Fatal("protected user allowed")
 	}
 	p.Protected = false
@@ -268,14 +269,14 @@ func TestProtectedRecentCSRFAndUnknownFieldsRejectWrites(t *testing.T) {
 	v := f.session
 	v.AuthTime = time.Now().Add(-time.Hour)
 	f.server.store.sessions[v.ID] = v
-	if f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support"}`).Code != 403 {
+	if f.request("POST", "/api/users/target-anchor/reset", `{}`).Code != 403 {
 		t.Fatal("expired authentication allowed")
 	}
 	f.server.store.sessions[f.session.ID] = f.session
-	if f.request("POST", "/api/users/target-anchor/reset", `{"reason":"support","dn":"CN=Someone"}`).Code != 400 {
+	if f.request("POST", "/api/users/target-anchor/reset", `{"dn":"CN=Someone"}`).Code != 400 {
 		t.Fatal("arbitrary DN accepted")
 	}
-	r := httptest.NewRequest("POST", "https://portal.example/api/users/target-anchor/reset", strings.NewReader(`{"reason":"support"}`))
+	r := httptest.NewRequest("POST", "https://portal.example/api/users/target-anchor/reset", strings.NewReader(`{}`))
 	r.RemoteAddr = "127.0.0.1:999"
 	r.AddCookie(&http.Cookie{Name: sessionCookie, Value: f.session.ID})
 	r.Header.Set("Origin", "https://evil.example")
@@ -511,7 +512,7 @@ func TestRecreatedIdentityCannotReplaceSessionAndEmptyDelegation(t *testing.T) {
 	if r.Code != 200 || !strings.Contains(r.Body.String(), `"actions":[]`) {
 		t.Fatal("missing rules granted actions")
 	}
-	if f.request("POST", "/api/users/target-anchor/reset", `{"reason":"test"}`).Code != 403 || f.directory.writes != 0 {
+	if f.request("POST", "/api/users/target-anchor/reset", `{}`).Code != 403 || f.directory.writes != 0 {
 		t.Fatal("missing delegation allowed reset")
 	}
 	p := f.person

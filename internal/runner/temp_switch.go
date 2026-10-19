@@ -122,6 +122,12 @@ func recordTemporaryRecoveryPhase(previous *app, failure error) {
 	if err != nil || registry.Transition == nil {
 		return
 	}
+	switch registry.Transition.Phase {
+	case "complete", "restored", "cleanup_deferred":
+		// A later activation can fail without switching temporary roots. Its
+		// compensation must not reopen an already resolved historical switch.
+		return
+	}
 	if registry.Transition.CleanupModule != "" || registry.Transition.Phase == "cleanup_pending" {
 		// Preserve write-ahead cleanup evidence even when compensation also
 		// fails. An error report is not proof that the old cleaner can restart.

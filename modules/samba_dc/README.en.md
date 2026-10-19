@@ -37,7 +37,7 @@ should set it explicitly.
 
 ## Identity, users, and groups
 
-It is authoritative for people, groups, service identities, and identity anchors. Use LAM or Samba tools to create/disable users and manage groups. `svc_ldap` is read-only, `svc_password` may change ordinary-user passwords only in its delegated scope, and `svc_anchor` manages identity anchors.
+It is authoritative for people, groups, service identities, and identity anchors. Use LAM or Samba tools to create/disable users and manage groups. `svc_ldap` is read-only, `svc_password` may change ordinary-user passwords only in its delegated scope, and `svc_anchor` manages identity anchors and system primary addresses.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -151,6 +151,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | no | yes | no | no: `migrate-default-mail-addresses` | `data_migrate` | Primary mail domain; inherits the AD domain when unset and reconciles personnel addresses without renaming directory identities |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
@@ -221,3 +222,9 @@ anas status -w /srv/anas
 ## Technical documentation
 
 See [technical documentation](docs/technical.en.md) for password storage, environment scope, hooks, networks, resources, and tests.
+
+### System primary addresses
+
+`mail_domain` defaults to the AD DNS domain. Bootstrap supplies `--mail-address` when creating the routine admin. The existing directory worker owns primary `mail` values for human accounts in the provider user OU and its descendants, using lowercase `username@domain`. It preflights registered mail/proxyAddresses conflicts before reconciliation, verifies writes and reports failures through its readiness check. Existing manual primary values in this scope are replaced by the system rule. Outside entries, service OUs, built-ins, trusts and computers are excluded. The writer receives only attribute-scoped mail rights in the personnel OU; anchor rights on groups do not confer mail rights there. No mailbox, alias, new identity schema or additional synchronization service is created. A suffix change affects mail only; operators must check readiness and remaining policy errors rather than infer success from container startup.
+
+A mail-suffix change currently uses the native config import → lock → render → apply workflow. Prepare a complete configuration with `modules.samba_dc.config.mail_domain`, review the affected modules and recovery point, then activate and verify worker readiness. The policy name `migrate-default-mail-addresses` is metadata, not a newly registered CLI command; ordinary `config set` is blocked for this data-migration setting. Existing mail and alias delivery migration is a later mail-backend task.

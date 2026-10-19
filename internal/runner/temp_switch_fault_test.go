@@ -188,6 +188,31 @@ func TestTemporaryRecoveryRequiresExplicitSuccessfulRestoreEvidence(t *testing.T
 	}
 }
 
+func TestTemporaryRecoveryDoesNotReopenCompletedTransition(t *testing.T) {
+	for _, phase := range []string{"complete", "restored", "cleanup_deferred"} {
+		t.Run(phase, func(t *testing.T) {
+			a, _ := temporaryTestApp(t)
+			registry, err := a.loadTemporaryRegistry(true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			registry.Transition = &TemporaryTransition{FromDeployment: "historical-from", TargetDeployment: "historical-target", Phase: phase}
+			if err := a.saveTemporaryRegistry(registry); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(temporaryStatePath(a.base))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recordTemporaryRecoveryPhase(a, errors.New("later activation failed before startup"))
+			after, err := os.ReadFile(temporaryStatePath(a.base))
+			if err != nil || string(after) != string(before) {
+				t.Fatalf("later failure rewrote completed transition %s: %v", phase, err)
+			}
+		})
+	}
+}
+
 func TestTemporaryUnknownTransitionPhasePreservesEvidence(t *testing.T) {
 	a, _, _ := temporaryStopFaultFixture(t)
 	registry, _ := a.loadTemporaryRegistry(false)

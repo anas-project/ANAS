@@ -91,9 +91,6 @@ func (d *LDAPDirectory) attributes() []string {
 }
 
 func (d *LDAPDirectory) peopleBase() string {
-	if d.config.Administration {
-		return d.config.BaseDN
-	}
 	return d.config.UsersDN
 }
 
@@ -168,7 +165,7 @@ func (d *LDAPDirectory) People() ([]Person, error) {
 }
 
 func (d *LDAPDirectory) groups(conn *ldap.Conn) ([]Group, error) {
-	entries, err := search(conn, d.config.BaseDN, "(objectClass=group)", 5000, []string{d.config.AnchorAttribute, "objectGUID", "objectSid", "cn", "member"})
+	entries, err := search(conn, d.config.BaseDN, "(objectClass=group)", 5000, []string{d.config.AnchorAttribute, "objectGUID", "objectSid", "cn", "description", "member"})
 	if err != nil {
 		return nil, err
 	}
@@ -195,8 +192,9 @@ func (d *LDAPDirectory) groups(conn *ldap.Conn) ([]Group, error) {
 			}
 			seenAnchors[anchor] = true
 		}
-		groups = append(groups, Group{Anchor: e.GetAttributeValue(d.config.AnchorAttribute), Name: e.GetAttributeValue("cn"), DN: e.DN, GUID: guid, SID: sid, Members: e.GetAttributeValues("member")})
+		groups = append(groups, Group{Anchor: e.GetAttributeValue(d.config.AnchorAttribute), Name: e.GetAttributeValue("cn"), Description: e.GetAttributeValue("description"), DN: e.DN, GUID: guid, SID: sid, Members: e.GetAttributeValues("member")})
 	}
+	d.describeGroups(groups)
 	return groups, nil
 }
 
@@ -500,12 +498,18 @@ func modificationResult(err error, req *ldap.ModifyRequest) string {
 }
 
 func (d *LDAPDirectory) ChangePassword(p Person, oldPassword, newPassword string) string {
+	if p.System || !underDN(p.DN, d.config.UsersDN) {
+		return "denied"
+	}
 	return d.modify(d.config.LDAPBindDN, d.config.LDAPBindPassword, p.GUID, func(r *ldap.ModifyRequest) {
 		r.Delete("unicodePwd", []string{passwordValue(oldPassword)})
 		r.Add("unicodePwd", []string{passwordValue(newPassword)})
 	})
 }
 func (d *LDAPDirectory) ResetPassword(p Person, password string, force bool) string {
+	if p.System || !underDN(p.DN, d.config.UsersDN) {
+		return "denied"
+	}
 	return d.modify(d.config.PasswordBindDN, d.config.PasswordBindPassword, p.GUID, func(r *ldap.ModifyRequest) {
 		r.Replace("unicodePwd", []string{passwordValue(password)})
 		if force {
@@ -514,9 +518,15 @@ func (d *LDAPDirectory) ResetPassword(p Person, password string, force bool) str
 	})
 }
 func (d *LDAPDirectory) Unlock(p Person) string {
+	if p.System || !underDN(p.DN, d.config.UsersDN) {
+		return "denied"
+	}
 	return d.modify(d.config.PasswordBindDN, d.config.PasswordBindPassword, p.GUID, func(r *ldap.ModifyRequest) { r.Replace("lockoutTime", []string{"0"}) })
 }
 func (d *LDAPDirectory) Member(g Group, p Person, add bool) string {
+	if p.System || !underDN(p.DN, d.config.UsersDN) {
+		return "denied"
+	}
 	return d.modify(d.config.GroupBindDN, d.config.GroupBindPassword, g.GUID, func(r *ldap.ModifyRequest) {
 		member := []string{"<GUID=" + p.GUID + ">"}
 		if add {

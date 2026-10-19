@@ -14,6 +14,7 @@ type Session struct {
 
 type Store struct {
 	mu            sync.Mutex
+	logoutKey     string
 	sessions      map[string]Session
 	flows         map[string]Flow
 	logoutIDs     map[string]time.Time
@@ -21,7 +22,7 @@ type Store struct {
 }
 
 func newStore() *Store {
-	return &Store{sessions: map[string]Session{}, flows: map[string]Flow{}, logoutIDs: map[string]time.Time{}, confirmations: map[string]Confirmation{}}
+	return &Store{logoutKey: randomID(), sessions: map[string]Session{}, flows: map[string]Flow{}, logoutIDs: map[string]time.Time{}, confirmations: map[string]Confirmation{}}
 }
 
 func (s *Store) prune() {

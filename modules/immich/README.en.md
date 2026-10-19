@@ -90,6 +90,7 @@ enqueue, allowing healthy retry; unqueued temporary files may require later insp
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `immich.browser_logout_return_url` | string | — | `""` | `static` | `IMMICH_BROWSER_LOGOUT_RETURN_URL` | no | no | no | yes | `container_recreate` | Optional same-site portal logout callback; empty preserves the native return |
 | `immich.db_name` | string | — | `immich` | `static` | `IMMICH_DB_NAME` | no | no | no | no: `migrate-immich-database` | `data_migrate` | Application database name; changing it requires a matching media migration |
 | `immich.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `IMMICH_DB_TYPE` | no | no | no | no: `migrate-immich-database` | `data_migrate` | Shared PostgreSQL only |
 | `immich.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `photos` | `static` | `IMMICH_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Public photo service subdomain prefix |

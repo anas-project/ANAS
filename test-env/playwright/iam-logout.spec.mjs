@@ -120,7 +120,8 @@ async function moduleLogout(page) {
     const href = await logout.getAttribute("href").catch(() => null);
     if (href) await page.goto(new URL(href, bases.nextcloud).toString());
     else {
-      const generated = await page.evaluate(() => globalThis.OC?.generateUrl?.("/logout") || "");
+      const logoutPath = protocol === "oidc" ? "/apps/user_oidc/sls" : "/logout";
+      const generated = await page.evaluate((pathname) => globalThis.OC?.generateUrl?.(pathname) || "", logoutPath);
       if (!generated) throw new Error("Nextcloud exposed no logout URL");
       await page.goto(new URL(generated, bases.nextcloud).toString());
     }

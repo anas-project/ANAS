@@ -84,6 +84,8 @@ When the resolved root changes, `plan.temp_switch` lists every stop and start an
 
 Failed old-directory cleanup after a committed switch records `cleanup_deferred` and reports `temp_cleanup_pending`. Subsequent lifecycle operations, configuration applies, and root switches remain available. Old leases remain registered for explicit GC after the fault is resolved. An uncommitted switch, unconfirmed stop Hook, or failed target mount verification still blocks automatic recovery. Targeted startup checks temporary storage only for the selected Modules and their dependency scope; targeted restart checks that same scope before stopping services.
 
+Completed, restored, and cleanup-deferred historical switches keep their resolved state. Compensation for a later deployment failure does not mark them as recovery failures again.
+
 ```bash
 anas temp status -w /srv/anas
 anas temp gc --dry-run -w /srv/anas --json

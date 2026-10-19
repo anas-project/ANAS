@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from mail_policy import desired_mail, mail_domain, plan_mail, values
+
 from event_journal import (
     DEFAULT_ATTRIBUTES,
     DEFAULT_MAX_BYTES,
@@ -26,6 +28,8 @@ from event_journal import (
 
 try:
     import ldap
+    import ldap.dn
+    import ldap.filter
     from ldap.controls import SimplePagedResultsControl
 except ImportError:  # Unit tests exercise the pure helpers without python3-ldap.
     ldap = None
@@ -86,6 +90,9 @@ class Settings:
     event_file: Path | None = None
     event_attributes: tuple[str, ...] = DEFAULT_ATTRIBUTES
     event_max_bytes: int = DEFAULT_MAX_BYTES
+    mail_domain: str = ''
+    mail_user_base: str = ''
+    mail_search_base: str = ''
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -100,6 +107,11 @@ class Settings:
         missing = [name for name in required if not os.environ.get(name)]
         if missing:
             raise ValueError("missing required environment variables: " + ", ".join(missing))
+        primary_domain = os.environ.get('ANCHOR_MAIL_DOMAIN', '')
+        mail_base = os.environ.get('ANCHOR_MAIL_USER_BASE', '')
+        mail_search_base = os.environ.get('ANCHOR_MAIL_SEARCH_BASE', '')
+        if any((primary_domain, mail_base, mail_search_base)) and not all((primary_domain, mail_base, mail_search_base)):
+            raise ValueError('incomplete primary email policy')
         return cls(
             ldap_url=os.environ["ANCHOR_LDAP_URL"],
             bind_dn=os.environ["ANCHOR_BIND_DN"],
@@ -131,6 +143,9 @@ class Settings:
             event_max_bytes=max(
                 64 * 1024, int(os.environ.get("ANCHOR_EVENT_MAX_BYTES", str(DEFAULT_MAX_BYTES)))
             ),
+            mail_domain=mail_domain(primary_domain) if primary_domain else '',
+            mail_user_base=mail_base,
+            mail_search_base=mail_search_base,
         )
 
 
@@ -156,6 +171,10 @@ class Directory:
         ldap.set_option(ldap.OPT_X_TLS_REQUIRE_CERT, ldap.OPT_X_TLS_DEMAND)
         connection = ldap.initialize(self.settings.ldap_url)
         connection.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
+        # A domain-root namespace check includes referral entries for separate
+        # naming contexts. Stay in the configured domain; never follow those
+        # referrals or send this service bind to another endpoint.
+        connection.set_option(ldap.OPT_REFERRALS, 0)
         connection.set_option(ldap.OPT_NETWORK_TIMEOUT, 10)
         connection.set_option(ldap.OPT_TIMEOUT, 15)
         connection.simple_bind_s(self.settings.bind_dn, self.settings.bind_password)
@@ -171,12 +190,80 @@ class Directory:
 
     @property
     def attributes(self) -> list[str]:
-        return [
+        attributes = [
             "objectGUID",
             self.settings.binary_anchor_attribute,
             self.settings.anchor_attribute,
             "objectClass",
         ]
+        if self.settings.mail_domain:
+            attributes += ['mail', 'proxyAddresses', 'sAMAccountName', 'userAccountControl', 'objectSid']
+        return attributes
+
+    def mail_in_scope(self, dn: str) -> bool:
+        def parsed(value):
+            return [frozenset((name.casefold(), text.casefold()) for name, text, _flags in rdn) for rdn in ldap.dn.str2dn(value)]
+        base, target = parsed(self.settings.mail_user_base), parsed(dn)
+        return bool(base) and len(target) >= len(base) and target[-len(base):] == base
+
+    def save_mail(self, dn: str, attributes: dict, address: bytes) -> bool:
+        guid = values(attributes, 'objectGUID')[0]
+        guid_dn = '<GUID=' + printable_anchor(guid) + '>'
+        row = self.read_target(guid_dn)
+        if row is None:
+            return False
+        current_dn, current = row
+        if not self.mail_in_scope(current_dn) or values(current, 'objectGUID') != [guid]:
+            raise RuntimeError('primary email target left its personnel scope')
+        if desired_mail(current, self.settings.mail_domain) != address:
+            raise RuntimeError('primary email username changed concurrently')
+        previous = values(current, 'mail')
+        if previous == [address]:
+            return False
+        changes = []
+        if previous:
+            changes.append((ldap.MOD_DELETE, 'mail', previous))
+        changes.append((ldap.MOD_ADD, 'mail', [address]))
+        # A timeout is not a success. The next reconciliation reads current AD
+        # state; it never replays a stored Modify or a password operation.
+        self.connect().modify_s(guid_dn, changes)
+        verified = self.read_target(guid_dn)
+        if verified is None or not self.mail_in_scope(verified[0]) or values(verified[1], 'mail') != [address]:
+            raise RuntimeError('primary email verification failed')
+        return True
+
+    def ensure_mail(self, dn: str, attributes: dict | None = None) -> bool:
+        if not self.settings.mail_domain:
+            return False
+        if attributes is None:
+            row = self.read_target(dn)
+            if row is None:
+                return False
+            dn, attributes = row
+        if not self.mail_in_scope(dn):
+            return False
+        address = desired_mail(attributes, self.settings.mail_domain)
+        if address is None or values(attributes, 'mail') == [address]:
+            return False
+        guid = values(attributes, 'objectGUID')
+        if len(guid) != 1 or len(guid[0]) != 16:
+            raise ValueError('primary email target identity unavailable')
+        escaped = ldap.filter.escape_filter_chars(address.decode('ascii'))
+        exclude = ''.join('\\%02x' % value for value in guid[0])
+        conflict_filter = f'(&(|(mail={escaped})(proxyAddresses=smtp:{escaped}))(!(objectGUID={exclude})))'
+        conflicts = list(self.iter_entries(self.settings.mail_search_base, conflict_filter))
+        if conflicts:
+            raise ValueError('primary email address conflicts with another directory entry')
+        return self.save_mail(dn, attributes, address)
+
+    def reconcile_mail(self) -> int:
+        if not self.settings.mail_domain:
+            return 0
+        people = list(self.iter_entries(self.settings.mail_user_base, DEFAULT_USER_FILTER))
+        namespace = self.iter_entries(self.settings.mail_search_base, '(|(mail=*)(proxyAddresses=*))')
+        # Validate every target and collision before changing any mailbox field.
+        planned = plan_mail(people, namespace, self.settings.mail_domain)
+        return sum(self.save_mail(dn, attrs, address) for dn, attrs, address in planned)
 
     def read_target(self, dn: str):
         target_filter = f"(|{DEFAULT_USER_FILTER}{DEFAULT_GROUP_FILTER})"
@@ -365,6 +452,8 @@ class Worker:
         for base in self.settings.group_bases:
             for dn, attributes in self.directory.iter_missing(base, DEFAULT_GROUP_FILTER):
                 stamped += int(self.directory.stamp(dn, attributes))
+        if self.settings.mail_domain:
+            self.directory.reconcile_mail()
         # A second pass is both the readiness gate and protection against a
         # concurrent create near the end of the first pass.
         remaining = 0
@@ -439,6 +528,8 @@ class Worker:
             row = self.directory.read_target(dn)
             if row is not None:
                 self.directory.stamp(dn, row[1])
+                if self.settings.mail_domain:
+                    self.directory.ensure_mail(row[0], row[1])
                 self.health["last_event_at"] = int(time.time())
                 # Recheck uniqueness soon. This matters for an explicitly
                 # restored migration anchor, which the writer correctly leaves
@@ -461,6 +552,12 @@ class Worker:
         dn = extract_added_dn(record)
         if dn:
             self.handle_dn(dn)
+        elif self.settings.mail_domain:
+            change = successful_change(record)
+            if change and change.get('operation') == 'Modify' and isinstance(change.get('attributes'), dict):
+                touched = {name.casefold() for name in change['attributes']}
+                if touched & {'mail', 'samaccountname'}:
+                    self.directory.ensure_mail(change['dn'])
         if self.journal is None:
             return None
         event = normalize_change(record, self.settings.event_attributes, self.dn_in_scope)

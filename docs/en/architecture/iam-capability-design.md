@@ -777,3 +777,6 @@ The images that currently need this: `linuxserver/baseimage-ubuntu` (both noble
 and jammy), `ylianst/meshcentral`, and `goauthentik/server`.
 
 An OIDC provider may publish `OIDC_SELF_ACCOUNT_API_SCHEMA` per binding to identify the native self-account response contract. The current `casdoor-account/v1` profile names the existing `/api/userinfo` and `/api/get-account` format, including anas organization state, groups and policies; it adds no API. user_portal rejects absent or unknown profiles and reads only its own binding.
+
+
+The optional per-consumer OIDC binding field `OIDC_END_SESSION_URL` identifies the provider’s verified native end-session endpoint and agrees with discovery. It is neither a callback nor a notification receiver, and must not be a guessed logout page. Casdoor currently publishes it. Consumers require it only for native return configuration that needs an explicit endpoint; otherwise they retain discovery.

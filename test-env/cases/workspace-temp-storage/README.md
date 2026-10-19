@@ -328,12 +328,12 @@ go test ./internal/runner -run TestTemporary -count=1
 - 级别：`unit`
 - 覆盖需求：`TEMP-R-013`、`TEMP-R-014`、`TEMP-R-015`、`TEMP-R-016`、`TEMP-R-033`、`TEMP-R-035`、`TEMP-R-036`、`TEMP-R-037`、`TEMP-R-038`、`TEMP-R-039`、`TEMP-R-041`、`TEMP-R-044`、`TEMP-R-045`
 - 需求复核摘要：`sha256:d8f76774e4a2f1ae1daaf651b5f6912f655856bcf4ad10929966f10d56b451d9`
-- 实现复核摘要：`sha256:3f0278c3e866be1fd7b885275786473fd8d5b2eb5404e7b1b6b2026343fe64bc`
+- 实现复核摘要：`sha256:cad8f2bc8ac22515c0dbcc4d2a8eb4a5d05b3af42b055926b236a27eed6abf7c`
 - Fixture：冻结deployment、切换journal与故障注入Compose
 - 目标能力：`go`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
 - 有效性证明：`fault-injection`
-- 有效性证据：未知phase、pending before_stop、candidate引用未释放均不得盲目恢复
+- 有效性证据：未知phase、pending before_stop、candidate引用未释放均不得盲目恢复；历史终态保护的三个场景在修复前均失败，修复后注册表字节保持不变
 - 超时：`10m`
 - 敏感数据：使用合成数据；凭据不进入报告或命令错误；E2E原始材料0600，报告仅含稳定ID、摘要、结果和清理状态。
 
@@ -345,6 +345,7 @@ go test ./internal/runner -run TestTemporary -count=1
 
 - 运行实现命令验证：全停启预览绑定digest；历史clone保持源制品且重建授权；停止与恢复阶段持久化
 - 执行反例：未知phase、pending before_stop、candidate引用未释放均不得盲目恢复
+- 后续部署失败补偿不得重开历史 complete/restored/cleanup_deferred；核对注册表字节不变
 
 可观察断言：
 
@@ -352,6 +353,7 @@ go test ./internal/runner -run TestTemporary -count=1
 - 全停启预览绑定digest；历史clone保持源制品且重建授权；停止与恢复阶段持久化
 - 候选停止只释放候选deployment；旧root held租约仍active并由旧启动复用原Path和哨兵
 - 真实 Main apply JSON 保留 down exit98、phase、project 首因，previous_restore 成功或失败分别报告，adapter保留既有退出码
+- 历史终态不被后续无关失败重新标为恢复失败，所有原注册表字段保持不变
 
 反例与故障路径：
 
@@ -1001,7 +1003,7 @@ python3 test-env/scripts/test-workspace-temp-storage-extended-e2e.py
 - 级别：`e2e`
 - 覆盖需求：`TEMP-R-029`、`TEMP-R-030`
 - 需求复核摘要：`sha256:f0d5a471485af22b34598c07adb9443bcfaf9094f7db0af3bf9d70b023bda88d`
-- 实现复核摘要：`sha256:bd7a0e94a226275ff29ab18d05e33dac19210c665ed2206b636a8f8787644e0e`
+- 实现复核摘要：`sha256:2cc5e4a7862260bd817b133cc8012291f5ed0a663fd977f107c2b968cd77d1eb`
 - Fixture：固定Collabora镜像和最小Nextcloud LLNG编辑栈
 - 目标能力：`go`、`linux`、`isolated-docker`、`playwright`、`nextcloud`、`python`
 - Oracle 来源：`runtime`、`filesystem`、`report`、`ui`、`api`

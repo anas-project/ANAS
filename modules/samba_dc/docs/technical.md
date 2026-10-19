@@ -22,7 +22,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 3 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 4 |
 | `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r13` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
@@ -56,6 +56,7 @@
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 只读 LDAP 服务账号名 |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-ldap-bind-password` | `credential_rotate` | 只读 LDAP 服务账号密码 |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | 否 | 是 | 否 | 否：`migrate-default-mail-addresses` | `data_migrate` | 主邮箱后缀；缺省继承 AD 域，变更后维护指定人员 OU 的主地址，不重命名目录身份 |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 单个日志文件上限 |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | 否 | 是 | 否 | 否：`replace-domain-controller` | `immutable` | 域控制器 NetBIOS 名称 |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 密码回写服务账号名 |
@@ -236,3 +237,16 @@ r11 的当前 `anasIdentityAnchor` 使用 `attributeID=1.3.6.1.4.1.66678.1.2.1` 
 不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。
 
 ANAS 显式组注册表也包含 Unix Admins。注册只表示所有权，不表示低风险：该组具有基础设施管理员嵌套权限，门户必须按域级操作处理。
+
+### 系统主邮箱
+
+`mail_domain` 缺省继承 AD DNS 域。初始化新建日常管理员时直接传入 `--mail-address`。现有目录 Worker 为 Provider 用户 OU 及子 OU 内的人员维护小写 `用户名@后缀` 的 AD `mail`；先检查已有 mail/proxyAddresses 冲突，写后回读，失败反映在就绪检查。该范围既有手工主地址也由系统规则替换。范围外、服务 OU、内置主体、信任和计算机不参与。Worker 仅增加人员 OU 的 mail 属性写权限，组锚点权限不附带组邮箱权限。不创建邮箱、别名、新身份 schema 或额外同步服务。后缀变更仅改邮箱；运维须确认 Worker 就绪且无剩余规则错误，不能凭容器启动认定迁移成功。
+
+修改后缀当前使用原生 config import → lock → render → apply 流程：在完整配置的 `modules.samba_dc.config.mail_domain` 设置后缀，核对受影响模块与恢复点，激活后检查 Worker 就绪和剩余错误。`migrate-default-mail-addresses` 是策略标识，不是新增的已注册 CLI 命令；普通 config set 会被 data_migrate 策略拦截。实际邮件收发和旧址别名迁移另待邮件后端处理。
+
+
+## 分组声明的单一来源
+
+`module.yml` 的 `identity.groups` 声明通用组的名称、目录父节点、类别、顺序、风险及中英文介绍，并按 SID/RID 声明 AD 内置组说明。应用组复用各应用已有身份声明，能力名称从所属 Module 的已声明列表生成。Core 编译为本部署共享的 `shared/identity-groups/catalog.json`；Samba 的 `identity_groups.py` 只从该只读清单创建受管组和维护英文 AD `description`，不修改内置组，不移动同名对象，不由元数据修改成员/ACL。原生初始化的成员关系及权限策略仍单独执行。
+
+`SAMBA_DC_APPLICATION_CATALOG_GROUPS` 是共享清单中受管名称的 CSV 投影，不再在 Hook 中手工列出。清单缺失、定位冲突或内容非法时初始化失败，不退回另一套硬编码默认清单。人员邮箱与身份锚点维护流程保持原有授权边界。

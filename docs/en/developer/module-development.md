@@ -479,3 +479,10 @@ An IAM consumer declares application_catalog.consumes: true, limitations, the fi
 /run/anas/application-catalog mount and an assets-only public mount. Its render Hook reads the transient
 ANAS_APP_CATALOG_FILE and projects existing native IAM objects. The source catalog remains authoritative;
 the separate user_portal protects APIs and icons using current IAM/AD state from this private bundle. See the [catalog design](/architecture/app-catalog-design).
+
+
+### Group descriptions and the shared catalog
+
+Declare group metadata in the owning Module's `identity.groups`: `id`, `name` (or `name_from` / `names_from`), `parent_dn_from`, `managed`, `category`, `order`, `risk`, `display_name` and `description`. English is required; Simplified Chinese is optional. `risk` is normal/resource/domain and never grants directory permissions. Dynamic capability families declare `select_prefix: <module>_` and `name_prefix: CAP_`; text may include `{name}`. `when` references a resolved boolean. Only the selected directory Provider declares system descriptions by `sid` or `domain_rid`; these groups are not created from metadata. Do not duplicate APP_ names already defined by `identity.application_group`.
+
+Compose consumers declare `identity.group_catalog: true` and mount `${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro`. Writable and publicly served mounts are rejected. Core supplies the path and digest. The immutable artifact lives at `.anas/deployments/<id>/shared/identity-groups/catalog.json` and is shared by consumers without synchronized copies. Membership and actual rights always come from AD.

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/anas-project/ANAS/internal/directorymail"
 )
 
 // The runner sends the module-hook ABI it speaks; this unreleased format has no legacy aliases.
@@ -109,6 +111,9 @@ func handle(req hookRequest) (hookResponse, error) {
 		if err != nil {
 			return hookResponse{}, err
 		}
+		if _, _, err := mailDefaults(env, plan.SambaDomain); err != nil {
+			return hookResponse{}, err
+		}
 		return hookResponse{Plan: map[string]string{
 			"requested_mode": plan.RequestedMode,
 			"resolved_mode":  plan.ResolvedMode,
@@ -184,6 +189,11 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	}
 	domain := plan.SambaDomain
 	baseDomain := plan.BaseDomain
+	mailDomain, adminMail, err := mailDefaults(e, domain)
+	if err != nil {
+		return err
+	}
+	e["SAMBA_DC_MAIL_DOMAIN"], e["SAMBA_DC_ADMIN_MAIL"] = mailDomain, adminMail
 	e["BASE_DOMAIN"] = baseDomain
 	e["SAMBA_DC_DOMAIN"] = domain
 	e["SAMBA_DC_APPLICATION_DNS_MODE"] = plan.RequestedMode
@@ -250,21 +260,7 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_ADMIN_GROUP_DN"] = "CN=Admins," + e["SAMBA_DC_BASE_GROUPS_ROLE_DN"]
 	e["SAMBA_DC_FS_ADMIN_GROUP_NAME"] = "FS Admins"
 	e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"] = "FS Share RW"
-	groups := []string{e["SAMBA_DC_ADMIN_GROUP_NAME"], "Unix Admins", e["SAMBA_DC_FS_ADMIN_GROUP_NAME"], e["SAMBA_DC_FS_SHARE_RW_GROUP_NAME"]}
-	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		groups = append(groups, e["SAMBA_DC_APP_ALL_NAME"])
-		for _, app := range strings.Split(e["ANAS_IDENTITY_APP_CLIENTS"], ",") {
-			if app != "" {
-				groups = append(groups, "APP_"+app)
-			}
-		}
-	}
-	for _, group := range strings.Split(e["ANAS_IDENTITY_CAPABILITY_GROUPS"], ",") {
-		if group != "" {
-			groups = append(groups, "CAP_"+group)
-		}
-	}
-	e["SAMBA_DC_APPLICATION_CATALOG_GROUPS"] = strings.Join(groups, ",")
+	e["SAMBA_DC_BASE_GROUPS_ACCESS_DN"] = "OU=Access," + e["SAMBA_DC_BASE_GROUPS_DN"]
 
 	e["SAMBA_DC_LDAP_BIND_DN"] = "CN=" + e["SAMBA_DC_LDAP_BIND_NAME"] + "," + e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
 	ldapBindPassword, err := ensurePassword(e["SAMBA_DC_LDAP_BIND_PASSWORD"], "SAMBA_DC_LDAP_BIND_PASSWORD", secrets)
@@ -325,6 +321,18 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN"] = defaultValue(e["SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN"], domain)
 	e["SAMBA_DC_INTERFACES"] = defaultValue(e["SAMBA_DC_INTERFACES"], e["INTERFACE"])
 	return nil
+}
+
+func mailDefaults(env map[string]string, domain string) (string, string, error) {
+	mailDomain, err := directorymail.Domain(env["SAMBA_DC_MAIL_DOMAIN"], domain)
+	if err != nil {
+		return "", "", err
+	}
+	if env["SAMBA_DC_ADMIN_NAME"] == "" {
+		return mailDomain, "", nil
+	}
+	address, err := directorymail.Address(env["SAMBA_DC_ADMIN_NAME"], mailDomain)
+	return mailDomain, address, err
 }
 func krb5Env(e map[string]string, _ string) error { e["KRB5RCACHETYPE"] = "none"; return nil }
 
