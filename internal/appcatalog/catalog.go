@@ -156,7 +156,7 @@ func validateText(field string, text Text, limit int, required, bilingual, isURL
 		return fmt.Errorf("%s needs at least one translation", field)
 	}
 	for lang, value := range text {
-		if lang != "zh-CN" && lang != "en" {
+		if !SupportedKey(lang) {
 			return fmt.Errorf("%s has an unsupported language key", field)
 		}
 		if strings.TrimSpace(value) == "" || utf8.RuneCountInString(value) > limit {

@@ -134,7 +134,7 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(j.close)
-	f.server = &Server{config: c, oidc: o, directory: f.directory, audit: j, store: newStore(), limiter: newLimiter(), peers: []netip.Addr{netip.MustParseAddr("127.0.0.1")}, catalog: appcatalog.Catalog{Schema: appcatalog.Schema, Categories: []appcatalog.Category{{ID: "other", DisplayName: appcatalog.Text{"en": "Other", "zh-CN": "其他"}}}, Applications: []appcatalog.Application{{Metadata: appcatalog.Metadata{Name: "tool", DisplayName: appcatalog.Text{"en": "Tool", "zh-CN": "工具"}, Summary: appcatalog.Text{"en": "Useful", "zh-CN": "好用"}, Kind: "user", Categories: []string{"other"}}, Enabled: true, Groups: []string{"Apps"}, Icons: map[string]appcatalog.Icon{}}}}}
+	f.server = &Server{config: c, oidc: o, directory: f.directory, audit: j, store: newStore(), limiter: newLimiter(), preferences: openPreferences(filepath.Join(filepath.Dir(c.AuditDir), "preferences")), peers: []netip.Addr{netip.MustParseAddr("127.0.0.1")}, catalog: appcatalog.Catalog{Schema: appcatalog.Schema, Categories: []appcatalog.Category{{ID: "other", DisplayName: appcatalog.Text{"en": "Other", "zh-CN": "其他"}}}, Applications: []appcatalog.Application{{Metadata: appcatalog.Metadata{Name: "tool", DisplayName: appcatalog.Text{"en": "Tool", "zh-CN": "工具"}, Summary: appcatalog.Text{"en": "Useful", "zh-CN": "好用"}, Kind: "user", Categories: []string{"other"}}, Enabled: true, Groups: []string{"Apps"}, Icons: map[string]appcatalog.Icon{}}}}}
 	f.session = Session{ID: "session", CSRF: "csrf", DirectoryGUID: f.person.GUID, Authentication: Authentication{Subject: f.person.Anchor, SID: "sid-a", AccessToken: "backend-access-token", AuthTime: time.Now()}, Expires: time.Now().Add(time.Hour)}
 	f.server.store.add(f.session)
 	return f
@@ -202,9 +202,12 @@ func TestPermissionUsesCurrentDirectoryAndExactPolicy(t *testing.T) {
 
 func TestSearchLanguagePrivacyAndLiveRevocation(t *testing.T) {
 	f := newFixture(t)
-	r := f.request("GET", "/api/apps?lang=fr&q=Useful", "")
+	r := f.request("GET", "/api/apps?lang=ru&q=Useful", "")
 	if r.Code != 200 || !strings.Contains(r.Body.String(), `"language":"en"`) {
 		t.Fatal(r.Code, r.Body.String())
+	}
+	if french := f.request("GET", "/api/apps?lang=fr-CA", ""); !strings.Contains(french.Body.String(), `"language":"fr"`) || !strings.Contains(french.Body.String(), `"display_name":"Tool"`) {
+		t.Fatal("supported language without catalog translation must keep the language and fall back per field", french.Body.String())
 	}
 	if strings.Contains(r.Body.String(), "backend-access-token") || strings.Contains(r.Body.String(), "permission-") {
 		t.Fatal("private IAM fields leaked")

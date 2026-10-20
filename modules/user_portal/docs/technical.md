@@ -72,13 +72,21 @@ Hook 仅发布自己的 ANAS_IAM_CLIENT__USER_PORTAL__ 注册，PUBLIC_CLIENT �
 
 `domain_administration_enabled` 默认关闭；开启后受保护人员/系统组走独立确认：近期 OIDC、限时一次性参数确认、同一登录人员的本人 LDAPS 绑定、原生 AD ACL。密码只用于一个请求，不跨请求保存；不是 MFA 或进程隔离的保证。推荐的专用受限绑定配置不长期持有全域管理凭据。组关系之外的自定义 ACL 权限仍以 AD 的最终拒绝/允许为准。
 
+## 界面、语言与账号偏好
+
+前端是无构建步骤的原生 JavaScript：`theme.js` 在样式之前同步执行，先套用本浏览器上次的主题；`i18n.js` 保存 zh-CN、zh-TW、en、ja、ko、fr、de、es 八种界面文字；`app.js` 按 `#/apps`、`#/account/<profile|security|groups|mail|log>`、`#/admin/users[/<anchor>|/new]`、`#/admin/audit` 渲染页面，未知地址回到 `#/apps`。全部文本以 textContent 写入，CSP 仍只允许同源脚本和样式。语言匹配与目录文本回退由 internal/appcatalog 统一完成：繁体地区归 zh-TW 并先回退简体中文，其他新增语言回退英文；目录内容仍只要求中英文完整。
+
+主题有跟随系统、浅色、深色三种，颜色全部是 CSS 变量，跟随系统时由 `prefers-color-scheme` 实时切换。工作台与管理模式分开；只有拥有人员查询动作的用户看到“管理”，管理侧栏列出其有权访问的后台应用。⌘K / Ctrl+K 打开快速搜索：应用来自当前授权目录，页面按权限列出，人员结果只调用现有 `/api/users`。写结果分三段显示目录、IAM 同步和应用会话；重置密码与解锁位于危险操作区，确认与本人验证不变。
+
+账号偏好（语言、主题、分类显示、最多 24 个常用应用）通过 `POST /api/me/preferences` 保存，`GET /api/me` 的 `preferences` 返回。写入要求当前会话与 CSRF，字段和取值使用白名单，不要求近期认证、不写安全审计。常用列表在返回时按当前授权过滤，保存时拒绝未授权名称。未登录页面只用本浏览器缓存；登录后账号偏好覆盖并更新缓存。
+
 ## 存储、备份与升级
 
-私有 audit.jsonl 属于 workspace data，必须随 data 备份。会话只在内存，恢复不保留会话。未完成意图读取为 unknown；损坏日志关闭写入而不删除原文件。单实例持有文件锁，不新增数据库、缓存或同步守护进程。
+私有 audit.jsonl 和 `preferences/preferences.json` 属于 workspace data，必须随 data 备份。偏好目录由启动阶段以 0700、uid 65532 创建；文件以临时文件加原子改名写入，读不出或内容损坏时使用默认偏好并拒绝写入，不覆盖原文件。会话只在内存，恢复不保留会话。未完成意图读取为 unknown；损坏日志关闭写入而不删除原文件。单实例持有文件锁，不新增数据库、缓存或同步守护进程。
 
 ## 验证
 
-`go test ./modules/user_portal/portal ./modules/user_portal/hook` 覆盖 OIDC 时间/身份绑定、策略/AD 拒绝、CSRF、审计失败及不重放。关联 Casdoor Hook 和 appcatalog 一同验证。服务器与浏览器入口、固定制品和逐 ID 验收结论维护在配套门户计划，未执行不算通过。
+`go test ./modules/user_portal/portal ./modules/user_portal/hook` 覆盖 OIDC 时间/身份绑定、策略/AD 拒绝、CSRF、审计失败及不重放。关联 Casdoor Hook 和 appcatalog 一同验证。界面用例 `node test-env/playwright/user-portal-ui.test.mjs` 与 `node test-env/playwright/user-portal-experience.test.mjs` 使用生产静态资源和模拟 API。服务器与浏览器入口、固定制品和逐 ID 验收结论维护在配套门户计划，未执行不算通过。
 
 ## 当前限制
 

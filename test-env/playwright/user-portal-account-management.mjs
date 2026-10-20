@@ -1,4 +1,4 @@
-// TEST_CASES: PORTAL-T-007, MAIL-T-004, GROUPCAT-T-002
+// TEST_CASES: PORTAL-T-007, MAIL-T-004, GROUPCAT-T-002, PORTALUX-T-004
 import fs from 'node:fs';
 import path from 'node:path';
 const {chromium}=await import(process.env.PORTAL_PLAYWRIGHT_MODULE||'@playwright/test');
@@ -9,7 +9,7 @@ if(!/^pua[0-9a-f]{8}$/.test(f.prefix)||new URL(f.origin).hostname!=='portal.fina
 const report={baseline:f.baseline,checks:[],browser:'',test_tls_note:'Browser context trusts fixture transport; native Go and HTTPS probes independently validate CA and server name.',started_at:new Date().toISOString()};
 const secretValues=[...Object.values(f.passwords),f.new_password];
 function check(ids,name,pass,detail={}) {
-  report.checks.push({requirements:ids.map(n=>'PORTAL-R-'+String(n).padStart(3,'0')),name,pass:!!pass,...detail});
+  report.checks.push({requirements:ids.map(n=>String(n).startsWith('UX-')?'PORTALUX-R-'+String(n).slice(3):'PORTAL-R-'+String(n).padStart(3,'0')),name,pass:!!pass,...detail});
   fs.writeFileSync(path.join(root,'evidence/account-browser-progress.json'),JSON.stringify(report));
   if(!pass)throw new Error(name);
 }
@@ -35,7 +35,7 @@ async function login(alias,c) {
   await p.locator('input[type=password]').fill(f.passwords[alias]);
   await p.locator('button.login-button').click({noWaitAfter:true});
   await p.waitForURL(u=>u.hostname==='portal.finance.hlong.wang'&&u.pathname==='/',{timeout:45000,waitUntil:'domcontentloaded'});
-  await p.getByRole('heading',{name:'Your workspace'}).waitFor();return p;
+  await p.locator('body[data-page=home]').waitFor({state:'attached'});return p;
 }
 async function reauth(p,alias) {
   await p.evaluate(async()=>{const b=await fetch('/api/bootstrap').then(r=>r.json());const form=document.createElement('form');form.method='post';form.action='/api/reauth';const input=document.createElement('input');input.name='csrf';input.value=b.csrf;form.append(input);document.body.append(form);form.submit();});
@@ -92,19 +92,21 @@ try {
   check([60],'an unauthenticated context cannot fetch a cached icon',deniedIcon===401);
   await normal.getByLabel('Show categories',{exact:true}).uncheck();
   check([77],'category switch flattens visible application groups',await normal.locator('[data-kind=user] .category-heading').count()===0);
-  await normal.reload({waitUntil:'domcontentloaded'});await normal.getByRole('heading',{name:'Your workspace'}).waitFor();
+  await normal.reload({waitUntil:'domcontentloaded'});await normal.locator('body[data-page=home]').waitFor({state:'attached'});
   check([77],'category switch persists in this browser',!await normal.getByLabel('Show categories',{exact:true}).isChecked());
   const requests=[];const observe=r=>{if(new URL(r.url()).pathname==='/api/me')requests.push(r.url());};normal.on('request',observe);
-  await normal.reload({waitUntil:'domcontentloaded'});await normal.getByRole('heading',{name:'Your workspace'}).waitFor();await normal.locator('.card').first().waitFor();normal.off('request',observe);
+  await normal.reload({waitUntil:'domcontentloaded'});await normal.locator('body[data-page=home]').waitFor({state:'attached'});await normal.locator('.card').first().waitFor();normal.off('request',observe);
   check([60],'one account read per initial page',requests.length===1,{account_reads:requests.length});
   report.performance=await normal.evaluate(()=>({navigation:performance.getEntriesByType('navigation').map(n=>({dom_content_loaded_ms:Math.round(n.domContentLoadedEventEnd),response_ms:Math.round(n.responseEnd)})),requests:performance.getEntriesByType('resource').map(n=>({path:new URL(n.name).pathname,duration_ms:Math.round(n.duration),transfer_bytes:n.transferSize}))}));
-  await normal.getByRole('button',{name:'My account',exact:true}).click();await normal.getByRole('heading',{name:'My account',exact:true}).waitFor();
+  await normal.getByRole('link',{name:'My account',exact:true}).click();await normal.getByRole('heading',{name:'My account',exact:true}).waitFor();
   await normal.locator('input[name=given_name]').fill('测试');await normal.locator('input[name=surname]').fill('用户');await normal.locator('input[name=display_name]').fill('门户测试用户');
   await normal.getByRole('button',{name:'Save',exact:true}).click();await normal.locator('.form-result [role=status]').waitFor();
   await normal.locator('.person-details').getByText('门户测试用户',{exact:true}).waitFor();
   check([44,45],'saved profile immediately refreshes the visible account summary',await normal.locator('.person-details').getByText('门户测试用户',{exact:true}).isVisible());
   let current=(await api(normal,'/api/me')).data;
   check([44,45],'profile form persists names and stable identity',current.person.given_name==='测试'&&current.person.surname==='用户'&&current.person.display_name==='门户测试用户'&&current.person.anchor===me.person.anchor&&current.person.username===me.person.username&&current.person.email===me.person.email);
+  // The mailbox notice lives in the Email section of My account.
+  await normal.getByRole('link',{name:'Email',exact:true}).click();await normal.locator('body[data-page=account-mail]').waitFor({state:'attached'});
   check([47],'email is read-only without a mail backend',!await normal.locator('input[name=email],input[name=mail]').count()&&await normal.getByText('Your primary address is generated by the system.',{exact:false}).isVisible());
   let result=await api(normal,'/api/me/profile',{action:'profile.update',target:current.person.anchor,profile_version:current.profile_version,profile:{given_name:'Profile',surname:'Version',display_name:'Profile Version'}});
   check([45,46],'profile update accepts a current version',result.status===200&&result.data.directory==='saved');
@@ -112,7 +114,7 @@ try {
   check([46],'stale version cannot overwrite saved profile',result.status===409&&result.data.error==='conflict'&&(await api(normal,'/api/me')).data.person.display_name==='Profile Version');
   check([45,58],'arbitrary email field is rejected',(await api(normal,'/api/me/profile',{mail:'forbidden@example.invalid'})).status===400);
   check([5,59],'CSRF is still checked',(await api(normal,'/api/me/profile',{}, {'X-CSRF-Token':'forged'})).status===403);
-  await normal.getByRole('button',{name:'Change password',exact:true}).click();await normal.getByRole('heading',{name:'Change password',exact:true}).waitFor();
+  await normal.getByRole('link',{name:'Password and security',exact:true}).click();await normal.getByRole('heading',{name:'Change password',exact:true}).waitFor();
   await normal.locator('input[name=old_password]').fill(f.passwords.normal+'wrong');await normal.locator('input[name=new_password]').fill(f.new_password);await normal.locator('input[name=confirm_password]').fill(f.new_password);
   await normal.getByRole('button',{name:'Save',exact:true}).click();await normal.locator('.form-result [role=alert]').waitFor();
   check([44],'wrong password has a visible accessible result',await normal.locator('.form-result [role=alert]').isVisible());
@@ -133,7 +135,7 @@ try {
   // A private same-host cleanup name is registered before the request so even
   // a browser failure after Add can be reconciled without retrying creation.
   fs.writeFileSync(path.join(root,'private/created-user.private.json'),JSON.stringify({username:newName,prefix:f.prefix}));
-  await manager.getByRole('button',{name:'User management',exact:true}).click();
+  await manager.getByRole('link',{name:'Manage',exact:true}).click();
   await manager.getByRole('button',{name:'New user',exact:true}).click();
   const createForm=manager.locator('form').filter({has:manager.locator('input[name=username]')});
   await createForm.locator('input[name=username]').fill(newName);
@@ -179,7 +181,7 @@ try {
   const chineseGroup=(await api(manager,'/api/groups?target='+f.users.normal.anchor+'&lang=zh-CN')).data.groups.find(g=>g.group.name==='APP_immich');
   check([72],'unsupported group language falls back to English and Chinese is available',englishGroup.group.description.startsWith('Allows entry')&&chineseGroup.group.description.includes('允许进入'));
 
-  await manager.getByRole('button',{name:'User management',exact:true}).click();
+  await manager.getByRole('link',{name:'Manage',exact:true}).click();
   await manager.getByRole('row').filter({has:manager.getByText(f.users.normal.username,{exact:true})}).getByRole('button',{name:'Details',exact:true}).click();
   const advancedPanel=manager.locator('details.advanced');
   check([72],'advanced groups are collapsed at the page bottom',await advancedPanel.evaluate(node=>!node.open)&&await advancedPanel.evaluate(node=>node===node.parentElement.lastElementChild));
@@ -263,8 +265,8 @@ try {
   check([21,22,23],'ordinary administrator resets another ANAS admin and requires change',typeof result.data.temporary_password==='string'&&(await api(manager,'/api/users/'+f.users.target.anchor)).data.person.must_change_password);
   const audit=(await api(domainPage,'/api/audit')).data;
   check([25,32,34,57],'audit contains outcomes but no personal domain or temporary passwords',audit.records.some(r=>r.rule==='domain_operator'&&r.directory==='denied')&&secretValues.every(secret=>!JSON.stringify(audit).includes(secret)));
-  await manager.getByRole('button',{name:'User management',exact:true}).click();await manager.getByRole('heading',{name:'User management',exact:true}).waitFor();
-  await manager.getByRole('searchbox').fill(f.users.normal.username);await manager.getByRole('button',{name:'Search name or summary',exact:true}).click();
+  await manager.getByRole('link',{name:'Manage',exact:true}).click();await manager.getByRole('heading',{name:'User management',exact:true}).waitFor();
+  await manager.getByRole('searchbox').fill(f.users.normal.username);await manager.getByRole('button',{name:'Search',exact:true}).click();
   await manager.getByRole('button',{name:'Details',exact:true}).click();await manager.getByText('Advanced: system and other groups',{exact:true}).waitFor();
   await manager.getByText('Advanced: system and other groups',{exact:true}).click();await manager.locator('tr').filter({hasText:f.groups.extra.username}).waitFor();
   check([42,52],'advanced system group warning is visible',await manager.locator('.advanced .warning').isVisible());
@@ -304,6 +306,20 @@ try {
       });
     })));
     await manager.screenshot({path:path.join(root,'evidence/user-management-'+locale+'-'+width+'.png'),fullPage:true});
+  }
+  // PORTALUX-R-006: account preferences follow the person to another browser.
+  const visibleApp=(await api(normal,'/api/apps')).data.groups[0].categories[0].applications[0].name;
+  const prefsSaved=await api(normal,'/api/me/preferences',{language:'ja',theme:'dark',show_categories:true,pinned:[visibleApp]});
+  check(['UX-006'],'account preferences save through the portal',prefsSaved.status===200&&prefsSaved.data.preferences.theme==='dark');
+  const second=await login('normal',await context());
+  check(['UX-006'],'another browser applies the account language, theme and pinned application',await second.evaluate(()=>document.documentElement.dataset.theme)==='dark'&&await second.locator('html').getAttribute('lang')==='ja'&&await second.locator('.pin-tile').count()===1);
+  await api(second,'/api/me/preferences',{language:'',theme:'system',show_categories:true,pinned:[]});
+  // PORTALUX-R-021: every page fits a 390px screen with bottom navigation.
+  await manager.setViewportSize({width:390,height:844});await manager.selectOption('#language','en');
+  for(const [hash,name] of [['#/apps','home'],['#/account/profile','account-profile'],['#/account/security','account-security'],['#/account/groups','account-groups'],['#/admin/users','admin-users'],['#/admin/users/'+encodeURIComponent(f.users.normal.anchor),'admin-user']]){
+    await manager.goto(f.origin+'/'+hash,{waitUntil:'domcontentloaded'});await manager.locator('body[data-page='+name+']').waitFor({state:'attached'});await manager.waitForTimeout(300);
+    const box=await manager.locator('.bottom-nav').boundingBox();
+    check(['UX-021'],'390px page fits without horizontal scrolling '+hash,!await manager.evaluate(()=>document.documentElement.scrollWidth>innerWidth)&&!!box&&Math.abs(box.y+box.height-844)<=1);
   }
   await normal.getByRole('button',{name:'Sign out',exact:true}).click();
   // This account suite deliberately allows only portal/IAM traffic. Other

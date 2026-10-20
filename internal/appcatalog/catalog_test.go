@@ -22,8 +22,12 @@ func sampleInput(name string) Input {
 
 func TestLanguagePrecedenceAndFallback(t *testing.T) {
 	for _, tc := range []struct{ selected, browser, deployment, want string }{
-		{"fr", "zh-CN", "zh-CN", "en"}, {"", "ja,zh-CN;q=0.9", "zh-CN", "en"},
-		{"", "zh-SG, en;q=0.8", "en", "zh-CN"}, {"zh-Hant", "en", "zh-CN", "en"},
+		{"ru", "zh-CN", "zh-CN", "en"}, {"", "pt-BR,zh-CN;q=0.9", "zh-CN", "en"},
+		{"", "zh-SG, en;q=0.8", "en", "zh-CN"}, {"zh-Hant", "en", "zh-CN", "zh-TW"},
+		// TEST_CASES: PORTALUX-T-001
+		{"zh-HK", "", "", "zh-TW"}, {"", "zh-MO", "", "zh-TW"}, {"zh-Hans-TW", "", "", "zh-TW"}, {"zh", "", "", "zh-CN"},
+		{"fr-CA", "en", "en", "fr"}, {"", "ja,zh-CN;q=0.9", "zh-CN", "ja"}, {"es-MX", "", "", "es"},
+		{"de-AT", "", "", "de"}, {"ko-KR", "", "", "ko"}, {"it", "ja", "ja", "en"},
 		{"", "", "zh-CN", "zh-CN"}, {"", "*;q=1, en;q=0", "zh-CN", "zh-CN"},
 		{"en-GB", "zh-CN", "zh-CN", "en"}, {"", "en;q=0.2,zh-CN;q=0.8", "en", "zh-CN"},
 	} {
@@ -34,6 +38,24 @@ func TestLanguagePrecedenceAndFallback(t *testing.T) {
 	if got := (Text{"zh-CN": "中文"}).Resolve("en"); got != "中文" {
 		t.Fatal(got)
 	}
+	both := Text{"zh-CN": "简体", "en": "English"}
+	if both.Resolve("zh-TW") != "简体" || both.Resolve("ja") != "English" || (Text{"zh-CN": "简体"}).Resolve("fr") != "简体" || (Text{"en": "English", "ja": "日本語"}).Resolve("ja") != "日本語" {
+		t.Fatal("new language fallback order changed")
+	}
+}
+
+func TestOptionalLanguageKeys(t *testing.T) {
+	for _, lang := range SupportedLanguages {
+		if err := validateText("x", Text{"zh-CN": "中", "en": "en", lang: "v"}, 64, true, true, false); err != nil {
+			t.Fatal(lang, err)
+		}
+	}
+	if validateText("x", Text{"zh-CN": "中", "en": "en", "ru": "v"}, 64, true, true, false) == nil {
+		t.Fatal("unsupported language key accepted")
+	}
+	if validateText("x", Text{"en": "en", "ja": "v"}, 64, true, true, false) == nil {
+		t.Fatal("built-in text without zh-CN accepted")
+	}
 }
 
 func TestCompileBilingualMergePrimaryCategoryAndView(t *testing.T) {
@@ -43,7 +65,7 @@ func TestCompileBilingualMergePrimaryCategoryAndView(t *testing.T) {
 	admin.Application.Kind = "admin"
 	admin.Application.Groups = []string{"Admins"}
 	cfg := Config{Overrides: map[string]Override{"cloud": {DisplayName: Text{"en": "Files"}}}}
-	catalog, inputs, err := Compile(cfg, []Input{admin, user}, "", "fr")
+	catalog, inputs, err := Compile(cfg, []Input{admin, user}, "", "ru")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@
 | [目录主邮箱与门户建号](directory-primary-email.md) | 系统生成主邮箱、独立邮箱后缀、指定人员 OU、原生创建与已有地址迁移 | 7/7 已完成 |
 | [relational_database 扩展生命周期要求](relational-database-extensions.md) | 最小 PostgreSQL 扩展声明、固定版本、权限和就绪、受控升级与 ANAS 恢复 | 19/19 已完成 |
 | [项目审查整改要求](project-quality-hardening.md) | 共享 Agent 规则、补偿失败、索引语义与前端门禁 | 6/6 已完成 |
-| [应用目录要求](app-catalog.md) | 非 IAM/多入口、用户与管理两级分组、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer、Casdoor 优先与独立门户交付 | 0/39 已完成 |
+| [应用目录要求](app-catalog.md) | 非 IAM/多入口、用户与管理两级分组、中英文展示、七档图标与共享制品、外部配置、权限过滤、Adminer、Casdoor 优先与独立门户交付 | 0/41 已完成 |
 | [新 IAM Provider 准入与实施要求](iam-provider.md) | 目录、OIDC/SAML、身份锚点、安全和 E2E 验收 | 无矩阵（未采用 ID） |
 | [Changelog 要求](changelog.md) | Core 与 Module 变更记录的位置、写入时机、发布改名与门禁 | 0/33 已完成 |
 | [Compose 执行边界要求](compose-execution-boundary.md) | Docker endpoint 绑定、Compose 子进程失败归因与补偿输出边界 | 2/17 已完成 |

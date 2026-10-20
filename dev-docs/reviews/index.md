@@ -32,6 +32,7 @@
 | [Incus 网络与 proxy 权限核验](2026-09-10-incus-network-proxy-validation.md) | 2026-09-10，ANAS `f7642c5` / Incus `v7.3.0` | 固定版本源码调用链、兼容性缺陷与实机验证边界 |
 | [凭据轮换机制审查：全面轮换与单独轮换](2026-09-04-credential-rotation-review.md) | 2026-09-04 工作树，HEAD `5306b63` | 轮换覆盖面、作用域语义与 resource 凭据空白 |
 | [ln 根盘评估与清理](2026-10-14-ln-root-disk.md) | 2026-10-14—15，ln 评估及授权执行 | 旧 Incus 完整迁到 /data、日志归档后缩减；根盘约 48 GiB 可用，容器并发清理差异与证据见正文 |
+| [用户门户设计问题、控制台联动与视觉重设计](2026-10-18-user-portal-ux-and-console-linkage.md) | 2026-10-18，`0889af2e` 加工作树 | 一次点击授予 Admins（宿主级）缺陷、入口割裂与无路由；联动方案与重设计要点；未改实现 |
 | [用户门户提交前审查](2026-10-14-user-portal-review.md) | 2026-10-14，`ad1e0b98` 加本任务工作树 | 公开改密限流隐私、无效成员请求审计身份和文档状态修正；实机新制品复验见配套计划 |
 | [AI Agent 编排设计审查](../../modules/ai_agent/dev-docs/reviews/2026-09-05-orchestration-design-review.md) | 2026-09-05 工作树，HEAD `455770b` | 编排设计、凭据边界与事件状态审查（随组件迁至 `modules/ai_agent/`） |
 

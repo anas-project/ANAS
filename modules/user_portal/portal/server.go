@@ -68,9 +68,11 @@ type Server struct {
 	catalog   appcatalog.Catalog
 	store     *Store
 	limiter   *Limiter
-	peers     []netip.Addr
-	digest    string
-	writes    sync.Mutex
+	// preferences holds account-level display choices only.
+	preferences *preferenceStore
+	peers       []netip.Addr
+	digest      string
+	writes      sync.Mutex
 }
 
 func cookie(w http.ResponseWriter, name, value string, age int) {
@@ -142,6 +144,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /oidc/backchannel-logout", s.backchannel)
 	m.HandleFunc("GET /api/bootstrap", s.bootstrap)
 	m.HandleFunc("GET /api/me", s.me)
+	m.HandleFunc("POST /api/me/preferences", s.updatePreferences)
 	m.HandleFunc("POST /api/me/profile", s.updateProfile)
 	m.HandleFunc("POST /api/administration/prepare", s.prepareOperation)
 	m.HandleFunc("POST /api/administration/execute", s.executeOperation)
@@ -349,7 +352,7 @@ func (s *Server) backchannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
-	v, p, _, ok := s.current(w, r)
+	v, p, account, ok := s.current(w, r)
 	if !ok {
 		return
 	}
@@ -377,7 +380,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			actions = append(actions, "user.create")
 		}
 	}
-	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
+	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "preferences": s.visiblePreferences(s.preferences.get(p.Anchor), account, p), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {

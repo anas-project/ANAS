@@ -66,7 +66,7 @@ go test ./internal/groupcatalog ./internal/runner -run 'Test(IdentityCatalog|Exp
 - 级别：`e2e`
 - 覆盖需求：`GROUPCAT-R-002`、`GROUPCAT-R-004`、`GROUPCAT-R-005`
 - 需求复核摘要：`sha256:e20316076465a4f2a2b2bdc5dc32b82a9cf1c095f5f3434786636eb24ca8f9aa`
-- 实现复核摘要：`sha256:b6a6339e17d53bea8f96866f1b2c2b299408fd4ed57f4ceb651dee30ce73fec2`
+- 实现复核摘要：`sha256:a41be5d808729f949dc7022ac0d43dc0822588b542d8918c3d41d9c54299a35e`
 - Fixture：finance 指定测试服务和不发布端口、无网络、无生产信任的 owner.test 假域
 - 目标能力：`docker`、`samba`、`playwright`、`ldaps`
 - Oracle 来源：`runtime`、`ui`、`api`、`report`

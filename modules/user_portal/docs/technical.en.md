@@ -72,13 +72,21 @@ If a profile write succeeds but the following read fails, the form retains the s
 
 `domain_administration_enabled` defaults to false. Protected personnel/system groups require recent OIDC, an expiring one-use parameter confirmation and the signed-in person's own per-request LDAPS bind and native AD rights. That password is not stored across requests. This is not an MFA or process isolation claim, and the recommended dedicated-bind configuration holds no permanent domain-wide writer credential. AD remains authoritative for custom ACL permissions.
 
+## Interface, languages and account preferences
+
+The front end is plain JavaScript without a build step. `theme.js` runs synchronously before the stylesheet and applies the theme last used in this browser; `i18n.js` holds the interface text in zh-CN, zh-TW, en, ja, ko, fr, de and es; `app.js` renders `#/apps`, `#/account/<profile|security|groups|mail|log>`, `#/admin/users[/<anchor>|/new]` and `#/admin/audit`, and unknown addresses return to `#/apps`. All text is assigned with textContent; the CSP still allows only same-origin scripts and styles. Language matching and catalog text fallback live in internal/appcatalog: Traditional Chinese regions map to zh-TW and fall back to Simplified Chinese first, other added languages fall back to English; catalog content still needs only Chinese and English.
+
+Themes are follow system, light and dark. Colors are CSS variables; in follow-system mode `prefers-color-scheme` switches them live. Workspace and Manage are separate modes; only users with the personnel query action see Manage, whose sidebar lists the administration applications they can open. ⌘K / Ctrl+K opens quick search: applications come from the current authorized catalog, pages follow permissions, and people results only call the existing `/api/users`. Write results show directory, IAM synchronization and application sessions as three steps; password reset and unlock sit in a danger zone with unchanged confirmation and personal verification.
+
+Account preferences (language, theme, category display and up to 24 pinned applications) are saved with `POST /api/me/preferences` and returned in the `preferences` field of `GET /api/me`. Writes require the current session and CSRF and accept only whitelisted fields and values; they need no recent authentication and are not security-audited. Pinned applications are filtered by current authorization on read, and unauthorized names are rejected on save. Anonymous pages use this browser's cache only; after sign-in the account preference wins and updates the cache.
+
 ## Storage, backup and upgrades
 
-The private audit.jsonl belongs to workspace data and requires data backup. Sessions are memory-only. Pending intents appear as unknown; corruption closes writes and preserves the original file. A single process holds the file lock, without database/cache/sync services.
+The private audit.jsonl and `preferences/preferences.json` belong to workspace data and require data backup. Startup creates the preferences directory as 0700 owned by uid 65532; the file is written through a temporary file and an atomic rename, and an unreadable or corrupt file yields default preferences, rejects writes and is never overwritten. Sessions are memory-only. Pending intents appear as unknown; corruption closes writes and preserves the original file. A single process holds the file lock, without database/cache/sync services.
 
 ## Verification
 
-`go test ./modules/user_portal/portal ./modules/user_portal/hook` covers OIDC identity/time binding, policy/AD denial, CSRF, audit failures and no replay. Casdoor hooks/appcatalog are checked together. Server/browser entrypoints, fixed artifacts and per-ID outcomes belong in the paired plan. Unexecuted criteria remain unaccepted.
+`go test ./modules/user_portal/portal ./modules/user_portal/hook` covers OIDC identity/time binding, policy/AD denial, CSRF, audit failures and no replay. Casdoor hooks/appcatalog are checked together. The UI suites `node test-env/playwright/user-portal-ui.test.mjs` and `node test-env/playwright/user-portal-experience.test.mjs` use the production static assets with mocked APIs. Server/browser entrypoints, fixed artifacts and per-ID outcomes belong in the paired plan. Unexecuted criteria remain unaccepted.
 
 ## Current limits
 

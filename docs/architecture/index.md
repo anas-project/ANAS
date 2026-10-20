@@ -15,7 +15,7 @@
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
 | [Samba AD identity anchor](samba-identity-anchor.md) | 当前实现与迁移规范 | 永久身份锚点、PEN OID、schema/ACL 契约与 legacy 单 DC 迁移 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |
-| [应用目录协议](app-catalog-design.md) | 部分实施；第二阶段提案 | Casdoor 主力、保留 LLNG、移除 Authentik；双语元数据与两级分组，第二阶段独立网站，账号首版已确认，另见用户门户设计 |
+| [应用目录协议](app-catalog-design.md) | 部分实施；第二阶段提案 | Casdoor 主力、保留 LLNG、移除 Authentik；多语言元数据（内置中英文必备，八种语言键）与两级分组，第二阶段独立网站，账号首版已确认，另见用户门户设计 |
 | [独立用户门户](user-portal-design.md) | 已实现；审查修复待 finance 复验 | 单服务门户、原生 OIDC/API、LDAPS 受限写入和持久审计；固定制品与本轮审查结果见配套计划 |
 | [门户用户管理、邮箱归属与域级管理](portal-account-mail-administration.md) | 门户管理已实施；邮件后端与个人别名待 PoC | 邮箱字段权威、多地址共箱、用户/管理员资料与分组、自身保护、逐次域操作验证和界面修复 |
 | [动态 DNS 能力](dynamic-dns-capability-design.md) | 当前模型 | DDNS 实现选择、凭据和 Web 认证 |

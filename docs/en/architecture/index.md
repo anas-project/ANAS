@@ -57,7 +57,7 @@ New criteria are tracked separately in
 The [application catalog design](/architecture/app-catalog-design) covers
 non-SSO apps, separate admin interfaces and external config entries. It defines seven PNG icon sizes,
 immutable read-only deployment bundles, names, summaries/details, documentation links, category lists,
-ordering and explicit server-side filtering. Casdoor is the primary target; Authentik was removed on 2026-10-10; LLNG remains available.
+ordering and explicit server-side filtering. Catalog text accepts eight language keys (zh-CN, zh-TW, en, ja, ko, fr, de, es); built-in entries still need Chinese and English. Casdoor is the primary target; Authentik was removed on 2026-10-10; LLNG remains available.
 
 The portal groups authorized entries first into User applications (`kind: user`), then Administration
 (`kind: admin`), with category subgroups inside each. An entry appears once under its first category;

@@ -160,7 +160,7 @@ python3 test-env/scripts/directory-primary-mail-native.py
 - 级别：`e2e`
 - 覆盖需求：`MAIL-R-003`、`MAIL-R-005`、`MAIL-R-006`
 - 需求复核摘要：`sha256:5faf909d01a66e43edcec804eb6d6d4e56cb61d2c9e81bb56723544896eb6095`
-- 实现复核摘要：`sha256:15c55f5146fd0c33a832baebd0f54bebd1674170437eb70a0f13e085ebef6a61`
+- 实现复核摘要：`sha256:9a9072bc8081c7a1382314c2bd0a5d62cd4670ba9c1651b3cf77e980ad9053df`
 - Fixture：原生用例仅使用用户已授权 finance 测试栈的临时 OU/账号；凭据保留在同机私有文件
 - 目标能力：`playwright-chromium`、`casdoor`、`samba`、`private-input`
 - Oracle 来源：`return-value`、`runtime`、`report`

@@ -7,23 +7,38 @@ import (
 	"golang.org/x/text/language"
 )
 
+// SupportedLanguages are the user interface and translation keys. Built-in
+// catalog text still needs only zh-CN and en; the others are optional.
+var SupportedLanguages = []string{"zh-CN", "zh-TW", "en", "ja", "ko", "fr", "de", "es"}
+
 func supportedLanguage(value string) string {
 	tag, err := language.Parse(value)
 	if err != nil {
 		return "en"
 	}
 	base, _ := tag.Base()
-	if base.String() == "en" {
-		return "en"
-	}
-	if base.String() == "zh" {
+	switch base.String() {
+	case "zh":
 		script, _ := tag.Script()
 		region, _ := tag.Region()
-		if script.String() != "Hant" && region.String() != "TW" && region.String() != "HK" && region.String() != "MO" {
-			return "zh-CN"
+		if script.String() == "Hant" || region.String() == "TW" || region.String() == "HK" || region.String() == "MO" {
+			return "zh-TW"
 		}
+		return "zh-CN"
+	case "en", "ja", "ko", "fr", "de", "es":
+		return base.String()
 	}
 	return "en"
+}
+
+// SupportedKey reports whether a translation map may use this language key.
+func SupportedKey(lang string) bool {
+	for _, value := range SupportedLanguages {
+		if value == lang {
+			return true
+		}
+	}
+	return false
 }
 
 // SelectLanguage advances to the next source only when one is absent.
@@ -73,7 +88,12 @@ func SelectLanguage(selected, acceptLanguage, deploymentDefault string) string {
 }
 
 func (text Text) Resolve(lang string) string {
-	for _, candidate := range []string{lang, "en", "zh-CN"} {
+	order := []string{lang, "en", "zh-CN"}
+	if lang == "zh-TW" {
+		// Traditional Chinese readers are closer to Simplified Chinese than English.
+		order = []string{lang, "zh-CN", "en"}
+	}
+	for _, candidate := range order {
 		if value := text[candidate]; value != "" {
 			return value
 		}

@@ -36,7 +36,7 @@ cases:
     level: "e2e"
     requirements: ["GROUPCAT-R-002", "GROUPCAT-R-004", "GROUPCAT-R-005"]
     requirement_digest: "sha256:e20316076465a4f2a2b2bdc5dc32b82a9cf1c095f5f3434786636eb24ca8f9aa"
-    implementation_digest: "sha256:b6a6339e17d53bea8f96866f1b2c2b299408fd4ed57f4ceb651dee30ce73fec2"
+    implementation_digest: "sha256:a41be5d808729f949dc7022ac0d43dc0822588b542d8918c3d41d9c54299a35e"
     fixture: "finance 指定测试服务和不发布端口、无网络、无生产信任的 owner.test 假域"
     capabilities: ["docker", "samba", "playwright", "ldaps"]
     preconditions: ["完整恢复点已验证；候选镜像与原生测试二进制已固定；不在 finance 域创建高权测试身份"]

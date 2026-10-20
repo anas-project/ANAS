@@ -24,6 +24,7 @@ async function fixture(admin=false,delayRefresh=false,creation=false) {
     if(path.startsWith('/static/'))return route.fulfill({contentType:path.endsWith('.js')?'text/javascript':path.endsWith('.svg')?'image/svg+xml':'text/css',body:await readFile(new URL(path.slice(8),directory),'utf8')});
     if(path==='/api/bootstrap')return json({language:url.searchParams.get('lang')==='zh-CN'?'zh-CN':'en',authenticated:true,csrf:me.csrf});
     if(path==='/api/apps')return json({groups:[]});
+    if(path==='/api/me/preferences')return json({preferences:request.postDataJSON()});
     if(path==='/api/me/profile'||path==='/api/administration/execute'){
       saved=true;return json({directory:'saved',audit:'saved',request_id:'saved-write-id'});
     }
@@ -43,11 +44,11 @@ async function fixture(admin=false,delayRefresh=false,creation=false) {
     return route.abort();
   });
   await page.goto(origin);
-  await expect(page.getByRole('heading',{name:'Your workspace'})).toBeVisible();
+  await expect(page.locator('body[data-page=home]')).toHaveCount(1);
   if(admin){
-    await page.getByRole('button',{name:'User management',exact:true}).click();
+    await page.getByRole('link',{name:'Manage',exact:true}).click();
     await page.getByRole('button',{name:'Details',exact:true}).click();
-  }else await page.getByRole('button',{name:'My account',exact:true}).click();
+  }else await page.getByRole('link',{name:'My account',exact:true}).click();
   await page.getByLabel('Given name',{exact:true}).fill('Alicia');
   return {context,page,waiting,releaseRefresh,creationWrites:()=>creationWrites};
 }
@@ -74,7 +75,7 @@ test('a late profile refresh cannot restore the browser account after sign-out',
     releaseRefresh();await (await refreshed).finished();
     // Let the fetch/json handler finish before the language control reads me.
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-    await expect(page.locator('#navigation')).toBeHidden();
+    await expect(page.locator('.bottom-nav')).toHaveCount(0);
     await page.locator('#language').selectOption('zh-CN');
     await expect(page.getByRole('heading',{name:'退出登录',exact:true})).toBeVisible();
     await expect(page.getByRole('link',{name:'返回主页',exact:true})).toBeVisible();
@@ -86,7 +87,7 @@ test('a late profile refresh cannot restore the browser account after sign-out',
 test('creation keeps its one-time password usable and disables repeat submission',async()=>{
   const {context,page,creationWrites}=await fixture(true,false,true);
   try{
-    await page.getByRole('button',{name:'User management',exact:true}).click();
+    await page.getByRole('link',{name:'Manage',exact:true}).click();
     await page.getByRole('button',{name:'New user',exact:true}).click();
     const form=page.locator('form').filter({has:page.locator('input[name=username]')});
     await form.getByLabel('Username',{exact:true}).fill('New.Person');
@@ -125,7 +126,7 @@ for (const language of ['en','zh-CN']) test(`domain ownership confirmation and p
     await expect(result).toContainText(language==='en'?'The owner was not reverted.':'未回退所有者');
     await expect(page.locator('dialog')).toHaveCount(0);
     await page.route('**/api/audit?*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({records:[{time:new Date().toISOString(),action:'groups.member.add',target:'person',directory:'denied',ownership:'saved',membership:'denied'}]})}));
-    await page.getByRole('button',{name:language==='en'?'Security records':'安全记录',exact:true}).click();
+    await page.evaluate(()=>{location.hash='#/account/log';});
     await expect(page.locator('#content table')).toContainText(language==='en'?'Object ownership: Directory saved.':'对象所有权: 目录已保存。');
     await expect(page.locator('#content table')).toContainText(language==='en'?'Group membership: Denied':'组成员关系: 拒绝');
   } finally {await context.close();}
@@ -222,7 +223,7 @@ for(const language of ['en','zh-CN'])test(`${language}: category switch flattens
  const groups=['user','admin'].map(kind=>({id:kind,kind,display_name:kind,categories:[0,1].map(i=>({id:kind+i,display_name:kind+' category '+i,applications:[card(kind+i)]}))}));
  try{
   await page.route('**/api/apps?*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({groups})}));
-  await page.getByRole('button',{name:'Applications',exact:true}).click();
+  await page.evaluate(()=>{location.hash='#/apps';});
   await page.locator('#language').selectOption(language);
   const toggle=page.getByLabel(language==='en'?'Show categories':'显示分类',{exact:true});
   await expect(page.locator('.category-heading')).toHaveCount(4);
@@ -230,8 +231,8 @@ for(const language of ['en','zh-CN'])test(`${language}: category switch flattens
   await expect(page.locator('.category-heading')).toHaveCount(0);
   for(const kind of ['user','admin']){
    const section=page.locator('[data-kind='+kind+']');
-   await expect(section.locator('h2')).toHaveText(kind);
-   await expect(section.locator('.card h3')).toHaveText([kind+'0',kind+'1']);
+   await expect(section.locator('.group-title')).toHaveText(kind);
+   await expect(section.locator('.app-card .app-name')).toHaveText([kind+'0',kind+'1']);
    await expect(section.locator('.cards')).toHaveCount(1);
   }
   await page.reload();
@@ -383,7 +384,7 @@ for(const authenticated of [true,false])test(`cached sign-out results respect a 
   await page.evaluate(status=>sessionStorage.setItem('anas.portal.logout',JSON.stringify({results:[{origin:'iam.example.test',status}]})),authenticated?'signed_out':'failed');
   await page.goto(origin+'/signed-out');
   if(authenticated){
-   await expect(page.getByRole('heading',{name:'Your workspace',exact:true})).toBeVisible();
+   await expect(page.locator('body[data-page=home]')).toHaveCount(1);
    await expect(page.locator('#logout')).toBeVisible();
    await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toHaveCount(0);
    if(new URL(page.url()).pathname!=='/')throw Error('An authenticated session retained the stale result URL');

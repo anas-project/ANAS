@@ -124,7 +124,7 @@ async function pageSession(context,app,allowPassword=false){
   await page.waitForLoadState('domcontentloaded');
   const rejected=report.scenarios.at(-1).documents?.find(d=>d.app==='portal'&&d.path==='/oidc/callback'&&d.status>=400);
   if(rejected)throw Error('Portal native callback rejected: HTTP '+rejected.status);
-  await expect(page.getByRole('heading',{name:'Your workspace',exact:true})).toBeVisible({timeout:120000});
+  await expect(page.locator('body[data-page=home]')).toHaveCount(1,{timeout:120000});
  }else if(app==='nextcloud'){
   await page.goto(origins.nextcloud+'/apps/user_oidc/login/1',{waitUntil:'commit'});
   // The provider already has this user's session. Only select that account;
@@ -180,9 +180,9 @@ try{
      const toggle=page.getByLabel(language==='en'?'Show categories':'显示分类',{exact:true});
      await toggle.waitFor();await page.locator('.card').first().waitFor();
      check(language+': administrator sees both main application groups',await page.locator('[data-kind=user]').count()===1&&await page.locator('[data-kind=admin]').count()===1);
-     const order=await page.locator('.card h3').allTextContents();
+     const order=await page.locator('.app-card .app-name').allTextContents();
      await toggle.uncheck();
-     check(language+': category switch flattens both groups without changing cards',await page.locator('.category-heading').count()===0&&JSON.stringify(await page.locator('.card h3').allTextContents())===JSON.stringify(order));
+     check(language+': category switch flattens both groups without changing cards',await page.locator('.category-heading').count()===0&&JSON.stringify(await page.locator('.app-card .app-name').allTextContents())===JSON.stringify(order));
      await page.reload({waitUntil:'domcontentloaded'});await toggle.waitFor();await page.locator('.card').first().waitFor();
      check(language+': category preference survives a real page reload',!await toggle.isChecked()&&await page.locator('.category-heading').count()===0);
      await toggle.check();check(language+': category headings can be restored',await page.locator('[data-kind=admin] .category-heading').count()>0);
@@ -304,7 +304,7 @@ try{
     const fresh=await browserGet(context,'portal','/api/me');row.explicit_new_login={status:fresh.status,identity_matches:fresh.body.person?.anchor===f.users.manager.anchor};
     check('explicit native login creates a new portal session',fresh.status===200&&row.explicit_new_login.identity_matches);
     await logoutPage.reload({waitUntil:'domcontentloaded'});
-    await expect(logoutPage.getByRole('heading',{name:'Your workspace',exact:true})).toBeVisible();
+    await expect(logoutPage.locator('body[data-page=home]')).toHaveCount(1);
     check('old exit tab cannot report success for a new authenticated session',new URL(logoutPage.url()).pathname==='/'&&await logoutPage.getByRole('button',{name:'Sign out',exact:true}).isVisible());
    }
    row.status=row.checks.every(c=>c.pass)?'passed':'failed';

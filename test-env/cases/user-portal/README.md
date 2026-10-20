@@ -27,7 +27,7 @@
 - 级别：`unit`
 - 覆盖需求：`PORTAL-R-002`、`PORTAL-R-003`、`PORTAL-R-004`、`PORTAL-R-005`、`PORTAL-R-006`、`PORTAL-R-007`、`PORTAL-R-012`、`PORTAL-R-016`、`PORTAL-R-018`、`PORTAL-R-025`、`PORTAL-R-035`、`PORTAL-R-037`、`PORTAL-R-038`、`PORTAL-R-039`、`PORTAL-R-032`、`PORTAL-R-034`、`PORTAL-R-041`、`PORTAL-R-080`、`PORTAL-R-082`
 - 需求复核摘要：`sha256:23340dee7cad104e1dce4d618193987f96a0d5d822ad45c3f5e32bf5fe6c29b2`
-- 实现复核摘要：`sha256:5cc5ea5a91d9fed6246a1d818952c4220505fbfa6f292650e5038dfdbc8854b9`
+- 实现复核摘要：`sha256:44d9a4f54ae2e8b5bd1f7e303fd213b512b5b80ef34259f00c977644fbe495aa`
 - Fixture：固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号
 - 目标能力：`go`、`https-test-server`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
@@ -74,7 +74,7 @@ go test ./modules/user_portal/portal ./modules/user_portal/hook ./modules/user_p
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-001`、`PORTAL-R-002`、`PORTAL-R-003`、`PORTAL-R-004`、`PORTAL-R-005`、`PORTAL-R-006`、`PORTAL-R-007`、`PORTAL-R-008`、`PORTAL-R-010`、`PORTAL-R-011`、`PORTAL-R-018`、`PORTAL-R-019`、`PORTAL-R-020`、`PORTAL-R-021`、`PORTAL-R-022`、`PORTAL-R-023`、`PORTAL-R-024`、`PORTAL-R-025`、`PORTAL-R-027`、`PORTAL-R-028`、`PORTAL-R-029`、`PORTAL-R-030`、`PORTAL-R-031`、`PORTAL-R-032`、`PORTAL-R-033`、`PORTAL-R-034`、`PORTAL-R-039`、`PORTAL-R-041`
 - 需求复核摘要：`sha256:3ee2efcaee7b757199d830f3404a93554a36338409a1d77dc699bb3834e857bc`
-- 实现复核摘要：`sha256:1bde314437568f682801ed5822206fc5bd74bc26e8df064595ecfeff28a3fc30`
+- 实现复核摘要：`sha256:2e0c5d05db721e363b60897add96119e8c063646c8e90a9140eca5f0b426ef1c`
 - Fixture：固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号
 - 目标能力：`go`、`oidc`、`ldaps`、`casdoor`、`private-docker`
 - Oracle 来源：`ui`、`api`、`runtime`、`report`
@@ -126,7 +126,7 @@ node test-env/playwright/user-portal-e2e.mjs
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-007`、`PORTAL-R-020`、`PORTAL-R-025`、`PORTAL-R-026`、`PORTAL-R-032`、`PORTAL-R-034`、`PORTAL-R-035`、`PORTAL-R-036`、`PORTAL-R-037`、`PORTAL-R-038`、`PORTAL-R-039`
 - 需求复核摘要：`sha256:a34c0af1019dc8e6a77336f03b3e8ad18e3953b8af227a01d6a1e97c1069b5c1`
-- 实现复核摘要：`sha256:64d996f4f941ee7299d2e5bbeba569839741f2c88fba47a6d5bd7e434b38937a`
+- 实现复核摘要：`sha256:3fc7fecda3c5e565e766b80204b6db17addb5bd2c1fa43a00ceb707d2798e4cb`
 - Fixture：固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号
 - 目标能力：`go`、`oidc`、`ldaps`、`casdoor`、`private-docker`
 - Oracle 来源：`api`、`network`、`filesystem`、`runtime`、`report`
@@ -180,7 +180,7 @@ python3 test-env/scripts/user-portal-runtime-fault.py $PORTAL_TEST_REMOTE_ROOT a
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-002`、`PORTAL-R-003`、`PORTAL-R-030`
 - 需求复核摘要：`sha256:8b486f828f28db2c032c93545e4585a737c6f714c2487dd485886cf1312097b7`
-- 实现复核摘要：`sha256:1bde314437568f682801ed5822206fc5bd74bc26e8df064595ecfeff28a3fc30`
+- 实现复核摘要：`sha256:2e0c5d05db721e363b60897add96119e8c063646c8e90a9140eca5f0b426ef1c`
 - Fixture：固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号
 - 目标能力：`go`、`oidc`、`ldaps`、`casdoor`、`private-docker`
 - Oracle 来源：`api`、`runtime`、`report`
@@ -284,7 +284,7 @@ go test ./modules/user_portal/portal -tags portal_native -run TestNativeDirector
 - 级别：`unit`
 - 覆盖需求：`PORTAL-R-045`、`PORTAL-R-046`、`PORTAL-R-048`、`PORTAL-R-049`、`PORTAL-R-050`、`PORTAL-R-051`、`PORTAL-R-052`、`PORTAL-R-053`、`PORTAL-R-055`、`PORTAL-R-056`、`PORTAL-R-057`、`PORTAL-R-058`、`PORTAL-R-059`、`PORTAL-R-062`、`PORTAL-R-063`、`PORTAL-R-064`、`PORTAL-R-065`、`PORTAL-R-066`、`PORTAL-R-067`、`PORTAL-R-069`、`PORTAL-R-073`、`PORTAL-R-071`、`PORTAL-R-072`、`PORTAL-R-075`、`PORTAL-R-076`、`PORTAL-R-077`、`PORTAL-R-081`
 - 需求复核摘要：`sha256:92dfd8f76d9f7e9fdfb575194893bf68123072c7001d13e1b23b999c8cc8919a`
-- 实现复核摘要：`sha256:fb091fab014a23ad8f1b31f1c698698a20a037835363edd98efed5b3c764b5b6`
+- 实现复核摘要：`sha256:a78cd0d7e651cae3d3bc4125d6607589d9085cd51c976690ae2623392cd136e5`
 - Fixture：内存目录与 HTTPS 服务、无 Samba 写入的配置守卫和生产静态资源配模拟 API；不使用真实账号
 - 目标能力：`go`、`https-test-server`、`python3`、`playwright-chromium`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
@@ -336,7 +336,7 @@ node test-env/playwright/user-portal-ui.test.mjs
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-042`、`PORTAL-R-077`、`PORTAL-R-044`、`PORTAL-R-045`、`PORTAL-R-046`、`PORTAL-R-047`、`PORTAL-R-048`、`PORTAL-R-049`、`PORTAL-R-050`、`PORTAL-R-051`、`PORTAL-R-052`、`PORTAL-R-053`、`PORTAL-R-054`、`PORTAL-R-055`、`PORTAL-R-056`、`PORTAL-R-057`、`PORTAL-R-058`、`PORTAL-R-059`、`PORTAL-R-060`、`PORTAL-R-062`、`PORTAL-R-063`、`PORTAL-R-064`、`PORTAL-R-065`、`PORTAL-R-066`、`PORTAL-R-067`、`PORTAL-R-069`、`PORTAL-R-073`、`PORTAL-R-071`、`PORTAL-R-072`、`PORTAL-R-075`、`PORTAL-R-076`
 - 需求复核摘要：`sha256:34f48dfb6867e20c12750f4d1f7f86756462509462843d61038b06c02e1fa301`
-- 实现复核摘要：`sha256:9cb2a7c382bd43f90c59c587ebd96fd73eba4749ec7609bca6deeaaf554c3046`
+- 实现复核摘要：`sha256:491cad85de2e7080d2cb9828989016924cf719e5549ee7f4ac14e578a3518ee0`
 - Fixture：本轮固定候选；finance 仅使用带专属标记和稳定标识的测试人员/组，不修改已有人员密码或成员关系
 - 目标能力：`oidc`、`ldaps`、`casdoor`、`private-browser`
 - Oracle 来源：`ui`、`api`、`runtime`、`report`
@@ -389,7 +389,7 @@ node test-env/playwright/user-portal-account-management.mjs
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-055`、`PORTAL-R-057`、`PORTAL-R-068`
 - 需求复核摘要：`sha256:343b85b4a48ed846aa64633ed4c545a54ac6fedae2b5b8d1cd50742d5d518b03`
-- 实现复核摘要：`sha256:8f1233e0816793da5bb6e23e7a1fe67fa664295342cf0e8b3b2f68c05944e0fe`
+- 实现复核摘要：`sha256:ea95e890d77d6ae9bd06432cb9d5f49632768354857c5264311d3a6357ad09d0`
 - Fixture：完全断网的 owner.test 假域，无生产信任或现有目录凭据；使用本轮生产 Go 适配器
 - 目标能力：`go`、`docker`、`openssl`、`python3`、`ldaps`
 - Oracle 来源：`return-value`、`api`、`runtime`、`report`
@@ -447,7 +447,7 @@ go test ./modules/user_portal/portal -run 'TestDomainOwnershipSteps|TestOwnerDes
 - 级别：`contract`
 - 覆盖需求：`PORTAL-R-069`、`PORTAL-R-073`、`PORTAL-R-071`、`PORTAL-R-072`、`PORTAL-R-075`、`PORTAL-R-076`
 - 需求复核摘要：`sha256:7ef1fe16a6ee2f6c67f4aeef704c6b6f1f2d2d2fba2ebacd870111a909717de2`
-- 实现复核摘要：`sha256:d2ef89f0bc84540872e3871ee108f354fa5c4014525c67e5ec801f896916900d`
+- 实现复核摘要：`sha256:8f6f512c25ce0b297639d532f735c8beb15af289368e5d70d6f5ab49a6d099d2`
 - Fixture：生产前端加隔离模拟 API 和 Go 目录替身
 - 目标能力：`go`、`playwright`
 - Oracle 来源：`ui`、`api`、`error-contract`
@@ -494,7 +494,7 @@ node test-env/playwright/user-portal-ui.test.mjs
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-041`、`PORTAL-R-076`、`PORTAL-R-077`、`PORTAL-R-078`、`PORTAL-R-079`、`PORTAL-R-081`、`PORTAL-R-082`
 - 需求复核摘要：`sha256:053624282c344e97349ee104d7e8fa3497eacb04e6243bda42adda146c31d029`
-- 实现复核摘要：`sha256:52c8483d9b199bf152b54fe3627f7733ca0cca3b2a0de008710b5b06dfcc71b7`
+- 实现复核摘要：`sha256:1cace75951256f5177cbc1188bba7f0513163939234e8d75e0b1fbe89eaec1db`
 - Fixture：finance 已授权测试栈的新前缀人员；独立 Chromium/Chrome 上下文和显式记录的正常域名/SSH 入口；浏览器可为本机或已授权 LN 临时工具容器，服务目标始终是 finance，不使用真实账号或注入认证状态
 - 目标能力：`playwright-chromium`、`casdoor`、`nextcloud`、`immich`、`private-input`
 - Oracle 来源：`ui`、`api`、`runtime`、`report`

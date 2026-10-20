@@ -23,39 +23,10 @@ func prepareStorage(path string) error {
 		return errors.New("audit mount unavailable")
 	}
 	defer unix.Close(fd)
-	if err := unix.Mkdirat(fd, "audit", 0700); err != nil && err != unix.EEXIST {
-		return err
-	}
-	audit, err := unix.Openat(fd, "audit", unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
-	if err != nil {
-		return err
-	}
-	defer unix.Close(audit)
-	var stat unix.Stat_t
-	if err := unix.Fstat(audit, &stat); err != nil {
-		return err
-	}
-	if stat.Uid == 0 {
-		writable, err := unix.Openat(fd, "audit", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
-		if err != nil {
+	for _, name := range []string{"audit", "preferences"} {
+		if err := privateDirectory(fd, name); err != nil {
 			return err
 		}
-		defer unix.Close(writable)
-		var opened unix.Stat_t
-		if err := unix.Fstat(writable, &opened); err != nil || opened.Ino != stat.Ino || opened.Dev != stat.Dev {
-			return errors.New("audit directory changed during bootstrap")
-		}
-		if err := unix.Fchmod(writable, 0700); err != nil {
-			return err
-		}
-		if err := unix.Fchown(writable, 65532, 65532); err != nil {
-			return err
-		}
-		if err := unix.Fsync(writable); err != nil {
-			return err
-		}
-	} else if stat.Uid != 65532 || stat.Mode&0777 != 0700 {
-		return errors.New("unsafe audit directory owner or mode")
 	}
 	if err := unix.Fsync(fd); err != nil {
 		return err
@@ -67,4 +38,44 @@ func prepareStorage(path string) error {
 		return err
 	}
 	return unix.Setuid(65532)
+}
+
+// privateDirectory creates or verifies one 0700 directory owned by the
+// unprivileged portal user inside the fixed data mount.
+func privateDirectory(fd int, name string) error {
+	if err := unix.Mkdirat(fd, name, 0700); err != nil && err != unix.EEXIST {
+		return err
+	}
+	dir, err := unix.Openat(fd, name, unix.O_PATH|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dir)
+	var stat unix.Stat_t
+	if err := unix.Fstat(dir, &stat); err != nil {
+		return err
+	}
+	if stat.Uid == 0 {
+		writable, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+		if err != nil {
+			return err
+		}
+		defer unix.Close(writable)
+		var opened unix.Stat_t
+		if err := unix.Fstat(writable, &opened); err != nil || opened.Ino != stat.Ino || opened.Dev != stat.Dev {
+			return errors.New(name + " directory changed during bootstrap")
+		}
+		if err := unix.Fchmod(writable, 0700); err != nil {
+			return err
+		}
+		if err := unix.Fchown(writable, 65532, 65532); err != nil {
+			return err
+		}
+		if err := unix.Fsync(writable); err != nil {
+			return err
+		}
+	} else if stat.Uid != 65532 || stat.Mode&0777 != 0700 {
+		return errors.New("unsafe " + name + " directory owner or mode")
+	}
+	return nil
 }

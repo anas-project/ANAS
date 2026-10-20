@@ -39,7 +39,7 @@ func (s *Server) page(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/static/")
-	if name != "app.js" && name != "style.css" && name != "chevron-down.svg" {
+	if name != "app.js" && name != "i18n.js" && name != "theme.js" && name != "style.css" && name != "chevron-down.svg" {
 		failure(w, 404, "not_found")
 		return
 	}
@@ -48,7 +48,7 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		failure(w, 404, "not_found")
 		return
 	}
-	if name == "app.js" {
+	if strings.HasSuffix(name, ".js") {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	} else if name == "chevron-down.svg" {
 		w.Header().Set("Content-Type", "image/svg+xml")

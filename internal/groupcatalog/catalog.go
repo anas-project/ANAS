@@ -107,7 +107,7 @@ func ValidateDeclaration(d Declaration) error {
 	}
 	for _, t := range []Text{d.DisplayName, d.Description} {
 		for lang, v := range t {
-			if lang != "en" && lang != "zh-CN" || len(v) > 4096 {
+			if !appcatalog.SupportedKey(lang) || len(v) > 4096 {
 				return fmt.Errorf("invalid group translation")
 			}
 		}

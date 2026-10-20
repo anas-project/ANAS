@@ -32,7 +32,7 @@ func TestPublicPKCERegistrationAndDefaultPortOrigin(t *testing.T) {
 }
 
 func TestLanguageInheritanceAndUnsupportedFallback(t *testing.T) {
-	for _, tc := range []struct{ selected, inherited, want string }{{"", "zh-CN", "zh-CN"}, {"fr", "zh-CN", "en"}, {"zh-CN", "en", "zh-CN"}, {"", "", "en"}} {
+	for _, tc := range []struct{ selected, inherited, want string }{{"", "zh-CN", "zh-CN"}, {"ru", "zh-CN", "en"}, {"fr-CA", "zh-CN", "fr"}, {"", "zh-Hant-TW", "zh-TW"}, {"zh-CN", "en", "zh-CN"}, {"", "", "en"}} {
 		r := request{Phase: "calculate", Env: map[string]string{"ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA": "casdoor-account/v1", "USER_PORTAL_LANGUAGE": tc.selected, "DEFAULT_LANGUAGE": tc.inherited, "USER_PORTAL_DOMAIN_PREFIX": "portal", "BASE_DOMAIN": "example.net", "TRAEFIK_BASE_PORT": "443", "ANAS_IAM_BINDING__USER_PORTAL__INTERFACE": "oidc", "ANAS_IAM_BINDING__USER_PORTAL__OIDC_ISSUER_URL": "https://iam.example.net"}}
 		out, err := handle(r)
 		if err != nil || out.Env["USER_PORTAL_LANGUAGE"] != tc.want {
