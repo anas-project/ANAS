@@ -10,6 +10,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/anas-project/ANAS/internal/apptheme"
 )
 
 const Schema = "anas.app-catalog/v1"
@@ -88,6 +90,8 @@ type Config struct {
 	Categories []Category          `yaml:"categories"`
 	Overrides  map[string]Override `yaml:"overrides"`
 	Entries    []Declaration       `yaml:"entries"`
+	IconTheme  string              `yaml:"icon_theme"`
+	ThemeFile  string              `yaml:"theme_file"`
 }
 
 type Consumer struct {
@@ -111,20 +115,25 @@ type Icon struct {
 
 type Application struct {
 	Metadata
-	Enabled    bool            `json:"enabled"`
-	Access     Access          `json:"access"`
-	Visibility Visibility      `json:"visibility"`
-	Groups     []string        `json:"groups"`
-	Icons      map[string]Icon `json:"icons"`
-	Source     Source          `json:"source"`
+	Enabled       bool            `json:"enabled"`
+	Access        Access          `json:"access"`
+	Visibility    Visibility      `json:"visibility"`
+	Groups        []string        `json:"groups"`
+	Icons         map[string]Icon `json:"icons"`
+	OriginalIcons map[string]Icon `json:"original_icons,omitempty"`
+	Source        Source          `json:"source"`
 }
 
 type Catalog struct {
-	Schema          string        `json:"schema"`
-	Languages       []string      `json:"languages"`
-	DefaultLanguage string        `json:"default_language"`
-	Categories      []Category    `json:"categories"`
-	Applications    []Application `json:"applications"`
+	Schema          string                          `json:"schema"`
+	Languages       []string                        `json:"languages"`
+	DefaultLanguage string                          `json:"default_language"`
+	Categories      []Category                      `json:"categories"`
+	Applications    []Application                   `json:"applications"`
+	IconTheme       string                          `json:"icon_theme,omitempty"`
+	ThemeName       Text                            `json:"theme_name,omitempty"`
+	ThemeColors     map[string]apptheme.Palette     `json:"theme_colors,omitempty"`
+	ThemeSources    map[string]apptheme.Attribution `json:"theme_sources,omitempty"`
 }
 
 // Input is resolved by Runner from actual execution-point authorization facts.
@@ -279,7 +288,10 @@ func ValidateDeclaration(d Declaration, builtin bool) error {
 			}
 		}
 	case "authenticated":
-		if d.Kind != "user" || (d.Access.Mode != "local" && d.Access.Mode != "external") || len(d.Visibility.AnyOf) > 0 {
+		// A hidden IAM entry supplies branding for an ungated login client,
+		// such as the portal itself. It cannot become a visible directory card.
+		hiddenIAM := d.Hidden && d.Access.Mode == "iam"
+		if d.Kind != "user" || (!hiddenIAM && d.Access.Mode != "local" && d.Access.Mode != "external") || len(d.Visibility.AnyOf) > 0 {
 			return fmt.Errorf("authenticated visibility is only for local/external user entries without an ANAS gate")
 		}
 	default:
@@ -302,6 +314,16 @@ func validateCategory(c Category, builtin bool) error {
 }
 
 func (c Config) Validate() error {
+	if c.IconTheme != "" && c.IconTheme != "original" && c.IconTheme != "soft" && c.IconTheme != "custom" {
+		return fmt.Errorf("icon_theme must be original, soft or custom")
+	}
+	if c.IconTheme == "custom" {
+		if err := validateAssetPath(c.ThemeFile); err != nil {
+			return fmt.Errorf("theme_file: %w", err)
+		}
+	} else if c.ThemeFile != "" {
+		return fmt.Errorf("theme_file requires icon_theme custom")
+	}
 	seen := map[string]bool{}
 	for _, category := range c.Categories {
 		if seen[category.ID] {
@@ -439,6 +461,9 @@ func Compile(config Config, inputs []Input, configRoot, defaultLanguage string) 
 		}
 		if app.Enabled && app.Visibility.Mode != "authenticated" && len(app.Groups) == 0 {
 			return Catalog{}, nil, fmt.Errorf("application %s resolved to an empty allow list", app.Name)
+		}
+		if app.Access.Mode == "iam" && app.Visibility.Mode == "authenticated" && !app.Hidden {
+			return Catalog{}, nil, fmt.Errorf("ungated IAM branding entry must remain hidden")
 		}
 		value := Weight(app.Weight)
 		app.Weight = &value

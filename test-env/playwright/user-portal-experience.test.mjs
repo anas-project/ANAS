@@ -206,13 +206,15 @@ test('the whole card opens the declared entry in a new window and documentation 
   }finally{await context.close();}
 });
 
-test('write results show directory, IAM and application session steps separately',async()=>{
+test('write results show only the confirmed operation outcome',async()=>{
   const {context,page}=await portal();
   try{
     await page.goto(origin+'/#/account/profile');await ready(page,'account-profile');
     await page.getByRole('button',{name:'Save',exact:true}).click();
-    const steps=page.locator('.form-result .steps .step');await expect(steps).toHaveCount(3);
-    await expect(steps).toHaveText(['Directory: saved','IAM sync: pending','Application sessions: not verified']);
+    await expect(page.locator('.form-result')).toContainText('Saved.');
+    await expect(page.locator('.form-result .steps')).toHaveCount(0);
+    await expect(page.locator('.form-result')).not.toContainText('IAM');
+    await expect(page.locator('.form-result')).not.toContainText('Application sessions');
   }finally{await context.close();}
 });
 
@@ -242,4 +244,31 @@ test('no page scrolls horizontally at 390px and navigation sits at the bottom',a
       }
     }finally{await context.close();}
   }
+});
+
+// TEST_CASES: APPTHEME-T-007
+test('sign-in passes the current resolved color mode to the native IAM page',async()=>{
+ for(const [stored,scheme,want] of [['system','dark','dark'],['system','light','default'],['dark','light','dark'],['light','dark','default']]){
+  const {context,page}=await portal({authenticated:false,scheme,storage:{'anas.portal.theme':stored}});
+  try{
+   await page.goto(origin);await ready(page,'login');
+   await page.route('**/login?theme=*',route=>route.fulfill({contentType:'text/html',body:'native login handoff'}));
+   await page.getByRole('link',{name:'Sign in',exact:true}).click();
+   await expect(page).toHaveURL(origin+'/login?theme='+want);
+  }finally{await context.close();}
+ }
+});
+
+test('password success removes unobserved status rows and keeps a sign-in action',async()=>{
+ const {context,page}=await portal({authenticated:false});
+ try{
+  await page.route('**/api/password/recover*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({directory:'saved',iam:'pending',external_sessions:'unverified',audit:'saved',reauthenticate:true})}));
+  await page.goto(origin+'/#/recover');await ready(page,'recover');
+  await page.locator('[name=username]').fill('alice');await page.locator('[name=old_password]').fill('Old-test-123!');await page.locator('[name=new_password]').fill('New-test-456!');await page.locator('[name=confirm_password]').fill('New-test-456!');
+  await page.locator('form button[type=submit]').click();
+  await expect(page.locator('.form-result')).toContainText('Password changed.');
+  await expect(page.locator('.form-result .steps')).toHaveCount(0);
+  await expect(page.locator('.form-result')).not.toContainText('IAM');
+  await expect(page.locator('.form-result a')).toHaveAttribute('href','/login');
+ }finally{await context.close();}
 });

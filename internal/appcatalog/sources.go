@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+
+	"github.com/anas-project/ANAS/internal/apptheme"
 )
 
 // SourcesDigest binds configuration-relative files to the reviewed plan. Module
 // files are included too, although the release bundle also covers those.
 func SourcesDigest(config Config, inputs []Input, configRoot string) (string, error) {
 	records := []AssetSource{}
+	theme, err := ConfiguredTheme(config, configRoot)
+	if err != nil {
+		return "", err
+	}
+	var canonical []byte
+	if config.IconTheme == "custom" {
+		canonical, err = apptheme.Canonical(theme)
+	} else {
+		canonical, err = apptheme.BuiltinPackage(theme.ID)
+	}
+	if err != nil {
+		return "", err
+	}
+	records = append(records, AssetSource{Application: "theme", Path: "theme:" + theme.ID, SHA256: apptheme.Digest(canonical)})
 	for _, input := range inputs {
 		icons := input.Icons
 		root := input.Root

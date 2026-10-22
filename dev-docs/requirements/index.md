@@ -4,6 +4,7 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [应用图标与可导入主题](application-themes.md) | 全部内置应用图标、两套内置主题、管理员导入、个人选择与Casdoor全站默认 | 16/16 已完成 |
 | [分组共享清单](identity-group-catalog.md) | Module 声明、共享只读清单、Samba 同源建组与门户介绍 | 6/6 已完成 |
 | [目录主邮箱与门户建号](directory-primary-email.md) | 系统生成主邮箱、独立邮箱后缀、指定人员 OU、原生创建与已有地址迁移 | 7/7 已完成 |
 | [relational_database 扩展生命周期要求](relational-database-extensions.md) | 最小 PostgreSQL 扩展声明、固定版本、权限和就绪、受控升级与 ANAS 恢复 | 19/19 已完成 |

@@ -98,6 +98,7 @@ func main() {
 	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.CreateBindDN, c.UsersDN, c.MailDomain, c.UPNSuffix, c.ManagedGroups})
 	digest := sha256.Sum256(policy)
 	s := &Server{config: c, oidc: o, directory: directory, audit: journal, catalog: catalog, store: newStore(), limiter: newLimiter(), preferences: openPreferences(filepath.Join(filepath.Dir(c.AuditDir), "preferences")), peers: peers, digest: hex.EncodeToString(digest[:])}
+	s.themes = openThemes(filepath.Join(filepath.Dir(c.AuditDir), "themes"))
 	httpServer := &http.Server{Addr: ":8080", Handler: s.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()

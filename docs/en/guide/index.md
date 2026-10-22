@@ -9,3 +9,5 @@ This section covers an existing ANAS workspace:
 - [Complete task guide](usage.md)
 
 Machine-readable output, exit codes, and field definitions belong to the [CLI JSON contracts](/en/reference/contracts/), not to task-oriented guides.
+
+- [Application icons and themes](application-themes.md): personal choices, administrator imports and Casdoor site defaults.

@@ -76,7 +76,7 @@ Hook 仅发布自己的 ANAS_IAM_CLIENT__USER_PORTAL__ 注册，PUBLIC_CLIENT �
 
 前端是无构建步骤的原生 JavaScript：`theme.js` 在样式之前同步执行，先套用本浏览器上次的主题；`i18n.js` 保存 zh-CN、zh-TW、en、ja、ko、fr、de、es 八种界面文字；`app.js` 按 `#/apps`、`#/account/<profile|security|groups|mail|log>`、`#/admin/users[/<anchor>|/new]`、`#/admin/audit` 渲染页面，未知地址回到 `#/apps`。全部文本以 textContent 写入，CSP 仍只允许同源脚本和样式。语言匹配与目录文本回退由 internal/appcatalog 统一完成：繁体地区归 zh-TW 并先回退简体中文，其他新增语言回退英文；目录内容仍只要求中英文完整。
 
-主题有跟随系统、浅色、深色三种，颜色全部是 CSS 变量，跟随系统时由 `prefers-color-scheme` 实时切换。工作台与管理模式分开；只有拥有人员查询动作的用户看到“管理”，管理侧栏列出其有权访问的后台应用。⌘K / Ctrl+K 打开快速搜索：应用来自当前授权目录，页面按权限列出，人员结果只调用现有 `/api/users`。写结果分三段显示目录、IAM 同步和应用会话；重置密码与解锁位于危险操作区，确认与本人验证不变。
+主题有跟随系统、浅色、深色三种，颜色全部是 CSS 变量，跟随系统时由 `prefers-color-scheme` 实时切换。工作台与管理模式分开；只有拥有人员查询动作的用户看到“管理”，管理侧栏列出其有权访问的后台应用。⌘K / Ctrl+K 打开快速搜索：应用来自当前授权目录，页面按权限列出，人员结果只调用现有 `/api/users`。写操作只展示可确认的结果，改密成功提示用新密码登录，保留失败和部分结果，不展示未跟踪的IAM或会话状态；重置密码与解锁位于危险操作区，确认与本人验证不变。
 
 账号偏好（语言、主题、分类显示、最多 24 个常用应用）通过 `POST /api/me/preferences` 保存，`GET /api/me` 的 `preferences` 返回。写入要求当前会话与 CSRF，字段和取值使用白名单，不要求近期认证、不写安全审计。常用列表在返回时按当前授权过滤，保存时拒绝未授权名称。未登录页面只用本浏览器缓存；登录后账号偏好覆盖并更新缓存。
 
@@ -147,3 +147,18 @@ ANAS 管理员角色组（含嵌套继承该角色的组）的加入和移出需
 重载退出结果页时，若 bootstrap 已确认新的门户登录，页面清除旧退出结果并返回应用页；匿名会话仍保留部分失败结果和重试入口。缓存不能覆盖当前认证状态。
 
 原生 IAM 后台退出通知若在 bootstrap 与退出请求之间撤销门户会话，前端仅在退出 API 明确返回 403 `csrf_rejected`（尚未执行退出）时，重新获取 CSRF 并重试一次。重复拒绝、5xx 或网络未知不自动重放；该恢复不适用于资料、密码、建号或分组写入。
+
+### 应用图标主题
+
+`theme` 继续表示系统/浅色/深色；账号偏好的 `icon_theme` 独立选择图标主题，空值跟随全站默认。内置 `original` 保留原图，`soft` 是简约几何风格。个人设置不修改 Casdoor。全站默认从 `application_catalog.icon_theme` 冻结到现有共享目录，Casdoor 继续使用原生 Application.logo。
+
+当前 ANAS 管理员可在 `#/admin/themes` 导入和导出数据主题包，导入要求 CSRF 与近期认证；导入后全站可选，不自动改变任何偏好或执行 apply。协议为 `anas.application-theme/v1`，仅接受名称、允许的十六进制配色、PNG 字节及出处；拒绝任意 CSS/脚本/SVG/外链图片和未知字段。每图512–2048px正方形、最多2MiB；每包最多32MiB、128图，私有库最多8个导入主题且总计32MiB。正文与背景等文字配对要求至少4.5:1对比度。
+
+`GET /api/themes` 只返回主题显示信息，不含应用全集。`GET /api/assets/{name}/{size}?theme=ID` 先验证所属应用当前权限再读取主题图；缺图保留原图，失效选择回退全站默认并在设置页提示。`GET /api/themes/{id}/export` 只允许管理员读取完整包；配置冻结而不在可写库中的全站主题不提供下载。`themes/*.json` 与偏好一样保存在私有数据卷，0700目录/0600文件，原子写入，重启读取；同名不同内容拒绝覆盖，损坏文件保留但不列为可用。
+
+图标来源、共享制品及管理员设置方式见[主题指南](/guide/application-themes)。新增验证入口为 `node scripts/application-themes.mjs --check`、`go test ./internal/apptheme ./internal/appcatalog ./modules/user_portal/portal ./modules/casdoor/hook` 和 `node --test test-env/playwright/application-themes.test.mjs`；真实主机结论仍以跨Module配套计划为准。
+
+### 原生 IAM 登录外观与改密入口
+
+从门户点击登录会将当时的明暗模式传为 Casdoor 原生 `theme=dark/default`；系统模式在点击时解析，已打开的 IAM 标签页不会实时跟随。门户以 `hidden: true` 的专属品牌声明给 IAM 登录及再次验证页提供512px圆角logo，不增加可见自链或准入组。
+Casdoor 的 ANAS 目录登录页提供“首次／到期改密 · Set new password”，通过原生 `forgetUrl` 跳到门户 `/#/recover`。该页验证旧/临时密码后写入 AD；本地恢复管理员保留 Casdoor 原生找回页面。Samba强制改密会先拒绝LDAP登录，首期不承诺IAM自动弹出改密、不新增Casdoor补丁或目录授权。

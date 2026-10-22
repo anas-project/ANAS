@@ -1,0 +1,399 @@
+<!-- Generated from cases.yml by cmd/gen-test-case-docs. DO NOT EDIT. -->
+
+# 应用图标与可导入主题验收用例
+
+> 需求来源：[`application-themes.md`](../../../dev-docs/requirements/application-themes.md)
+>
+> 实施计划：[`application-themes.md`](../../../dev-docs/plans/archived/application-themes.md)
+> 本文由同目录 `cases.yml` 生成；修改用例后运行 `go run ./cmd/gen-test-case-docs`。
+
+## 覆盖总览
+
+| 用例 ID | 级别 | 需求 ID | 实现 |
+| --- | --- | --- | --- |
+| `APPTHEME-T-001` | unit | `APPTHEME-R-002`、`APPTHEME-R-003`、`APPTHEME-R-005`、`APPTHEME-R-015` | internal/apptheme/theme_test.go |
+| `APPTHEME-T-002` | contract | `APPTHEME-R-001`、`APPTHEME-R-002`、`APPTHEME-R-003` | scripts/application-themes.mjs |
+| `APPTHEME-T-003` | unit | `APPTHEME-R-004`、`APPTHEME-R-006`、`APPTHEME-R-007`、`APPTHEME-R-008`、`APPTHEME-R-009`、`APPTHEME-R-010`、`APPTHEME-R-013` | modules/user_portal/portal/themes_test.go |
+| `APPTHEME-T-004` | contract | `APPTHEME-R-009`、`APPTHEME-R-011`、`APPTHEME-R-012`、`APPTHEME-R-015` | internal/appcatalog/themes_test.go<br>modules/casdoor/hook/themes_test.go<br>internal/appcatalog/catalog_test.go<br>internal/runner/application_catalog_test.go |
+| `APPTHEME-T-005` | unit | `APPTHEME-R-003`、`APPTHEME-R-008`、`APPTHEME-R-009`、`APPTHEME-R-013`、`APPTHEME-R-014` | test-env/playwright/application-themes.test.mjs |
+| `APPTHEME-T-006` | e2e | `APPTHEME-R-003`、`APPTHEME-R-004`、`APPTHEME-R-007`、`APPTHEME-R-008`、`APPTHEME-R-010`、`APPTHEME-R-011`、`APPTHEME-R-013`、`APPTHEME-R-014` | test-env/playwright/application-themes-finance.mjs<br>test-env/scripts/application-themes-directory-fixture.py |
+| `APPTHEME-T-007` | unit | `APPTHEME-R-016` | modules/user_portal/portal/oidc_theme_test.go<br>test-env/playwright/user-portal-experience.test.mjs |
+| `APPTHEME-T-008` | e2e | `APPTHEME-R-011`、`APPTHEME-R-015`、`APPTHEME-R-016` | test-env/playwright/iam-appearance-finance.mjs<br>test-env/scripts/application-themes-directory-fixture.py |
+
+## `APPTHEME-T-001` 数据主题协议与两套内置包
+
+- 级别：`unit`
+- 覆盖需求：`APPTHEME-R-002`、`APPTHEME-R-003`、`APPTHEME-R-005`、`APPTHEME-R-015`
+- 需求复核摘要：`sha256:0d7e94b9b64d787ba0d3d0aa8fffcb19aef26376823f51b64e4a5386c496bf43`
+- 实现复核摘要：`sha256:cce0c24cd5cc8db478b94ff72674336dee8dff3c6f5eca8932882232c02b0332`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`go`
+- Oracle 来源：`return-value`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：绕过Validate、去掉尺寸/字段/对比度检查会使拒绝断言失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 合法包可重读、归一和生成七档PNG；拒绝未知字段、脚本、外链、SVG、越界图片和颜色；两套包完整且导出重入字节一致
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+go test ./internal/apptheme
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/apptheme
+```
+
+## `APPTHEME-T-002` 全部应用图标来源与生成一致性
+
+- 级别：`contract`
+- 覆盖需求：`APPTHEME-R-001`、`APPTHEME-R-002`、`APPTHEME-R-003`
+- 需求复核摘要：`sha256:ef5424b7582e79b12d4dec8285518bf898e39225fec3f4acca4233c7a87bf789`
+- 实现复核摘要：`sha256:81c1ce62cc7e610cdf3d8a234eb68cabca10e312896f1f0fcc998da03b5c884c`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`node`
+- Oracle 来源：`return-value`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：修改任意原件/矢量/PNG而不重新生成时检查必须失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 所有声明入口均有512px源和来源记录；官方原件、矢量、PNG摘要与两套包一致
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+node scripts/application-themes.mjs --check
+```
+
+有效性验证入口：
+
+```bash
+node scripts/application-themes.mjs --check
+```
+
+## `APPTHEME-T-003` 导入授权、持久化、回退与图片权限
+
+- 级别：`unit`
+- 覆盖需求：`APPTHEME-R-004`、`APPTHEME-R-006`、`APPTHEME-R-007`、`APPTHEME-R-008`、`APPTHEME-R-009`、`APPTHEME-R-010`、`APPTHEME-R-013`
+- 需求复核摘要：`sha256:db272c4baba703253049ad7638293434bd2e388d83553b58bc339a0661a12b54`
+- 实现复核摘要：`sha256:22f26f0e52f3258c8d93ef05bfa9450453f13bed6bc9959d52065976305c1437`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`go`
+- Oracle 来源：`return-value`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：去掉角色/CSRF/授权或损坏文件保护时对应反例失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 拒绝匿名、CSRF、非当前管理员与过期认证；冲突不覆盖，重启仍可读，损坏隔离和容量有效；不泄漏隐藏图标，部分主题回到原始图，不改变目录或其他账号
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+go test ./modules/user_portal/portal -run Theme
+```
+
+有效性验证入口：
+
+```bash
+go test ./modules/user_portal/portal -run Theme
+```
+
+## `APPTHEME-T-004` 原生计划摘要、冻结图片及Casdoor投射
+
+- 级别：`contract`
+- 覆盖需求：`APPTHEME-R-009`、`APPTHEME-R-011`、`APPTHEME-R-012`、`APPTHEME-R-015`
+- 需求复核摘要：`sha256:ebef4ad37ef89f42a7a85be5b88f06e69e051e03471b4225c3f5e87289a5a855`
+- 实现复核摘要：`sha256:d9514683e8f585c2ab2eabf76ebc4fbba398836ff7b1be914cc6bc183e495227`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`go`
+- Oracle 来源：`return-value`、`filesystem`
+- 有效性证明：`counterexample`
+- 有效性证据：删去摘要绑定或logo同源投射会使断言失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 内容变化改变摘要；冻结制品不依赖原包；保留原图和缺图，Casdoor原生logo精确指向同一512px圆角图片；拒绝保留ID与符号链接
+- 隐藏IAM品牌不能通过override暴露，仍需由本Module注册对应客户端
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+go test ./internal/appcatalog ./modules/casdoor/hook
+go test ./internal/runner -run TestCatalogHiddenIAMBrand
+```
+
+有效性验证入口：
+
+```bash
+go test ./internal/appcatalog ./modules/casdoor/hook
+go test ./internal/runner -run TestCatalogHiddenIAMBrand
+```
+
+## `APPTHEME-T-005` 主题界面和八语言手机宽度
+
+- 级别：`unit`
+- 覆盖需求：`APPTHEME-R-003`、`APPTHEME-R-008`、`APPTHEME-R-009`、`APPTHEME-R-013`、`APPTHEME-R-014`
+- 需求复核摘要：`sha256:4f597e6d04b407b4e381b0a230c4f225bf24a45851e9e26852fda3def7017164`
+- 实现复核摘要：`sha256:8cfc9a30f4ab60adc08e5b90dfc3252b81de4e54ebad750756bdf0b49fae81de`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`node`、`browser`
+- Oracle 来源：`ui`
+- 有效性证明：`counterexample`
+- 有效性证据：移除管理路由、回退提示或图片查询主题参数时用例失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 生产静态资源支持独立选择、导入和错误提示、预览、导出/配置边界；普通用户没有导入控件，八语言390px无横向溢出
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+node test-env/playwright/application-themes.test.mjs
+```
+
+有效性验证入口：
+
+```bash
+node test-env/playwright/application-themes.test.mjs
+```
+
+## `APPTHEME-T-006` finance原生OIDC、持久化与Casdoor同源图片
+
+- 级别：`e2e`
+- 覆盖需求：`APPTHEME-R-003`、`APPTHEME-R-004`、`APPTHEME-R-007`、`APPTHEME-R-008`、`APPTHEME-R-010`、`APPTHEME-R-011`、`APPTHEME-R-013`、`APPTHEME-R-014`
+- 需求复核摘要：`sha256:5560b5b038c80d97e34e1cafb3544f8e191bb0d150bf182de64bb65d398c08b9`
+- 实现复核摘要：`sha256:e0f1823066f471ff7d0b7894e73145544096cd4e3309c632b98e53fa60273c2f`
+- Fixture：finance专属pua账号，同主机私有凭据和独立浏览器上下文；两阶段跨门户重启验收
+- 目标能力：`ssh`、`node`、`browser`、`docker`、`native-oidc`、`samba-ad`
+- Oracle 来源：`ui`、`filesystem`、`return-value`
+- 有效性证明：`counterexample`
+- 有效性证据：移除权限检查、持久存储或共享logo后命名断言失败
+- 超时：`15m`
+- 敏感数据：临时密码仅留finance的0700/0600私有目录；不转移到工作站或其他服务器
+
+前置条件：
+
+- 主题制品已通过原生流程部署；已创建标记的临时manager/normal账号和私有browser.private.json；原始全站主题
+- Samba夹具助手 test-env/scripts/application-themes-directory-fixture.py 仅创建两账号及其专用OU；拒绝域级高权限祖先，清理按GUID和描述标记核对
+
+执行步骤：
+
+- 运行before-restart阶段
+- 在私有主题目录放置专属损坏文件，再通过仅user_portal变化的原生计划更新并重启门户
+- 运行after-restart阶段，核对两份报告
+
+可观察断言：
+
+- 原生OIDC临时管理员导入；匿名和普通用户拒绝；重启和新浏览器读取个人选择；当前权限控制图片；Casdoor与门户全站图标字节相同且个人覆盖不改变Casdoor
+
+反例与故障路径：
+
+- 匿名、CSRF缺失、普通用户导入、隐藏应用图片和损坏主题
+
+清理：
+
+- 删除专属导入包、损坏包、临时账号、IAM测试用户和私有凭据；保留无密证据
+
+执行入口：
+
+```bash
+node test-env/playwright/application-themes-finance.mjs
+```
+
+有效性验证入口：
+
+```bash
+node test-env/playwright/application-themes-finance.mjs
+```
+
+## `APPTHEME-T-007` 原生IAM明暗参数与安全边界
+
+- 级别：`unit`
+- 覆盖需求：`APPTHEME-R-016`
+- 需求复核摘要：`sha256:56a68813510fb96b5fdb7740585ced0e17baad531ad14e74c7cc071ceca4f444`
+- 实现复核摘要：`sha256:fedec88e556ca8ee2b74073c89625472e10a7c62bad11ddd0bc2e2d3a47ea916`
+- Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
+- 目标能力：`node`、`browser`
+- Oracle 来源：`ui`
+- 有效性证明：`counterexample`
+- 有效性证据：去掉参数白名单或原生theme传递时断言失败
+- 超时：`5m`
+- 敏感数据：仅内存测试身份；无真实目录凭据
+
+前置条件：
+
+- 锁定的仓库依赖已安装
+
+执行步骤：
+
+- 执行声明的命令并检查所有断言
+
+可观察断言：
+
+- 系统或固定颜色模式转为原生dark/default；非法输入不影响OIDC参数
+
+反例与故障路径：
+
+- 非法字段、来源变化、权限拒绝、不可用存储或异步失败（按用例范围）
+
+清理：
+
+- 临时目录和独立浏览器上下文由测试清理
+
+执行入口：
+
+```bash
+go test ./modules/user_portal/portal -run NativeAuthorizationTheme
+node test-env/playwright/user-portal-experience.test.mjs
+```
+
+有效性验证入口：
+
+```bash
+go test ./modules/user_portal/portal -run NativeAuthorizationTheme
+node test-env/playwright/user-portal-experience.test.mjs
+```
+
+## `APPTHEME-T-008` finance原生IAM高清logo和明暗衔接
+
+- 级别：`e2e`
+- 覆盖需求：`APPTHEME-R-011`、`APPTHEME-R-015`、`APPTHEME-R-016`
+- 需求复核摘要：`sha256:1c8c47504741dd48273ab9301c71556788176e608f774e5c0ed1cf82162c65a0`
+- 实现复核摘要：`sha256:b7b9c2465d1a408d1b4902d6e12d88fd02bc0b70687b5f7d3e89fbb3036f9356`
+- Fixture：finance原生OIDC与一次性浏览器，仅本机临时账号
+- 目标能力：`ssh`、`node`、`browser`、`docker`、`native-oidc`、`samba-ad`
+- Oracle 来源：`ui`、`filesystem`、`return-value`
+- 有效性证明：`counterexample`
+- 有效性证据：移除高清logo、圆角、原生theme或恢复入口时命名断言失败
+- 超时：`15m`
+- 敏感数据：临时密码仅留finance的0700/0600私有目录；不转移到工作站或其他服务器
+
+前置条件：
+
+- 本轮候选已原生部署，已创建带标记的临时manager/normal，normal已标记pwdLastSet=0，密码仅保存在同主机私有文件
+
+执行步骤：
+
+- 创建专属普通账号与ANAS管理员，标记普通账号需改密
+- 执行原生IAM外观与密码流程
+- 保留无密证据并清理专属账号
+
+可观察断言：
+
+- 所有已部署原生应用logo为512px圆角本地PNG；门户登录和再次验证有标识，深浅色原生参数有效；隐藏门户无自链，门户/IAM全站图片一致
+
+反例与故障路径：
+
+- 匿名、CSRF缺失、普通用户导入、隐藏应用图片和损坏主题
+
+清理：
+
+- 按标记和GUID删除两临时账号及OU，清理IAM软删除用户和私有凭据；保留无密报告和截图
+
+执行入口：
+
+```bash
+node test-env/playwright/iam-appearance-finance.mjs
+```
+
+有效性验证入口：
+
+```bash
+node test-env/playwright/iam-appearance-finance.mjs
+```

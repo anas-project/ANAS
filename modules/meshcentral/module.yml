@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://meshcentral.com/
       en: https://meshcentral.com/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: user
     categories:

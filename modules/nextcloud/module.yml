@@ -36,7 +36,7 @@ applications:
     visibility:
       mode: access
     icons:
-      source: assets/nextcloud.png
+      source: assets/icon.png
 runtime:
   type: compose
   compose_file: docker-compose.yml

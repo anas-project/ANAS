@@ -60,6 +60,7 @@ func newOIDC(ctx context.Context, c Config, client *http.Client) (*OIDC, error) 
 
 type Flow struct {
 	State, Nonce, Verifier, Cookie, Session, Subject string
+	Theme                                            string
 	Reauth                                           bool
 	Expires                                          time.Time
 }
@@ -78,6 +79,9 @@ func (o *OIDC) authorizeURL(f Flow) string {
 	if f.Reauth {
 		q.Set("max_age", "0")
 		q.Set("prompt", "login")
+	}
+	if f.Theme == "dark" || f.Theme == "default" {
+		q.Set("theme", f.Theme)
 	}
 	u.RawQuery = q.Encode()
 	return u.String()

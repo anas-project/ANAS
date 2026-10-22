@@ -1,0 +1,17 @@
+{
+  "application": "traefik-admin",
+  "source": {
+    "url": "https://raw.githubusercontent.com/traefik/traefik/62b1f935f7612dbb730504e8210d8cffe2f4aef7/docs/content/assets/img/traefik.logo.png",
+    "sha256": "880c6a3efc1195baebfd6da0dc8ecbd9d1ff9865dd44c1acf01594815e1d5f81",
+    "file": "official.png"
+  },
+  "artwork": "official.png",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/traefik.svg",
+  "artwork_sha256": "880c6a3efc1195baebfd6da0dc8ecbd9d1ff9865dd44c1acf01594815e1d5f81",
+  "output_sha256": "adaf6163f4617866863e213a151f54508bf78c867c534898110c29c7a110e906",
+  "soft_artwork_sha256": "1a1c0a1027d1477d801ca3f85cff3f14175b0f904f6a5a3f11a3540ca4dbf9e9",
+  "soft_output_sha256": "b7336d68c3209c04b94d5a0e8b6e1edc332a3f53e96c3332e2da3fab59607a40"
+}

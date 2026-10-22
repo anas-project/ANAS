@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://www.ldap-account-manager.org/
       en: https://www.ldap-account-manager.org/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

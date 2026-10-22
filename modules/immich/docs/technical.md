@@ -177,3 +177,7 @@ Authentik 专属流程已退役，共用 Python 文件仅供 Casdoor harness 导
 ### 门户退出回调
 
 可选 `browser_logout_return_url` 设置为同站点 HTTPS 门户的 `/signed-out?native=1`。Hook 将地址登记为退出返回 URI，并通过所选 Provider 的原生 `OIDC_END_SESSION_URL` 配置 Immich `oauth.endSessionEndpoint`；不硬编码 Provider 路径。缺少该原生元数据时拒绝启用此配置，为空时继续使用原生 discovery。Immich 原生退出删除当前 session，IAM 返回门户后继续清理其他旧会话；不按用户名撤销其他设备。
+
+### 应用图标来源
+
+应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。

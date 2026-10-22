@@ -1,0 +1,17 @@
+{
+  "application": "casdoor-admin",
+  "source": {
+    "url": "https://casdoor.ai/img/casdoor.png",
+    "sha256": "708946828401ef738b4a10cc63029d94e835307c094974b129ead5f4dc48d6ec",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/casdoor.svg",
+  "artwork_sha256": "9010863320b264e450f3c879bf3943e93dcde7ca9f669ec451e5f905d6c7cb6b",
+  "output_sha256": "96af602797b587c54a73a2a616d5782a69947a5e124f5e7151f6537a13d6c71e",
+  "soft_artwork_sha256": "920a5bdd93b0da784a5091ff59e3d28fc641d37afbf3e135c0f2c93cd0ea9cdf",
+  "soft_output_sha256": "d08c5267683d5881dd0087e24d962e97ce5796924708e998e22a0f8498903878"
+}

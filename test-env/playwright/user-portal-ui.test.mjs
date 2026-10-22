@@ -59,7 +59,7 @@ for(const admin of [false,true])test(`${admin?'administrator':'personal'} profil
     await page.getByRole('button',{name:'Save',exact:true}).click();
     if(admin)await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();
     const result=page.locator('form').filter({has:page.getByLabel('Given name',{exact:true})}).locator('.form-result');
-    await expect(result).toContainText('Directory saved.');
+    await expect(result).toContainText('Saved.');
     await expect(result).toContainText('saved-write-id');
     await expect(result.getByRole('alert')).toContainText('Your information was saved, but the updated view could not be loaded.');
   }finally{await context.close();}
@@ -121,13 +121,13 @@ for (const language of ['en','zh-CN']) test(`domain ownership confirmation and p
     await dialog.getByRole('button',{name:language==='en'?'Confirm operation':'确认执行',exact:true}).click();
     await operation;
     const result=page.locator('#content > .result');
-    await expect(result).toContainText(language==='en'?'Object ownership: Directory saved.':'对象所有权: 目录已保存。');
+    await expect(result).toContainText(language==='en'?'Object ownership: Saved.':'对象所有权: 已保存。');
     await expect(result).toContainText(language==='en'?'Group membership: This operation is outside your permissions.':'组成员关系: 这项操作不在你的权限范围内。');
     await expect(result).toContainText(language==='en'?'The owner was not reverted.':'未回退所有者');
     await expect(page.locator('dialog')).toHaveCount(0);
     await page.route('**/api/audit?*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({records:[{time:new Date().toISOString(),action:'groups.member.add',target:'person',directory:'denied',ownership:'saved',membership:'denied'}]})}));
     await page.evaluate(()=>{location.hash='#/account/log';});
-    await expect(page.locator('#content table')).toContainText(language==='en'?'Object ownership: Directory saved.':'对象所有权: 目录已保存。');
+    await expect(page.locator('#content table')).toContainText(language==='en'?'Object ownership: Saved.':'对象所有权: 已保存。');
     await expect(page.locator('#content table')).toContainText(language==='en'?'Group membership: Denied':'组成员关系: 拒绝');
   } finally {await context.close();}
 });

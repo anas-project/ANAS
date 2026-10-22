@@ -1,3 +1,4 @@
+// TEST_CASES: APPTHEME-T-004
 package runner
 
 import (
@@ -176,5 +177,30 @@ func TestCatalogRejectsRemoteDockerAndOnlyChangesConsumers(t *testing.T) {
 	otherTwo, _ := normalizedModuleDigest(filepath.Join(second, "app"), second)
 	if one == two || otherOne != otherTwo {
 		t.Fatal("catalog update escaped consumer scope")
+	}
+}
+
+func TestCatalogHiddenIAMBrandStillRequiresItsOwnRegisteredClient(t *testing.T) {
+	mod := Module{Name: "cloud", EnvPrefix: "CLOUD"}
+	entry := catalogDeclaration()
+	entry.Hidden = true
+	entry.Visibility = appcatalog.Visibility{Mode: "authenticated"}
+	a := &app{cfg: &config.File{}, reg: map[string]Module{"cloud": mod}, iamBindings: map[string]string{"cloud": "oidc"}, env: map[string]string{"CLOUD_URL": "https://cloud.example/"}}
+	in, err := a.resolveApplicationInput(mod, entry, "", false, nil, nil)
+	if err != nil || !in.Application.Hidden || len(in.Application.Groups) != 0 {
+		t.Fatal("hidden branding changed access", err)
+	}
+	delete(a.iamBindings, "cloud")
+	if _, err = a.resolveApplicationInput(mod, entry, "", false, nil, nil); err == nil {
+		t.Fatal("unregistered client accepted")
+	}
+	a.iamBindings["cloud"] = "oidc"
+	mod.Name = "other"
+	if _, err = a.resolveApplicationInput(mod, entry, "", false, nil, nil); err == nil {
+		t.Fatal("another module's client accepted")
+	}
+	entry.Hidden = false
+	if appcatalog.ValidateDeclaration(entry, true) == nil {
+		t.Fatal("ungated visible IAM accepted")
 	}
 }

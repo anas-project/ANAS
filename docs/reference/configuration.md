@@ -511,3 +511,7 @@ test-env/scripts/test-render.sh
 effect 的真实 CLI→Hook→render→deployment→Compose/阻断边界，以及每个参数键在本轮新生成的
 Module 部署产物中至少出现一次。`test-lifecycle.sh` 在真实 Docker 上进一步验证
 `container_recreate` 会更换容器 ID。
+
+### 应用图标主题
+
+`application_catalog.icon_theme` 缺省为 `original`，`soft` 选择内置简约主题；`custom` 必须同时填写 `theme_file`，指向workspace配置目录内的数据主题JSON包。原生计划摘要包含主题内容，apply把PNG冻结到门户与Casdoor共享目录。个人选择只影响门户，不修改全站默认。详见[主题指南](/guide/application-themes)。

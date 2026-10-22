@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://forgejo.org/docs/latest/
       en: https://forgejo.org/docs/latest/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: user
     categories:

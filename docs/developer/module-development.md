@@ -440,3 +440,10 @@ ANAS_APP_CATALOG_FILE 并投射到已有原生 IAM 对象。源目录仍是事�
 在所属 Module 的 `identity.groups` 列表声明 `id`、`name`（或 `name_from` / `names_from`）、`parent_dn_from`、`managed`、`category`、`order`、`risk`、`display_name` 和 `description`。英文必填，简体中文可选；`risk` 为 normal/resource/domain，只描述风险，不能决定目录授权。动态能力列表须声明 `select_prefix: <module>_`、`name_prefix: CAP_`，文本可用 `{name}`。`when` 引用已解析布尔开关；系统组仅由所选目录 Provider 声明 `sid` 或 `domain_rid`，不由清单创建。不要复制已有 `identity.application_group` 的 APP_ 名单。
 
 需要读取的 Compose Module 声明 `identity.group_catalog: true` 并挂载 `${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro`；禁止可写或 Web 公开目录。路径和摘要由 Core 设置。部署制品位置为 `.anas/deployments/<id>/shared/identity-groups/catalog.json`，可供多个 Module 读取，禁止消费者另写同步副本。成员关系和实际权限始终从 AD 获取。
+
+### 新 Module 必须提供应用图标
+
+凡有人员网页入口或注册IAM登录应用的Module，都必须在 `assets/` 保存专属至少512×512的PNG，并在 `applications[].icons.source` 声明，不能使用通用占位图。优先使用官方高清PNG或矢量；缺失时按原标志重绘。保留原件、出处、摘要及 `icon-source.json`，重绘须注明生成方式。Runner从原图生成16/32/48/64/128/256/512七档圆角PNG，原件保持不变；Casdoor使用512px，避免放大低分辨率图片。
+
+不需要目录卡片的IAM客户端仍须提供隐藏品牌声明（如 `user_portal` 的 `hidden: true`、`access.mode: iam`、`visibility.mode: authenticated`）。该声明只补齐原生登录logo，不生成可见自链；无准入组的IAM品牌不得通过override取消隐藏。有准入组的应用仍用既有access过滤。没有任何人员入口的纯后端Module才使用 `applications_not_published` 写明原因。
+新增入口时同时更新两套内置主题和来源记录，运行 `node scripts/application-themes.mjs --render` / `--check`，并验证原生IAM应用列表、登录及再次验证logo。主题来源与导入边界见[主题指南](/guide/application-themes)。

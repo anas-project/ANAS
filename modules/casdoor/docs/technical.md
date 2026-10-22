@@ -216,3 +216,12 @@ Casdoor 初始化仍会补齐客户端字段；列表 API 返回密钥掩码，�
 
 
 OIDC Binding 可选发布 `OIDC_END_SESSION_URL`，值为当前原生 discovery 对应的 `/api/logout`，供需要配置原生退出返回的 Consumer 使用；SAML Binding 清除此字段。只调整 Module 元数据，不新增 Casdoor 上游补丁。
+
+### 应用图标来源
+
+应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。
+
+### 应用 logo、明暗参数和改密入口
+
+原生 Application.logo 统一使用冻结目录的512px圆角PNG。平方logo在登录页显示80px；所有Module原生应用、隐藏门户、再次验证及Provider目录/恢复应用都有本地logo，不使用运行时外链。门户隐藏品牌条目只补齐已有IAM对象，不生成自链卡片或改变准入权限。
+Casdoor v3.143.0原生支持 `theme=dark/default`；门户在登录导航时传当前模式。ANAS组织的登录应用通过原生 `forgetUrl` 和 signinItems 配置“首次／到期改密 · Set new password”入口到门户 `/#/recover`；本地恢复管理员仍使用原生找回。Samba强制改密无法先通过LDAP登录，因此不启用仅登录后可用的needUpdatePassword流程，不授予IAM服务绑定重置密码权限，也不为此新增源码补丁。

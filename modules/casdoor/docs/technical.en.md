@@ -238,3 +238,12 @@ The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEM
 
 
 OIDC bindings optionally publish `OIDC_END_SESSION_URL` for consumers that configure native logout returns. It matches the current native discovery `/api/logout` endpoint and is cleared for SAML. This changes Module metadata only; it adds no upstream Casdoor patch.
+
+### Application icon provenance
+
+`applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.
+
+### Application logos, color mode and password entry
+
+Native Application.logo uses the frozen catalog's 512px rounded PNG. Square marks display at 80px on sign-in pages. Module applications, hidden portal branding, reauthentication and provider directory/recovery applications all receive local logos. The hidden portal entry enriches an existing client without creating a self-link card or changing admission.
+Casdoor v3.143.0 natively supports `theme=dark/default`, which the portal resolves on sign-in navigation. ANAS organization applications use native `forgetUrl` and signinItems for a “首次／到期改密 · Set new password” link to portal `/#/recover`; local recovery administration keeps its native flow. Samba mandatory password change rejects LDAP login first, so the post-login needUpdatePassword flow is not enabled, the IAM binding receives no password-reset authority, and no new source patch is added for this feature.

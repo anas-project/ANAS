@@ -1,0 +1,17 @@
+{
+  "application": "netbird",
+  "source": {
+    "url": "https://raw.githubusercontent.com/netbirdio/dashboard/54052a650f1c203a103a658f4a02c2c5e83b17c2/src/assets/netbird.svg",
+    "sha256": "64773bd313506a921e51558fdb0c243da6fb0c0df0a81c1f2cd4bc733a54838e",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/netbird.svg",
+  "artwork_sha256": "64773bd313506a921e51558fdb0c243da6fb0c0df0a81c1f2cd4bc733a54838e",
+  "output_sha256": "3df2fe8944b6501d9de0a6d1207085a2b33756668f7cabb6fba3a15906c3259c",
+  "soft_artwork_sha256": "86d20f07e5db4fc7fa567455a7df2096741cb6ecbbf50ed9f7e32f98eba176f5",
+  "soft_output_sha256": "e0084b23801796277ec1bd718b8d733d6b97facb2b18becf020fe3a74d6028a5"
+}

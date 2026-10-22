@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://doc.traefik.io/traefik/
       en: https://doc.traefik.io/traefik/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

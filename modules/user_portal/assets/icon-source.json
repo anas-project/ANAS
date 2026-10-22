@@ -1,0 +1,17 @@
+{
+  "application": "user-portal",
+  "source": {
+    "url": "https://github.com/anas-project/ANAS/blob/master/modules/user_portal/portal/ui/style.css",
+    "file": "icon.svg",
+    "sha256": "d5ede9e009eb1df4bc37fd864bdfa52ae997adb364259584efc4bead47c83ca6"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "ANAS native portal mark: four geometric cells based on the portal brand-mark. SVG is the maintained source artwork.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/user-portal.svg",
+  "artwork_sha256": "d5ede9e009eb1df4bc37fd864bdfa52ae997adb364259584efc4bead47c83ca6",
+  "output_sha256": "8bcd3cde93d5a9b501130f59184afb5f9eb3626b0360028a4b836df67193ac4d",
+  "soft_artwork_sha256": "e8f8472b7d9f50955f32dd6eaebe712c953a8a091e6b30ea14b102927c307d06",
+  "soft_output_sha256": "48c9c8a3d896d4c3615be9570ac93d2cbe11c0e148ca143b60ebac27da1c7901"
+}

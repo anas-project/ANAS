@@ -1,0 +1,17 @@
+{
+  "application": "vikunja",
+  "source": {
+    "url": "https://vikunja.io/favicon.svg",
+    "sha256": "897f8af1b5d50c7ff0c7d8ae77e026d33fdd33929c598d28cd9a3367a18523c8",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/vikunja.svg",
+  "artwork_sha256": "897f8af1b5d50c7ff0c7d8ae77e026d33fdd33929c598d28cd9a3367a18523c8",
+  "output_sha256": "69168820b28211a452345e5ae561b6ffd50f39f51d4691281646997f05a7c801",
+  "soft_artwork_sha256": "e13afb16c616965e1ea7e730e3b88f890f04dbae3f0a4a07bc90c151dd7b5462",
+  "soft_output_sha256": "91aaefce45971f4085d3717ae688115f9398218877fee54d0278c01841fba26b"
+}

@@ -49,7 +49,7 @@ func TestNativeCatalogKeepsClientAndAddsProviderlessAdmin(t *testing.T) {
 	if admin["clientId"] != nil || admin["clientSecret"] != nil || admin["disableSignin"] != true || admin["homepageUrl"] != "https://db.example/" {
 		t.Fatal(admin)
 	}
-	if admin["logo"] != "/files/anas-catalog/"+c.Applications[1].Icons["128"].Path {
+	if admin["logo"] != "/files/anas-catalog/"+c.Applications[1].Icons["512"].Path {
 		t.Fatal("bad native icon path")
 	}
 	permissionFound := false

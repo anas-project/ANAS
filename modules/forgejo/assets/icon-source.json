@@ -1,0 +1,17 @@
+{
+  "application": "forgejo",
+  "source": {
+    "url": "https://forgejo.org/favicon.svg",
+    "sha256": "acfeda65446d1c17c5d8e62e18b70a6616ef20df81e7de93ff791a3b11d4be28",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/forgejo.svg",
+  "artwork_sha256": "acfeda65446d1c17c5d8e62e18b70a6616ef20df81e7de93ff791a3b11d4be28",
+  "output_sha256": "cf25a36d5cc45e18718f296946d098cd65035f0208d6eb2714e104a00b47e0fe",
+  "soft_artwork_sha256": "d8d493d88aadfa40d5252e9d424aed1ff2faea16495ddbf7b487098cd8001141",
+  "soft_output_sha256": "c022f7a369f26239c11cc45a7315370bc2023c723bf2e89d2a14cb4f5fcf9089"
+}

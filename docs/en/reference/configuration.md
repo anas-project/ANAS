@@ -505,3 +505,7 @@ test-env/scripts/test-render.sh
 ```
 
 The first rejects declared parameters with no runtime consumer. If the only consumer is an upstream image, the exception must record source evidence for the pinned version. The remaining suites cover the complete inventory, type declarations, retired paths, the real CLI→hook→render→deployment→Compose/refusal boundary for every declared effect, and require each parameter key to appear in at least one freshly rendered Module artifact. `test-lifecycle.sh` additionally verifies against real Docker that `container_recreate` changes the container ID.
+
+### Application icon theme
+
+`application_catalog.icon_theme` defaults to `original`; `soft` selects the built-in minimal theme. `custom` requires `theme_file`, a local data-only JSON package relative to the workspace configuration directory. The native plan binds package content and apply freezes PNG assets for both the portal and Casdoor. Personal portal selections do not change the global theme. See the [theme guide](/en/guide/application-themes).

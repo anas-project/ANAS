@@ -396,7 +396,7 @@ application_catalog:
 显示投影，完整翻译继续来自目录制品，不能用每次用户切换语言就更新数据库的方式实现。
 
 2026-10-08 用户确认分阶段交付。第一阶段不修改 Casdoor API 或页面，只在现有 Hook 中把目录
-投射到原生 Application 和 Permission。显示名、简介、URL、单个 128px 图标和顺序写入原生字段；
+投射到原生 Application 和 Permission。显示名、简介、URL、单个 512px 圆角图标和顺序写入原生字段；
 本版本原生字段最大 100 字符，标题/简介/URL 超长会拒绝渲染，不截断链接。
 不把展示分类映射到 Category/Tags，不伪造纯目录条目的 OAuth/SAML 凭据。
 Casdoor 自动补齐的 clientId/clientSecret 保留为原生对象内部字段，grantTypes/redirectUris 为空，
@@ -514,3 +514,7 @@ Admins 不自动取得账号写权，生产名单由配置显式给出。
 ### 退出协议的独立最小元数据
 
 2026-10-19 用户确认：为清理当前浏览器的旧会话，固定退出回调可以匿名读取已部署应用的域名与固定退出协议路径；已有登录用户退出也可读取。该元数据独立于业务目录，没有名称、图标、简介、权限、文档及业务 URL。APPCAT-R-014 的完整目录、用户目录 API 和资产过滤继续生效；具体机制及当前验收范围见[门户设计](/architecture/user-portal-design)。
+
+### 2026-10-22 隐藏 IAM 品牌补充
+
+无组门禁的门户IAM客户端可以声明 `kind: user`、`hidden: true`、`access.mode: iam`、`visibility.mode: authenticated`，仅向已有原生IAM对象提供图标和显示文案。Runner仍验证client已由同一Module注册；Compile拒绝通过override取消隐藏。门户和目录过滤继续跳过隐藏项，不新建权限或显示自链。原生IAM登录、再次验证及Provider自有页使用共享512px圆角图标；源图保持不变。

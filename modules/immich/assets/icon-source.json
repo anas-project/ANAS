@@ -1,0 +1,17 @@
+{
+  "application": "immich",
+  "source": {
+    "url": "https://raw.githubusercontent.com/immich-app/immich/fff2bd73f9b38a5a5b510ea69a77a470dd1acf56/design/immich-logo.svg",
+    "sha256": "dfa5ef704d07854914306c0c224173bda2710f8fc0dffeb7d78690f58f9811a6",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/immich.svg",
+  "artwork_sha256": "dfa5ef704d07854914306c0c224173bda2710f8fc0dffeb7d78690f58f9811a6",
+  "output_sha256": "35c7c6921c1231ebd90692740bb5fd60b5ec4f44876cc8eed6c61ff9841bfd7f",
+  "soft_artwork_sha256": "a58970dc9712cdfafaae5cdeaa0c5e7d320a37fe5b63a7e96ff35196c8105a0a",
+  "soft_output_sha256": "fb3ec5c9b19ed6d13ef0a1d45ff44a9defdf362566416d0414fea5215429128f"
+}

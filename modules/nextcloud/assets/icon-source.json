@@ -1,0 +1,17 @@
+{
+  "application": "nextcloud",
+  "source": {
+    "url": "https://raw.githubusercontent.com/nextcloud/server/766b24fc31956995a3fbded0b5ac98ad9cca276e/core/img/favicon-touch.svg",
+    "sha256": "a40c106fb9c132bbaa71819d2f8f85bbce0f07a40cd92cded715cee679276bc5",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/nextcloud.svg",
+  "artwork_sha256": "a40c106fb9c132bbaa71819d2f8f85bbce0f07a40cd92cded715cee679276bc5",
+  "output_sha256": "9d1830985a771549f588edb370e1619d1cf004db6af547a6ffa99e026844a1b6",
+  "soft_artwork_sha256": "baea8b63be18bad02bbfa36dea8527d31a398930dc6f8f99e42e17b04057c550",
+  "soft_output_sha256": "b0c40218635deeaa16efb588c089fc14d90168211dd1621e83ae99ccb06222d3"
+}

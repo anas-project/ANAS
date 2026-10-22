@@ -1,0 +1,17 @@
+{
+  "application": "ddns_updater-admin",
+  "source": {
+    "url": "https://raw.githubusercontent.com/qdm12/ddns-updater/7d6fd785f78317fc8bc53e6b245a1d33e43f3ad2/readme/ddnsgopher.svg",
+    "sha256": "a2cb1d0785f698afdda993379694717fbd4ea1320507ae82ae35dca5d9072da5",
+    "file": "official.svg"
+  },
+  "artwork": "official.svg",
+  "generated": false,
+  "method": "Official artwork fitted proportionally into a square PNG; no brand recoloring.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/ddns_updater.svg",
+  "artwork_sha256": "a2cb1d0785f698afdda993379694717fbd4ea1320507ae82ae35dca5d9072da5",
+  "output_sha256": "f2ff7288eab16dcadb670a405c9c1daf186bc2b7267b3b68710e3e2b0a3829b5",
+  "soft_artwork_sha256": "44bd850448d4abcae26243bbff26d999d43a3334f0dc7df0c0d14c618db0d1a6",
+  "soft_output_sha256": "bb3434c3700874e24cf92c3c00fb44b74d1768923e47cae8cbad7f5a0bbdf0b2"
+}

@@ -37,3 +37,6 @@
 设计文档出现“建议”“未来”或“提案”时，不应当成可执行命令。用户操作以使用指南和参考契约为准。
 
 跨分类入口：[研究与选型](/research/) · [开发过程工件](https://github.com/anas-project/ANAS/tree/master/dev-docs)
+
+
+[应用图标与可导入主题](application-themes.md)记录原始/简约素材、数据主题包、账号选择与Casdoor全站默认边界；当前实现及主机验收进度见配套计划。

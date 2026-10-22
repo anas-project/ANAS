@@ -8,4 +8,6 @@
 - [迁移 identity-anchor OID](migrate-identity-anchor-oid.md)：把唯一一台旧 Samba DC 离线迁移到 PEN 66678。
 - [完整任务指南](usage.md)：所有日常操作和恢复流程的详细说明。
 
+- [应用图标与主题](application-themes.md)：个人选择、管理员导入与Casdoor全站默认。
+
 命令的机器可读输出、退出码和字段定义属于[CLI JSON 契约](/reference/contracts/)，不在任务指南里重复。

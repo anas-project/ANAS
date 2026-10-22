@@ -235,3 +235,7 @@ category”, with applications directly beneath them. The full two-level layout 
 portal. Local-auth entry visibility does not protect
 the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
 [catalog design](/architecture/app-catalog-design).
+
+### Application icon provenance
+
+`applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.

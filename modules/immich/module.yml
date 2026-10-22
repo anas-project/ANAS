@@ -17,6 +17,8 @@ applications:
     summary: {zh-CN: 照片与视频图库, en: Photo and video library}
     description: {zh-CN: "照片上传、移动备份、相册与搜索。", en: "Photo uploads, mobile backup, albums, and search."}
     documentation_url: {zh-CN: https://docs.immich.app/, en: https://docs.immich.app/}
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: user
     categories: [media]

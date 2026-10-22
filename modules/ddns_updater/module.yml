@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://github.com/qdm12/ddns-updater
       en: https://github.com/qdm12/ddns-updater
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

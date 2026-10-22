@@ -10,7 +10,21 @@ title: ANAS User Portal
 description: Authorized applications, personal accounts and delegated directory administration.
 category: identity
 status: developing
-applications_not_published: "The application directory does not publish a self-link."
+applications:
+  - name: user-portal
+    display_name: {en: "ANAS Portal", zh-CN: "ANAS 门户"}
+    summary: {en: "Applications and your account", zh-CN: "应用与个人账户"}
+    description: {en: "Your applications, personal information and account security.", zh-CN: "管理应用入口、个人资料与账户安全。"}
+    documentation_url:
+      en: https://github.com/anas-project/ANAS/tree/master/modules/user_portal
+      zh-CN: https://github.com/anas-project/ANAS/tree/master/modules/user_portal
+    url_from: USER_PORTAL_URL
+    kind: user
+    categories: [identity]
+    hidden: true
+    access: {mode: iam, client: user_portal}
+    visibility: {mode: authenticated}
+    icons: {source: assets/icon.png}
 application_catalog:
   consumes: true
 runtime:

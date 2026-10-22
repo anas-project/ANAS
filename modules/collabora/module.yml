@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://sdk.collaboraonline.com/
       en: https://sdk.collaboraonline.com/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

@@ -2,7 +2,7 @@
 // ANAS user portal. Plain DOM rendering: every text value is assigned with
 // textContent; the server remains the only authority for permissions.
 const I18N=window.ANAS_I18N;
-let language='en', csrf='', me=null, prefs=null, catalog=null, logoutState=null, logoutRunning=false, revision=0, content=null;
+let language='en', csrf='', me=null, prefs=null, catalog=null, iconThemeCatalog=null, logoutState=null, logoutRunning=false, revision=0, content=null;
 const app=document.getElementById('app'), noticeNode=document.getElementById('notice');
 const t=(key,vars)=>{
   let text=I18N.words[language]?.[key]??I18N.words.en[key]??key;
@@ -22,6 +22,16 @@ function el(tag,text,attrs={}) {
 function button(text,fn,variant='') {
   const n=el('button',text,{type:'button',...(variant?{class:variant}:{})});
   n.addEventListener('click',fn);return n;
+}
+function loginLink(text,attrs={}) {
+  const a=el('a',text,{href:'/login',...attrs});
+  // Resolve system mode at navigation time, including a live OS theme change.
+  a.addEventListener('click',()=>{
+    const mode=document.documentElement.dataset.theme;
+    const dark=mode==='dark'||mode==='system'&&matchMedia('(prefers-color-scheme: dark)').matches;
+    a.href='/login?theme='+(dark?'dark':'default');
+  });
+  return a;
 }
 const ICONS={
   search:'M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14|M20 20l-3.5-3.5', user:'M12 4a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6',
@@ -80,6 +90,7 @@ async function api(path,body) {
 function applyTheme(theme) {
   document.documentElement.dataset.theme=['light','dark'].includes(theme)?theme:'system';
   preference('anas.portal.theme',document.documentElement.dataset.theme);
+  applyIconThemeColors();
 }
 function localPreferences() {
   const theme=preference('anas.portal.theme');
@@ -89,23 +100,84 @@ function localPreferences() {
 // anonymous pages and the first paint of the next visit.
 function adoptPreferences(next) {
   prefs={language:next.language||'',theme:next.theme||'system',show_categories:next.show_categories!==false,pinned:Array.isArray(next.pinned)?next.pinned:[]};
+  if(next.icon_theme)prefs.icon_theme=next.icon_theme;
   applyTheme(prefs.theme);preference('anas.portal.showCategories',String(prefs.show_categories));
   preference('anas.portal.language',prefs.language);
 }
 async function savePreferences(changes) {
+  const previous=prefs;
   prefs={...(prefs||localPreferences()),...changes};
   if('theme' in changes)applyTheme(prefs.theme);
   if('show_categories' in changes)preference('anas.portal.showCategories',String(prefs.show_categories));
   if('language' in changes)preference('anas.portal.language',prefs.language);
   if(!me)return true;
-  try{const data=await api('/api/me/preferences',prefs);prefs=data.preferences;return true;}
-  catch(error){notice(error.message,true);return false;}
+  try{const data=await api('/api/me/preferences',prefs);prefs=data.preferences;applyIconThemeColors();return true;}
+  catch(error){if('icon_theme' in changes){prefs=previous;applyIconThemeColors();}notice(error.message,true);return false;}
 }
 function cycleTheme() {
   const order=['system','light','dark'],next=order[(order.indexOf(document.documentElement.dataset.theme)+1)%3];
   savePreferences({theme:next}).then(()=>renderCurrentShellControls());
 }
 function themeLabel(theme) {return t({system:'themeSystem',light:'themeLight',dark:'themeDark'}[theme]);}
+
+// Imported themes contain data only. Token names and colors are validated here
+// as well as by the server; no arbitrary styles or image URLs are evaluated.
+const themeColorTokens=['bg','surface','surface-2','text','text-2','text-3','line','line-strong','primary','on-primary','accent-soft','accent-text','ok-bg','ok','warn-bg','warn-line','warn','danger-bg','danger-line','danger','sidebar','sidebar-text','sidebar-active','focus'];
+function effectiveIconTheme() {
+  const selected=prefs?.icon_theme;
+  return iconThemeCatalog?.themes.some(item=>item.id===selected)?selected:iconThemeCatalog?.default||'original';
+}
+function iconThemeName(item) {return item.name?.[language]||item.name?.en||item.id;}
+async function loadIconThemes() {iconThemeCatalog=await api('/api/themes');return iconThemeCatalog;}
+function applyIconThemeColors() {
+  const item=iconThemeCatalog?.themes.find(item=>item.id===effectiveIconTheme());
+  let colors=item?.colors||{};
+  if(!me&&!item){try{colors=JSON.parse(preference('anas.portal.themeColors')||'{}');}catch{}}
+  const dark=document.documentElement.dataset.theme==='dark'||document.documentElement.dataset.theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches;
+  const palette=colors[dark?'dark':'light']||{};
+  for(const key of themeColorTokens){document.documentElement.style.removeProperty('--'+key);if(/^#[0-9a-fA-F]{6}$/.test(palette[key]||''))document.documentElement.style.setProperty('--'+key,palette[key]);}
+  if(item)preference('anas.portal.themeColors',JSON.stringify(colors));
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyIconThemeColors);
+function iconThemeCard(manage) {
+  const card=el('section',null,{class:'icon-theme-settings'});card.append(el('h3',t('iconThemes')));
+  if(!iconThemeCatalog){card.append(el('p',t('theme_load_failed'),{class:'notice warning'}),button(t('themeRetry'),async()=>{try{await loadIconThemes();rerender();}catch(error){notice(error.message,true);}}));return card;}
+  if(!manage){
+    const label=el('label',t('iconThemeChoice')),select=el('select',null,{name:'icon_theme'});
+    select.append(el('option',t('themeDefault'),{value:''}));
+    for(const item of iconThemeCatalog.themes)select.append(el('option',iconThemeName(item),{value:item.id}));
+    select.value=iconThemeCatalog.themes.some(item=>item.id===prefs?.icon_theme)?prefs.icon_theme:'';label.append(select);card.append(label);
+    if(prefs?.icon_theme&&!iconThemeCatalog.themes.some(item=>item.id===prefs.icon_theme)){
+      const warning=el('div',null,{class:'notice warning',role:'status'});warning.append(el('p',t('theme_missing')),button(t('themeDefault'),async()=>{if(await savePreferences({icon_theme:''}))rerender();}));card.append(warning);
+    }
+    select.addEventListener('change',async()=>{select.disabled=true;try{if(await savePreferences({icon_theme:select.value}))rerender();}finally{select.disabled=false;}});
+    card.append(el('p',t('themePersonalHelp'),{class:'muted'}));
+  }
+  if(manage){
+    const form=el('form',null,{class:'card form-card'}),label=el('label',t('themeImport')),file=el('input',null,{type:'file',accept:'.json,application/json',name:'theme_file'});
+    label.append(file);const submit=el('button',t('themeImport'),{type:'submit',class:'primary'}),slot=el('div',null,{role:'status'});form.append(label,el('p',t('themeImportHelp'),{class:'muted'}),submit,slot);card.append(form);
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();submit.disabled=true;slot.replaceChildren();
+      try{
+        const selected=file.files[0];if(!selected)throw new Error(t('invalid_theme'));if(selected.size>32*1024*1024)throw new Error(t('theme_too_large'));
+        let data;try{data=JSON.parse(await selected.text());}catch{throw new Error(t('invalid_theme'));}
+        await api('/api/themes',data);await loadIconThemes();card.replaceWith(iconThemeCard(true));notice(t('themeImported'));
+      }catch(error){slot.className='notice error';slot.textContent=error.message;}finally{submit.disabled=false;}
+    });
+    if(iconThemeCatalog.invalid_themes)card.append(el('p',t('theme_corrupt'),{class:'notice warning'}));
+    const list=el('div',null,{class:'theme-library'});
+    for(const item of iconThemeCatalog.themes){
+      const row=el('section',null,{class:'card'});row.append(el('h3',iconThemeName(item)),el('p',item.id,{class:'muted mono'}));
+      const preview=el('div',null,{class:'theme-preview'});for(const application of (catalog||[]).filter(a=>a.icons?.['48']).slice(0,5))preview.append(appIcon(application,40,item.id));row.append(preview);
+      if(item.exportable){const download=el('a',t('themeExport'),{href:'/api/themes/'+encodeURIComponent(item.id)+'/export',download:item.id+'.anas-theme.json',class:'button'});row.append(download);}
+      const details=el('details'),summary=el('summary',t('themeConfig'));details.append(summary,el('p',t('themeConfigHelp'),{class:'muted'}));
+      const builtin=item.id==='original'||item.id==='soft';
+      details.append(el('pre','application_catalog:\n  icon_theme: '+(builtin?item.id:'custom')+(builtin?'':'\n  theme_file: themes/'+item.id+'.anas-theme.json')));row.append(details);list.append(row);
+    }
+    card.append(list);
+  }
+  return card;
+}
 
 // --- shell -------------------------------------------------------------------
 function canManage() {return !!me&&me.actions.includes('users.read');}
@@ -188,6 +260,7 @@ function adminSidebar(active) {
     nav.append(el('p',t('systemBackends'),{class:'side-label'}));
     for(const a of backends){const link=safeLink(a.url,null,{class:'nav-link'});link.append(appIcon(a,18),el('span',a.display_name));link.append(icon('external',14));nav.append(link);}
   }
+  if(me.administration)nav.append(navLink('#/admin/themes',t('iconThemes'),'monitor',active==='themes'));
   nav.append(navLink('#/apps',t('backToWorkbench'),'back',false,'side-back'));
   side.append(nav);return side;
 }
@@ -214,11 +287,14 @@ async function render() {
     if(first){adoptPreferences(me.preferences||localPreferences());if(prefs.language&&prefs.language!==language){language=prefs.language;me=await api('/api/me');csrf=me.csrf;if(current!==revision)return;}}
     else if(me.preferences)prefs={...prefs,pinned:me.preferences.pinned};
     if(!catalog)await loadCatalog().catch(()=>{catalog=[];});
+    if(!iconThemeCatalog)await loadIconThemes().catch(()=>{});
+    applyIconThemeColors();
     if(current!==revision)return;
     const [section,sub,third]=parts;
     if(!section||section==='apps')return await homePage(current);
     if(section==='account'&&['profile','security','groups','mail','log',undefined].includes(sub))return await accountPage(sub||'profile',current);
     if(section==='admin'&&canManage()) {
+      if(sub==='themes'&&me.administration){renderShell('admin','themes');document.body.dataset.page='admin-themes';heading(t('iconThemes'),t('themeLibraryHelp'));content.append(recentForm(),iconThemeCard(true));return;}
       if((!sub||sub==='users')&&!third)return await usersPage(current);
       if(sub==='users'&&third==='new'&&me.actions.includes('user.create'))return newUserPage();
       if(sub==='users'&&third)return await userDetails(third,current);
@@ -238,7 +314,7 @@ function loginPage() {
   ++revision;document.body.dataset.page='login';renderShell('guest');
   const box=el('section',null,{class:'card hero'});
   box.append(brand('/'),el('h1',t('loginTitle')),el('p',t('loginIntro'),{class:'muted'}));
-  box.append(withIcon(el('a',t('login'),{href:'/login',class:'button primary large'}),'arrow'));
+  box.append(withIcon(loginLink(t('login'),{class:'button primary large'}),'arrow'));
   const recovery=button(t('recover'),()=>{location.hash='#/recover';},'text-button');
   box.append(recovery);content.append(box);
 }
@@ -264,11 +340,12 @@ function passwordAlert(person) {
   const a=withIcon(el('a',null,{href:'#/account/security',class:'alert-strip'}),'lock');
   a.append(el('span',text),el('strong',t('changeNow')));return a;
 }
-function appIcon(a,size=44) {
+function appIcon(a,size=44,theme=effectiveIconTheme()) {
   const icons=a.icons||{};
+  const themed=path=>{const url=new URL(path,location.origin);url.searchParams.set('theme',theme);return url.pathname+url.search;};
   if(icons['48']?.path) {
-    const img=el('img',null,{src:icons[size>48?'128':'48'].path||icons['48'].path,width:String(size),height:String(size),alt:'',loading:'lazy',class:'app-icon'});
-    if(size<=48&&icons['128']?.path)img.setAttribute('srcset',icons['48'].path+' 1x, '+icons['128'].path+' 2x');
+    const img=el('img',null,{src:themed(icons[size>48?'128':'48']?.path||icons['48'].path),width:String(size),height:String(size),alt:'',loading:'lazy',class:'app-icon'});
+    if(size<=48&&icons['128']?.path)img.setAttribute('srcset',themed(icons['48'].path)+' 1x, '+themed(icons['128'].path)+' 2x');
     return img;
   }
   return el('span',[...(a.display_name||a.name)][0]||'?',{class:'app-icon monogram','aria-hidden':'true'});
@@ -408,19 +485,11 @@ function field(form,key,type='text',required=true,value='') {
   if(type==='text')input.maxLength=64;input.value=value;label.append(input);form.append(label);return input;
 }
 function resultSlot(form) {const slot=el('div',null,{class:'form-result'});form.append(slot);return slot;}
-function step(label,state,text) {
-  const item=el('li',null,{class:'step '+state});item.append(icon(state==='done'?'check':state==='pending'?'sync':'alert',16),el('span',label+': '+text));return item;
-}
-function renderResult(data,slot) {
+function renderResult(data,slot,successKey='saved') {
   const bad=data.directory!=='saved',box=el('div',null,{class:'result'+(bad?' error':''),role:bad?'alert':'status',tabindex:'-1'});
-  const labels={saved:t('saved'),rejected:t('rejected'),denied:t('access_denied'),unavailable:t('identity_unavailable'),conflict:t('conflict'),unknown:t('unknownResult'),not_attempted:t('auditFailure')};
+  const labels={saved:t(successKey),rejected:t('rejected'),denied:t('access_denied'),unavailable:t('identity_unavailable'),conflict:t('conflict'),unknown:t('unknownResult'),not_attempted:t('auditFailure')};
   box.append(el('p',labels[data.directory]??(t(data.directory)||t('unknownResult')),{class:'result-title'}));
-  if(data.directory==='saved') {
-    // Directory, IAM and application sessions are separate systems with separate outcomes.
-    const steps=el('ol',null,{class:'steps'});
-    steps.append(step(t('stepDirectory'),'done',t('stepSaved')),step(t('stepIAM'),data.iam==='observed'?'done':'pending',t(data.iam==='observed'?'stepObserved':'stepPending')),step(t('stepSessions'),'unknown',t('stepUnverified')));
-    box.append(steps);
-  }
+  // Only confirmed outcomes belong in the result message.
   if(data.ownership)box.append(el('p',t('ownershipStep')+': '+(data.ownership==='not_attempted'?t('not_attempted'):(labels[data.ownership]??t(data.ownership)))),el('p',t('membershipStep')+': '+(data.membership==='not_attempted'?t('not_attempted'):(labels[data.membership]??t(data.membership)))));
   if(data.ownership==='saved'&&data.membership!=='saved')box.append(el('p',t('ownershipRetained')));
   if(data.audit==='unavailable'||data.audit===false)box.append(el('p',t('auditFailure')));
@@ -429,7 +498,7 @@ function renderResult(data,slot) {
     box.append(el('p',t('oneTime')));const secret=el('input',null,{type:'text',readonly:'',value:data.temporary_password,'aria-label':t('oneTime'),class:'mono'});
     box.append(secret,button(t('copy'),async event=>{try{await navigator.clipboard.writeText(secret.value);event.target.textContent=t('copied');}catch{secret.focus();secret.select();}}));
   }
-  if(data.reauthenticate){me=null;box.append(el('p',t('reauthenticate')),el('a',t('login'),{href:'/login',class:'button primary'}));}
+  if(data.reauthenticate){me=null;box.append(el('p',t('reauthenticate')),loginLink(t('login'),{class:'button primary'}));}
   if(slot)slot.replaceChildren(box);else content.append(box);box.focus({preventScroll:true});box.scrollIntoView({block:'nearest',behavior:'smooth'});return box;
 }
 function formError(slot,error) {
@@ -477,7 +546,7 @@ function passwordForm(recover) {
   const submit=el('button',t('submit'),{type:'submit',class:'primary'});form.append(submit);const slot=resultSlot(form);content.append(form);
   form.addEventListener('submit',async event=>{
     event.preventDefault();submit.disabled=true;
-    try{const data=await api('/api/password/'+(recover?'recover':'change'),Object.fromEntries(new FormData(form)));renderResult(data,slot);}
+    try{const data=await api('/api/password/'+(recover?'recover':'change'),Object.fromEntries(new FormData(form)));renderResult(data,slot,'passwordChanged');}
     catch(error){formError(slot,error);}finally{for(const input of form.querySelectorAll('input[type=password]'))input.value='';submit.disabled=false;}
   });
 }
@@ -497,7 +566,7 @@ function preferencesCard() {
   }
   const show=el('label',null,{class:'check'}),box=el('input',null,{type:'checkbox',name:'show_categories'});box.checked=prefs.show_categories;
   box.addEventListener('change',()=>savePreferences({show_categories:box.checked}));show.append(box,el('span',t('showCategories')));
-  card.append(lang,fieldset,show);return card;
+  card.append(lang,fieldset,show,iconThemeCard(false));return card;
 }
 async function accountPage(section,current) {
   renderShell('work','account');document.body.dataset.page='account-'+section;

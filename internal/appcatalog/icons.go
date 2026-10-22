@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/anas-project/ANAS/internal/apptheme"
+
 	"golang.org/x/image/draw"
 )
 
@@ -25,7 +27,7 @@ const (
 	maxInputBytes       = 2 << 20
 	maxApplicationBytes = 4 << 20
 	maxBundleBytes      = 64 << 20
-	ScalerVersion       = "golang.org/x/image@v0.46.0/CatmullRom/png-best-compression"
+	ScalerVersion       = "golang.org/x/image@v0.46.0/CatmullRom/png-best-compression/rounded-v1"
 )
 
 type AssetSource struct {
@@ -88,6 +90,10 @@ func validateAssetPath(path string) error {
 // readAsset pins each opened directory and compares file identities. No symlink
 // is followed, including a replacement between inspection and opening.
 func readAsset(rootPath, path string) ([]byte, error) {
+	return readAssetLimit(rootPath, path, maxInputBytes)
+}
+
+func readAssetLimit(rootPath, path string, limit int64) ([]byte, error) {
 	if err := validateAssetPath(path); err != nil {
 		return nil, err
 	}
@@ -122,8 +128,8 @@ func readAsset(rootPath, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !before.Mode().IsRegular() || before.Size() > maxInputBytes {
-		return nil, fmt.Errorf("icon must be a regular file of at most 2 MiB")
+	if !before.Mode().IsRegular() || before.Size() > limit {
+		return nil, fmt.Errorf("asset must be a regular file within its size limit")
 	}
 	file, err := openAssetFile(current, name)
 	if err != nil {
@@ -134,12 +140,12 @@ func readAsset(rootPath, path string) ([]byte, error) {
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
 		return nil, fmt.Errorf("icon file changed during open")
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxInputBytes+1))
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > maxInputBytes {
-		return nil, fmt.Errorf("icon exceeds 2 MiB")
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("asset exceeds its size limit")
 	}
 	return data, nil
 }
@@ -195,7 +201,12 @@ func placeholder() image.Image {
 
 func encodeIcon(img image.Image, size int) ([]byte, error) {
 	dst := image.NewNRGBA(image.Rect(0, 0, size, size))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Src, nil)
+	if img.Bounds().Size() == dst.Bounds().Size() {
+		draw.Copy(dst, image.Point{}, img, img.Bounds(), draw.Src, nil)
+	} else {
+		draw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Src, nil)
+	}
+	apptheme.RoundCorners(dst)
 	var body bytes.Buffer
 	encoder := png.Encoder{CompressionLevel: png.BestCompression}
 	if err := encoder.Encode(&body, dst); err != nil {

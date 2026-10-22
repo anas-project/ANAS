@@ -212,3 +212,7 @@ Automatic-event evidence pairs new `Modify/member` sequence99 with persistent su
 ### Portal logout callback
 
 Set optional `browser_logout_return_url` to the same-site HTTPS portal `/signed-out?native=1`. The Hook registers that return URI and configures Immich `oauth.endSessionEndpoint` using the selected provider’s native `OIDC_END_SESSION_URL`, without hardcoding a provider path. Enabling this setting without native endpoint metadata fails closed; an empty setting retains native discovery. Immich deletes its current session, then the IAM return continues older-session cleanup in the portal without username-wide device revocation.
+
+### Application icon provenance
+
+`applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.

@@ -29,10 +29,16 @@ func Read(path string) (Catalog, error) {
 		return Catalog{}, fmt.Errorf("trailing application catalog data")
 	}
 	for _, app := range c.Applications {
-		for _, size := range IconSizes {
-			icon, ok := app.Icons[fmt.Sprint(size)]
-			if !ok || icon.Path != "assets/"+icon.SHA256+".png" || len(icon.SHA256) != 64 || strings.Trim(icon.SHA256, "0123456789abcdef") != "" || icon.Width != size || icon.Height != size || icon.MediaType != "image/png" {
-				return Catalog{}, fmt.Errorf("invalid catalog icon")
+		sets := []map[string]Icon{app.Icons}
+		if len(app.OriginalIcons) > 0 {
+			sets = append(sets, app.OriginalIcons)
+		}
+		for _, icons := range sets {
+			for _, size := range IconSizes {
+				icon, ok := icons[fmt.Sprint(size)]
+				if !ok || icon.Path != "assets/"+icon.SHA256+".png" || len(icon.SHA256) != 64 || strings.Trim(icon.SHA256, "0123456789abcdef") != "" || icon.Width != size || icon.Height != size || icon.MediaType != "image/png" {
+					return Catalog{}, fmt.Errorf("invalid catalog icon")
+				}
 			}
 		}
 	}

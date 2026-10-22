@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://casdoor.ai/docs/
       en: https://casdoor.ai/docs/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

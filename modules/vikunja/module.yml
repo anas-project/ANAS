@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://vikunja.io/docs/
       en: https://vikunja.io/docs/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: user
     categories:

@@ -1,0 +1,17 @@
+{
+  "application": "meshcentral",
+  "source": {
+    "url": "https://raw.githubusercontent.com/Ylianst/MeshCentral/029b7338ecfeeacc65da3b5a1a4cc069baeb2f65/public/favicon-303x303.png",
+    "sha256": "1b7d9724b4636be4ab88c373af21d5278b9f951acabcc6678c15c9b9ad7bc394",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/meshcentral.svg",
+  "artwork_sha256": "8040ce35e2027b0d0dca8a23f6fcc6b674f9301c06e8f58aefe7910512424d82",
+  "output_sha256": "e5cc9df7e84bdaf23a5226e40a244d4c2b1c69854e47a0fb8a6334a67985ce60",
+  "soft_artwork_sha256": "8b2a7ef071042779a808fa9bd9d8b07e1a44236bdd634bbf4d3281d40e6e9e00",
+  "soft_output_sha256": "3b86dc06b9b21b2944c6426a30e2d2780ca09822a63e0e2f2103a60d67846308"
+}

@@ -229,3 +229,7 @@ SMTP、S3、Redis、搜索、Pro、bot user 和 AI/MCP sidecar 不在首期自�
 Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录的 IAM Module 获得共享文件。
 本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
 [目录设计](/architecture/app-catalog-design)。
+
+### 应用图标来源
+
+应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。

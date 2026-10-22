@@ -1,0 +1,17 @@
+{
+  "application": "postgres-adminer",
+  "source": {
+    "url": "https://www.adminer.org/apple-touch-icon.png",
+    "sha256": "2bc60632ee38775c17842aa15873a8aaf2672e5ec2fcd79b5bb96397b8f15f4e",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/adminer.svg",
+  "artwork_sha256": "532a4ec67b655b42cce1189dcec60442b004bfcc943d57562648028e15edfaa4",
+  "output_sha256": "7d94a76378b6f064e55324339de938cede1d989fe6c67a1a6984e4464e275a5e",
+  "soft_artwork_sha256": "e98731641af30d861ef7cffd16a6c2e6b5ede70a99e2d437f493bdcee16b5202",
+  "soft_output_sha256": "d75691a55b6d21339eaacfee06641e24f214cdfbab70d2e4c02881b4342b8b31"
+}

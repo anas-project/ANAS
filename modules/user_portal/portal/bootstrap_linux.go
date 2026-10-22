@@ -23,7 +23,7 @@ func prepareStorage(path string) error {
 		return errors.New("audit mount unavailable")
 	}
 	defer unix.Close(fd)
-	for _, name := range []string{"audit", "preferences"} {
+	for _, name := range []string{"audit", "preferences", "themes"} {
 		if err := privateDirectory(fd, name); err != nil {
 			return err
 		}

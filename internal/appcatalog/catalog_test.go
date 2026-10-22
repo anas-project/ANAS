@@ -1,3 +1,4 @@
+// TEST_CASES: APPTHEME-T-004
 package appcatalog
 
 import (
@@ -240,5 +241,20 @@ func TestAssetSourceRejectsLinksTraversalAndBadPixels(t *testing.T) {
 	}
 	if _, err := decodeIcon(data, 64); err == nil {
 		t.Fatal("accepted wrong custom size")
+	}
+}
+
+func TestHiddenIAMBrandCannotBecomeUngatedVisibleEntry(t *testing.T) {
+	in := sampleInput("portal")
+	in.Application.Hidden = true
+	in.Application.Groups = nil
+	in.Application.Visibility = Visibility{Mode: "authenticated"}
+	c, _, err := Compile(Config{}, []Input{in}, "", "en")
+	if err != nil || !c.Applications[0].Hidden {
+		t.Fatal("hidden brand rejected", err)
+	}
+	visible := false
+	if _, _, err := Compile(Config{Overrides: map[string]Override{"portal": {Hidden: &visible}}}, []Input{in}, "", "en"); err == nil {
+		t.Fatal("ungated entry could be exposed")
 	}
 }

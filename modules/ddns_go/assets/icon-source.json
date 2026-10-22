@@ -1,0 +1,17 @@
+{
+  "application": "ddns_go-admin",
+  "source": {
+    "url": "https://raw.githubusercontent.com/jeessy2/ddns-go/7aad574de4ba1e4646f07648a38235d34bab6648/favicon.ico",
+    "sha256": "f8d8c2af8e52e6fdc1888f3668a4b3cbf30c4f7bb7b9809f4f982c757e9fc49a",
+    "file": "official.ico"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/ddns_go.svg",
+  "artwork_sha256": "91fba65a01193e8879d4952196385f03156916baefa1271dd21bf7711c25f363",
+  "output_sha256": "b6196fcd97420f1874306a5deb417a5152eeab4101599b0232afe036df62d0ef",
+  "soft_artwork_sha256": "797e26a2572b130d532d1ca70b1d6a685712bcd9159f38fc29c8e4edcc16a90c",
+  "soft_output_sha256": "85cf1db676fb3d208c9e1918cd6b6da044d08fc283d75cead566441d77053d6d"
+}

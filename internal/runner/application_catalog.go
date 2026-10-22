@@ -227,16 +227,15 @@ func (a *app) resolveApplicationInput(mod Module, entry appcatalog.Declaration, 
 		source := appcatalog.Source{Kind: "module", Module: mod.Name, Path: "module.yml"}
 		return appcatalog.Input{Application: appcatalog.Application{Metadata: metadata, Enabled: false, Access: entry.Access, Visibility: entry.Visibility, Source: source}, Icons: entry.Icons, Root: root, Builtin: !external, AllowHTTP: entry.AllowHTTP}, nil
 	}
+	if entry.Access.Mode == "iam" {
+		if _, ok := a.iamBindings[entry.Access.Client]; !ok || mod.Name != entry.Access.Client {
+			return appcatalog.Input{}, fmt.Errorf("application IAM client must be registered by its publishing module")
+		}
+	}
 	switch entry.Visibility.Mode {
 	case "access":
 		switch entry.Access.Mode {
 		case "iam":
-			if _, ok := a.iamBindings[entry.Access.Client]; !ok {
-				return appcatalog.Input{}, fmt.Errorf("application references an unregistered IAM client")
-			}
-			if mod.Name != entry.Access.Client {
-				return appcatalog.Input{}, fmt.Errorf("application IAM client must belong to its publishing module")
-			}
 			groups = catalogGroupList(a.env[iamClientKey(entry.Access.Client, "ALLOW_GROUPS")])
 		case "forward_auth":
 			provider := a.resolvedBindings[mod.Name]["forward_auth"]
@@ -323,6 +322,10 @@ func (a *app) prepareApplicationCatalog() error {
 	catalog, assets, files, err := appcatalog.BuildAssets(catalog, inputs)
 	if err != nil {
 		return err
+	}
+	catalog, assets, files, err = appcatalog.ApplyIconTheme(a.cfg.ApplicationCatalog, root, catalog, assets, files)
+	if err != nil {
+		return fmt.Errorf("application theme: %w", err)
 	}
 	a.applicationCatalog = &catalog
 	a.applicationCatalogAssets = &assets

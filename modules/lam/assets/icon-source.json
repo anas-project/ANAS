@@ -1,0 +1,17 @@
+{
+  "application": "lam-admin",
+  "source": {
+    "url": "https://www.ldap-account-manager.org/lamcms/sites/default/files/logo.png",
+    "sha256": "ec9959d2b5dcd1fc5b7970b55e5f0f54167d0088ffc86d6da509055be408aa17",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/lam.svg",
+  "artwork_sha256": "01d3c7753eb5b5db8b2f6963f867a7f139377d325661ad83c1392e33535d33b4",
+  "output_sha256": "69e9d43bdd2b5df8b59e490d096d943cce3e9fce0a982d4c63240fabfc2d4386",
+  "soft_artwork_sha256": "0f1402a485813db46f46e4746806f9ad396d8b94fcc85fee048dd2fd06a4c843",
+  "soft_output_sha256": "db7b50078572aeabe4bcdac91b08c22d4a80c747d56934f8f3c08de520ecee26"
+}

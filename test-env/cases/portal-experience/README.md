@@ -13,15 +13,16 @@
 | --- | --- | --- | --- |
 | `PORTALUX-T-001` | unit | `PORTALUX-R-001`、`PORTALUX-R-002` | internal/appcatalog/catalog_test.go<br>test-env/playwright/user-portal-experience.test.mjs |
 | `PORTALUX-T-002` | unit | `PORTALUX-R-006`、`PORTALUX-R-007`、`PORTALUX-R-008`、`PORTALUX-R-009`、`PORTALUX-R-010`、`PORTALUX-R-013` | modules/user_portal/portal/prefs_test.go |
-| `PORTALUX-T-003` | unit | `PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-019`、`PORTALUX-R-020`、`PORTALUX-R-021` | test-env/playwright/user-portal-experience.test.mjs |
+| `PORTALUX-T-003` | unit | `PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-032` | test-env/playwright/user-portal-experience.test.mjs |
 | `PORTALUX-T-004` | e2e | `PORTALUX-R-006`、`PORTALUX-R-021`、`PORTALUX-R-022` | test-env/playwright/user-portal-account-management.mjs |
+| `PORTALUX-T-006` | e2e | `PORTALUX-R-032`、`PORTALUX-R-033` | test-env/playwright/iam-appearance-finance.mjs<br>test-env/scripts/application-themes-directory-fixture.py |
 
 ## `PORTALUX-T-001` 八种界面语言与语言匹配
 
 - 级别：`unit`
 - 覆盖需求：`PORTALUX-R-001`、`PORTALUX-R-002`
 - 需求复核摘要：`sha256:0ed6fe37bb039a35de2b3bdad27943d183c6e731cab623580aa185c61756cc93`
-- 实现复核摘要：`sha256:f7e915dccb2da87cbddd664a1146848ef84dc4441ae101fdc7b39c92f7b5d62b`
+- 实现复核摘要：`sha256:ea0fadf1cae31966aaf12057ee88ef977958dc3a0c6e5a72e37ff7dda9bb1f04`
 - Fixture：Go 语言匹配表与生产语言包、前端源码；无网络
 - 目标能力：`go`、`node`
 - Oracle 来源：`return-value`
@@ -114,9 +115,9 @@ go test -race ./modules/user_portal/portal -run Preference
 ## `PORTALUX-T-003` 主题、常用、快速搜索与界面结构
 
 - 级别：`unit`
-- 覆盖需求：`PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-019`、`PORTALUX-R-020`、`PORTALUX-R-021`
-- 需求复核摘要：`sha256:85dfdadac5b429d47205ccb11c293f4247952bd76ffb9ff73f4114f6d21a2104`
-- 实现复核摘要：`sha256:fa6a96b8ff329bd13f58a3bfb1bdef419ffc7ab4a39d9caeda81b84cab93e73a`
+- 覆盖需求：`PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-032`
+- 需求复核摘要：`sha256:70a962387b349e33ade2abd55781c26b5cf515e17df041d5b834d7a71a90fae7`
+- 实现复核摘要：`sha256:8cbad62aafd5e9e34a47285670b36faa1582322aae3537e85b567d659dbe9ab2`
 - Fixture：生产静态资源配模拟 API；不使用真实账号
 - 目标能力：`playwright-chromium`
 - Oracle 来源：`ui`
@@ -135,7 +136,7 @@ go test -race ./modules/user_portal/portal -run Preference
 
 可观察断言：
 
-- 系统主题实时跟随、固定主题不跟随、首屏主题；对比度不低于 4.5:1；常用加入/排序/移出；快速搜索键盘操作与人员权限；地址刷新与前进后退；管理模式可见性；卡片入口与文档分离；三段结果；危险区确认；390px 无横向滚动
+- 系统主题实时跟随、固定主题不跟随、首屏主题；对比度不低于 4.5:1；常用加入/排序/移出；快速搜索键盘操作与人员权限；地址刷新与前进后退；管理模式可见性；卡片入口与文档分离；仅可确认的操作结果；危险区确认；390px 无横向滚动
 
 反例与故障路径：
 
@@ -201,4 +202,54 @@ node test-env/playwright/user-portal-account-management.mjs
 
 ```bash
 node test-env/playwright/user-portal-account-management.mjs
+```
+
+## `PORTALUX-T-006` finance原生改密入口及清晰结果
+
+- 级别：`e2e`
+- 覆盖需求：`PORTALUX-R-032`、`PORTALUX-R-033`
+- 需求复核摘要：`sha256:6ea34060cc9f4f8ba9fe83b7ed52fd8043e6cdfe967f527acc13755da00ab3eb`
+- 实现复核摘要：`sha256:b7b9c2465d1a408d1b4902d6e12d88fd02bc0b70687b5f7d3e89fbb3036f9356`
+- Fixture：finance原生IAM与门户、同主机专用临时账号
+- 目标能力：`ssh`、`node`、`browser`、`docker`、`native-oidc`、`samba-ad`
+- Oracle 来源：`ui`、`filesystem`、`return-value`
+- 有效性证明：`counterexample`
+- 有效性证据：移除恢复入口或仍展示未跟踪的状态时断言失败
+- 超时：`15m`
+- 敏感数据：临时密码仅留finance的0700/0600私有目录；不转移到工作站或其他服务器
+
+前置条件：
+
+- 本轮候选已原生部署，同主机临时normal用户标记pwdLastSet=0
+
+执行步骤：
+
+- 创建专属普通账号与ANAS管理员，标记普通账号需改密
+- 执行原生IAM外观与密码流程
+- 保留无密证据并清理专属账号
+
+可观察断言：
+
+- ANAS原生IAM登录恢复入口可用、本地恢复管理员保持原生流程
+- 普通账号pwdLastSet=0，错误临时密码可见失败，正确密码恢复成功，随后原生OIDC新密码登录通过
+- 资料和密码结果没有未跟踪的IAM或会话状态
+
+反例与故障路径：
+
+- 匿名、CSRF缺失、普通用户导入、隐藏应用图片和损坏主题
+
+清理：
+
+- 按标记和GUID删除两临时账号及OU，清理IAM软删除用户和私有凭据；保留无密报告和截图
+
+执行入口：
+
+```bash
+node test-env/playwright/iam-appearance-finance.mjs
+```
+
+有效性验证入口：
+
+```bash
+node test-env/playwright/iam-appearance-finance.mjs
 ```

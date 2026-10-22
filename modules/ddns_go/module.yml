@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://github.com/jeessy2/ddns-go
       en: https://github.com/jeessy2/ddns-go
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

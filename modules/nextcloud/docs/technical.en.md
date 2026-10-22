@@ -278,3 +278,7 @@ the target URL. Native IAM display limitations and end-to-end acceptance are tra
 ### Portal logout callback
 
 Set optional `browser_logout_return_url` to the same-site HTTPS portal `/signed-out?native=1`. The Hook registers it and derives `NEXTCLOUD_OIDC_POST_LOGOUT_URI`; native user_oidc SLS returns there to clean up older app sessions in this browser. An empty value keeps the native Nextcloud homepage return. The fixed callback exposes only minimal logout protocol addresses, never the business catalog; cross-site navigations require a continue button.
+
+### Application icon provenance
+
+`applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.

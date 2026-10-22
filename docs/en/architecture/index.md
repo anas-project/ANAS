@@ -990,3 +990,12 @@ section 4.3, and the dated acceptance review for exact executed scope rather tha
 The user_portal release Dockerfile built successfully and its historical Linux/amd64 image passed 95 runtime checks and 41 criteria on isolated finance. Pre-commit review fixed public recovery limit disclosure and rejected-member audit attribution; the plan is reopened until the updated release image is revalidated. See the Module-private portal plan for exact baselines.
 
 Primary addresses are now designed as Samba-managed `username@mail_domain` values, with an independent mail suffix and no manual primary-address input. Portal creation and management are restricted to the provider user OU and descendants; the mail backend will consume AD addresses later. See the [confirmed account/mail design](../../architecture/portal-account-mail-administration.md); new artifact acceptance remains recorded in the paired plans.
+
+
+## Application icon themes
+
+The [Chinese icon theme design](/architecture/application-themes) defines original/minimal artwork,
+data-only theme packages, account selections and the shared global Casdoor default. It reuses the
+portal process/data volume and frozen application catalog. Administrator import does not deploy
+configuration or require IAM write credentials. Implementation and real-host acceptance remain
+tracked in the paired cross-module plan.

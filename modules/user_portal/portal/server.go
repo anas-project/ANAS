@@ -13,13 +13,13 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
+	"github.com/anas-project/ANAS/internal/apptheme"
 	"github.com/anas-project/ANAS/modules/user_portal/browserlogout"
 )
 
@@ -70,6 +70,8 @@ type Server struct {
 	limiter   *Limiter
 	// preferences holds account-level display choices only.
 	preferences *preferenceStore
+	themes      *themeLibrary
+	themesOnce  sync.Once
 	peers       []netip.Addr
 	digest      string
 	writes      sync.Mutex
@@ -145,6 +147,9 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/bootstrap", s.bootstrap)
 	m.HandleFunc("GET /api/me", s.me)
 	m.HandleFunc("POST /api/me/preferences", s.updatePreferences)
+	m.HandleFunc("GET /api/themes", s.themesList)
+	m.HandleFunc("POST /api/themes", s.importTheme)
+	m.HandleFunc("GET /api/themes/{id}/export", s.exportTheme)
 	m.HandleFunc("POST /api/me/profile", s.updateProfile)
 	m.HandleFunc("POST /api/administration/prepare", s.prepareOperation)
 	m.HandleFunc("POST /api/administration/execute", s.executeOperation)
@@ -196,7 +201,11 @@ func (s *Server) Handler() http.Handler {
 				return
 			}
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+		bodyLimit := int64(16 << 10)
+		if r.Method == "POST" && r.URL.Path == "/api/themes" {
+			bodyLimit = apptheme.MaxBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 		m.ServeHTTP(w, r)
 	})
 }
@@ -216,6 +225,9 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) begin(w http.ResponseWriter, r *http.Request, v Session, reauth bool) {
 	f := Flow{State: randomID(), Nonce: randomID(), Verifier: randomID(), Cookie: randomID(), Reauth: reauth, Expires: time.Now().Add(5 * time.Minute)}
+	if theme := r.URL.Query().Get("theme"); theme == "dark" || theme == "default" {
+		f.Theme = theme
+	}
 	if reauth {
 		f.Session = v.ID
 		f.Subject = v.Subject
@@ -423,18 +435,18 @@ func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
 		if app.Name != r.PathValue("name") || !applicationAllowed(s.catalog, app, u, p) {
 			continue
 		}
-		icon, found := app.Icons[r.PathValue("size")]
+		_, found := app.Icons[r.PathValue("size")]
 		if !found {
 			break
 		}
-		data, err := appcatalog.ReadIcon(filepath.Dir(s.config.Catalog), icon)
+		data, digest, err := s.themedIcon(app, s.chosenTheme(p, r.URL.Query().Get("theme")), r.PathValue("size"))
 		if err != nil {
 			failure(w, 503, "asset_unavailable")
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "private, max-age=86400, immutable")
-		w.Header().Set("ETag", `"`+icon.SHA256+`"`)
+		w.Header().Set("ETag", `"`+digest+`"`)
 		w.WriteHeader(200)
 		_, _ = w.Write(data)
 		return

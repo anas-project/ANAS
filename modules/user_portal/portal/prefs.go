@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
+	"github.com/anas-project/ANAS/internal/apptheme"
 )
 
 // Preferences are account-level display choices. They hold no identity facts,
@@ -17,6 +18,7 @@ import (
 type Preferences struct {
 	Language       string   `json:"language"`
 	Theme          string   `json:"theme"`
+	IconTheme      string   `json:"icon_theme,omitempty"`
 	ShowCategories *bool    `json:"show_categories"`
 	Pinned         []string `json:"pinned"`
 }
@@ -38,6 +40,9 @@ func defaultPreferences() Preferences {
 }
 
 func (p Preferences) valid() bool {
+	if p.IconTheme != "" && !apptheme.IDPattern.MatchString(p.IconTheme) {
+		return false
+	}
 	if p.Language != "" && !appcatalog.SupportedKey(p.Language) || p.Theme != "system" && p.Theme != "light" && p.Theme != "dark" || p.ShowCategories == nil || p.Pinned == nil || len(p.Pinned) > maxPinned {
 		return false
 	}
@@ -159,6 +164,16 @@ func (s *Server) updatePreferences(w http.ResponseWriter, r *http.Request) {
 	if !decode(r, &p) || !p.valid() {
 		failure(w, 400, "invalid_request")
 		return
+	}
+	if !s.hasTheme(p.IconTheme) {
+		// A previously selected package may have become unavailable. Repair
+		// that stale reference when saving other display choices; a newly
+		// submitted unknown ID is still rejected.
+		if p.IconTheme != s.preferences.get(person.Anchor).IconTheme {
+			failure(w, 400, "invalid_theme")
+			return
+		}
+		p.IconTheme = ""
 	}
 	if visible := s.visiblePreferences(p, account, person); len(visible.Pinned) != len(p.Pinned) {
 		failure(w, 400, "invalid_request")

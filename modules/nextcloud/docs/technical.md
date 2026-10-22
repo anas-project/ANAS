@@ -265,3 +265,7 @@ Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录�
 ### 门户退出回调
 
 可选 `browser_logout_return_url` 设置为同站点 HTTPS 门户的 `/signed-out?native=1`。Hook 同时将地址加入 OIDC 注册并派生 `NEXTCLOUD_OIDC_POST_LOGOUT_URI`；原生 user_oidc SLS 返回该页，继续清理当前浏览器的旧应用会话。为空时保持原生返回 Nextcloud 首页。固定回调仅公开最小退出协议地址，不开放业务目录；跨站点导航需要点击继续。
+
+### 应用图标来源
+
+应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。

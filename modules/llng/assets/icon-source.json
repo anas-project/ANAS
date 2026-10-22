@@ -1,0 +1,17 @@
+{
+  "application": "llng-admin",
+  "source": {
+    "url": "https://lemonldap-ng.org/images/logo_llng_600px.png",
+    "sha256": "ecebce4b6ad7c22ff1b011a69f6b9bc12a27aa35ac39cf6e2d7775fc25bbe9fe",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/llng.svg",
+  "artwork_sha256": "f6ce9cb47e4ad258ccfb016cd4462b99fdf494dbe47d668807b0d5123a31c9d6",
+  "output_sha256": "d967d7532e14345b7a1a8d7d204d830702f502ff76d132a6862af70634b0ff9a",
+  "soft_artwork_sha256": "cda3be93e99a04899915652d450a4fd99c1378f5a0a03c48cd40cd38f4a2a356",
+  "soft_output_sha256": "163d69fd794070da02f7d1494d04eee0f1663d4874d11683260a4c24064bc596"
+}

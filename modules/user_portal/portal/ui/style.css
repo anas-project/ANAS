@@ -314,3 +314,11 @@ button.nav-link{justify-content:flex-start;border:0;background:none;font-weight:
 .search-trigger{min-width:0}
 .compact-select select{min-width:112px}
 @media (min-width:721px){.mobile-only{display:none!important}}
+
+/* Data-only application themes use the same controls and narrow-screen flow. */
+.icon-theme-settings{margin-top:20px;padding-top:20px;border-top:1px solid var(--line);display:grid;gap:12px;min-width:0}
+.theme-library{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px}
+.theme-library .card{display:grid;align-content:start;gap:12px;min-width:0}
+.theme-library pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px;max-width:100%}
+.icon-theme-settings input[type=file]{max-width:100%;white-space:normal}
+.theme-preview{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0}

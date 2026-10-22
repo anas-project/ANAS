@@ -26,6 +26,8 @@ applications:
     documentation_url:
       zh-CN: https://lemonldap-ng.org/documentation/
       en: https://lemonldap-ng.org/documentation/
+    icons:
+      source: assets/icon.png
     weight: 100
     kind: admin
     categories:

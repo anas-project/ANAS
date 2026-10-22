@@ -139,3 +139,7 @@ Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录�
 ### 系统管理的主邮箱
 
 使用 windowsUser 原生配置隐藏 mail、otherMailbox、proxyAddresses 的手工输入，人员列表仍显示 mail。LAM 建号后由 Samba 目录 Worker 的 Add 事件补全主地址，定期扫描兜底；它与门户建号同时写入有所区别，不属于 LAM 的 Add 事务。主地址和后缀均由系统管理，显示地址不代表收件箱或邮件服务已开通。直接 LDAP 工具及 LAM 配置管理员仍具有自身授权，操作时须遵守这一目录规则。
+
+### 应用图标来源
+
+应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。

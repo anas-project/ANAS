@@ -1,0 +1,2 @@
+# Keep the official artwork byte-for-byte so its recorded source digest remains valid.
+modules/immich/assets/official.svg -text whitespace=cr-at-eol

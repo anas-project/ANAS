@@ -3,7 +3,7 @@ topic: "portal-experience"
 title: "门户多语言、主题与界面重做验收用例"
 requirement_document: "modules/user_portal/dev-docs/requirements/portal-experience.md"
 plan_document: "modules/user_portal/dev-docs/plans/archived/portal-experience.md"
-requirement_scope: ["PORTALUX-R-001", "PORTALUX-R-002", "PORTALUX-R-003", "PORTALUX-R-004", "PORTALUX-R-005", "PORTALUX-R-006", "PORTALUX-R-007", "PORTALUX-R-008", "PORTALUX-R-009", "PORTALUX-R-010", "PORTALUX-R-011", "PORTALUX-R-012", "PORTALUX-R-013", "PORTALUX-R-014", "PORTALUX-R-015", "PORTALUX-R-016", "PORTALUX-R-017", "PORTALUX-R-018", "PORTALUX-R-019", "PORTALUX-R-020", "PORTALUX-R-021", "PORTALUX-R-022"]
+requirement_scope: ["PORTALUX-R-001", "PORTALUX-R-002", "PORTALUX-R-003", "PORTALUX-R-004", "PORTALUX-R-005", "PORTALUX-R-006", "PORTALUX-R-007", "PORTALUX-R-008", "PORTALUX-R-009", "PORTALUX-R-010", "PORTALUX-R-011", "PORTALUX-R-012", "PORTALUX-R-013", "PORTALUX-R-014", "PORTALUX-R-015", "PORTALUX-R-016", "PORTALUX-R-017", "PORTALUX-R-018", "PORTALUX-R-020", "PORTALUX-R-021", "PORTALUX-R-022", "PORTALUX-R-032", "PORTALUX-R-033"]
 cases:
   - id: "PORTALUX-T-001"
     title: "八种界面语言与语言匹配"
@@ -11,7 +11,7 @@ cases:
     level: "unit"
     requirements: ["PORTALUX-R-001", "PORTALUX-R-002"]
     requirement_digest: "sha256:0ed6fe37bb039a35de2b3bdad27943d183c6e731cab623580aa185c61756cc93"
-    implementation_digest: "sha256:f7e915dccb2da87cbddd664a1146848ef84dc4441ae101fdc7b39c92f7b5d62b"
+    implementation_digest: "sha256:ea0fadf1cae31966aaf12057ee88ef977958dc3a0c6e5a72e37ff7dda9bb1f04"
     fixture: "Go 语言匹配表与生产语言包、前端源码；无网络"
     capabilities: ["go", "node"]
     preconditions: ["安装锁定的 Node 依赖"]
@@ -61,9 +61,9 @@ cases:
     title: "主题、常用、快速搜索与界面结构"
     status: "active"
     level: "unit"
-    requirements: ["PORTALUX-R-003", "PORTALUX-R-004", "PORTALUX-R-005", "PORTALUX-R-011", "PORTALUX-R-012", "PORTALUX-R-014", "PORTALUX-R-015", "PORTALUX-R-016", "PORTALUX-R-017", "PORTALUX-R-018", "PORTALUX-R-019", "PORTALUX-R-020", "PORTALUX-R-021"]
-    requirement_digest: "sha256:85dfdadac5b429d47205ccb11c293f4247952bd76ffb9ff73f4114f6d21a2104"
-    implementation_digest: "sha256:fa6a96b8ff329bd13f58a3bfb1bdef419ffc7ab4a39d9caeda81b84cab93e73a"
+    requirements: ["PORTALUX-R-003", "PORTALUX-R-004", "PORTALUX-R-005", "PORTALUX-R-011", "PORTALUX-R-012", "PORTALUX-R-014", "PORTALUX-R-015", "PORTALUX-R-016", "PORTALUX-R-017", "PORTALUX-R-018", "PORTALUX-R-020", "PORTALUX-R-021", "PORTALUX-R-032"]
+    requirement_digest: "sha256:70a962387b349e33ade2abd55781c26b5cf515e17df041d5b834d7a71a90fae7"
+    implementation_digest: "sha256:8cbad62aafd5e9e34a47285670b36faa1582322aae3537e85b567d659dbe9ab2"
     fixture: "生产静态资源配模拟 API；不使用真实账号"
     capabilities: ["playwright-chromium"]
     preconditions: ["安装锁定的 Playwright；浏览器使用默认 Chromium 或 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 指定的独立测试进程"]
@@ -71,7 +71,7 @@ cases:
     implementation:
       files: ["test-env/playwright/user-portal-experience.test.mjs"]
       commands: ["node test-env/playwright/user-portal-experience.test.mjs"]
-    assertions: ["系统主题实时跟随、固定主题不跟随、首屏主题；对比度不低于 4.5:1；常用加入/排序/移出；快速搜索键盘操作与人员权限；地址刷新与前进后退；管理模式可见性；卡片入口与文档分离；三段结果；危险区确认；390px 无横向滚动"]
+    assertions: ["系统主题实时跟随、固定主题不跟随、首屏主题；对比度不低于 4.5:1；常用加入/排序/移出；快速搜索键盘操作与人员权限；地址刷新与前进后退；管理模式可见性；卡片入口与文档分离；仅可确认的操作结果；危险区确认；390px 无横向滚动"]
     oracle:
       sources: ["ui"]
     negative_cases: ["无人员权限的快速搜索、普通用户访问管理地址、未知地址"]
@@ -108,3 +108,5 @@ cases:
     cleanup: ["按 PORTAL-T-007 清理夹具；测试结束前把偏好恢复为默认"]
     timeout: "30m"
     sensitive_data: "测试密码只在主机内处理，不进入报告"
+
+  - {"id": "PORTALUX-T-006", "title": "finance原生改密入口及清晰结果", "status": "active", "level": "e2e", "requirements": ["PORTALUX-R-032", "PORTALUX-R-033"], "fixture": "finance原生IAM与门户、同主机专用临时账号", "capabilities": ["ssh", "node", "browser", "docker", "native-oidc", "samba-ad"], "preconditions": ["本轮候选已原生部署，同主机临时normal用户标记pwdLastSet=0"], "steps": ["创建专属普通账号与ANAS管理员，标记普通账号需改密", "执行原生IAM外观与密码流程", "保留无密证据并清理专属账号"], "implementation": {"files": ["test-env/playwright/iam-appearance-finance.mjs", "test-env/scripts/application-themes-directory-fixture.py"], "commands": ["node test-env/playwright/iam-appearance-finance.mjs"]}, "assertions": ["ANAS原生IAM登录恢复入口可用、本地恢复管理员保持原生流程", "普通账号pwdLastSet=0，错误临时密码可见失败，正确密码恢复成功，随后原生OIDC新密码登录通过", "资料和密码结果没有未跟踪的IAM或会话状态"], "oracle": {"sources": ["ui", "filesystem", "return-value"]}, "negative_cases": ["匿名、CSRF缺失、普通用户导入、隐藏应用图片和损坏主题"], "validity": {"method": "counterexample", "commands": ["node test-env/playwright/iam-appearance-finance.mjs"], "evidence": "移除恢复入口或仍展示未跟踪的状态时断言失败"}, "cleanup": ["按标记和GUID删除两临时账号及OU，清理IAM软删除用户和私有凭据；保留无密报告和截图"], "timeout": "15m", "sensitive_data": "临时密码仅留finance的0700/0600私有目录；不转移到工作站或其他服务器", "requirement_digest": "sha256:6ea34060cc9f4f8ba9fe83b7ed52fd8043e6cdfe967f527acc13755da00ab3eb", "implementation_digest": "sha256:b7b9c2465d1a408d1b4902d6e12d88fd02bc0b70687b5f7d3e89fbb3036f9356"}

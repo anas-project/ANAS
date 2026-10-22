@@ -1,0 +1,17 @@
+{
+  "application": "collabora-admin",
+  "source": {
+    "url": "https://www.collaboraonline.com/wp-content/uploads/2023/06/collabora-symbols-600.png",
+    "sha256": "f993521c4ffe4000f644d039cf6268d9d44ec527b27d3160793b13d3011a0364",
+    "file": "official.png"
+  },
+  "artwork": "icon.svg",
+  "generated": true,
+  "method": "Native SVG reconstruction of the original mark; flat geometry, no wordmark, transparent background.",
+  "output": "icon.png",
+  "soft_artwork": "internal/apptheme/artwork/collabora.svg",
+  "artwork_sha256": "7f91cb9c3b2b070ae51e9477a8a11a3627532726213880ac886b753ab0a787e2",
+  "output_sha256": "749985efadc469b952c0a5effd259ec5d37bcef22a7e4927be1b1cb4ee78ba31",
+  "soft_artwork_sha256": "3fa28ebae16c1d3c9acc0e7478e5e4dfdf4f5c7b00cc645880db2bdc1290e79b",
+  "soft_output_sha256": "b908bc6dee1f3f8370cef0a9fc22c04cd869e478e5e225105fc3c7b2b7e704c4"
+}
