@@ -58,7 +58,7 @@ Before enabling writes, an operator runs `tools/provision-directory.py` inside t
 
 The profile writer only writes the three name fields. Reset covers ordinary personnel's reset/pwdLastSet/lockoutTime; member writes cover registered, non-domain groups. Existing domain-level personnel receive explicit reset denials. Privilege changes or new privileged users made outside the portal require the operator to recheck ACLs. Object ACLs do not constrain member values and cannot replace current portal authorization. A non-domain service account credential still has sensitive delegated rights.
 
-`domain_administration_enabled` defaults to false. Protected personnel/system groups require recent OIDC, an expiring one-use parameter confirmation and the signed-in person's own per-request LDAPS bind and native AD rights. That password is not stored across requests. This is not an MFA or process isolation claim, and the recommended dedicated-bind configuration holds no permanent domain-wide writer credential. AD remains authoritative for custom ACL permissions.
+`domain_administration_enabled` defaults to false. Protected personnel/system groups require recent authentication, an expiring one-use parameter confirmation and the signed-in person's own per-request LDAPS bind and native AD rights. That password is not stored across requests. This is not an MFA or process isolation claim, and the recommended dedicated-bind configuration holds no permanent domain-wide writer credential. AD remains authoritative for custom ACL permissions.
 
 ## Administrator login and IAM recovery
 

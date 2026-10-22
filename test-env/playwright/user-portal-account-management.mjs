@@ -44,7 +44,7 @@ async function reauth(p,alias) {
   await p.locator('.login-username-input input,input.login-username-input').fill(f.users[alias].username);
   await p.locator('input[type=password]').fill(f.passwords[alias]);await p.locator('button.login-button').click({noWaitAfter:true});
   await p.waitForURL(u=>u.hostname==='portal.finance.hlong.wang'&&u.pathname==='/',{timeout:45000,waitUntil:'domcontentloaded'});
-  check([6,59],'native recent OIDC authentication '+alias,(await api(p,'/api/me')).data.recent_authentication);
+  check(['UX-026',59],'OIDC re-sign-in still establishes recent authentication '+alias,(await api(p,'/api/me')).data.recent_authentication);
 }
 async function domain(p,op,password=f.passwords.domain) {
   const prepared=await api(p,'/api/administration/prepare',op);
@@ -228,7 +228,33 @@ try {
   check([59],'signed authentication really expires',expired);
   result=await api(manager,'/api/administration/execute',op('account.unlock',f.users.target.anchor));
   check([59],'expired authentication blocks a real directory write',result.status===403&&result.data.error==='recent_authentication_required');
-  await reauth(manager,'manager');await reauth(domainPage,'domain');
+  // PORTALUX-R-026..028: the page asks for the operator's own domain password
+  // and the portal verifies it against Samba; IAM is not involved.
+  report.stage='in-page-recent-authentication';
+  result=await api(manager,'/api/reauth/password',{password:f.passwords.manager},{'X-CSRF-Token':'forged'});
+  check(['UX-027'],'password re-authentication checks CSRF',result.status===403&&!(await api(manager,'/api/me')).data.recent_authentication);
+  result=await api(manager,'/api/reauth/password',{password:f.passwords.manager,username:f.users.domain.username});
+  check(['UX-027'],'password re-authentication accepts no other fields',result.status===400);
+  await manager.goto(f.origin+'/#/admin/users/'+encodeURIComponent(f.users.target.anchor),{waitUntil:'domcontentloaded'});await manager.locator('body[data-page=admin-user]').waitFor({state:'attached'});
+  const zone=manager.locator('section.danger-zone'),unlockWrites=[];
+  const countUnlock=request=>{if(request.method()==='POST'&&new URL(request.url()).pathname==='/api/administration/execute')unlockWrites.push(request.postDataJSON()?.action);};
+  manager.on('request',countUnlock);
+  await zone.getByRole('button',{name:'Unlock account',exact:true}).click();await manager.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();
+  const reauthDialog=manager.getByRole('dialog',{name:'Confirm your identity'});await reauthDialog.waitFor();
+  check(['UX-028'],'expired recent authentication opens the in-page password dialog for the signed-in person',(await reauthDialog.innerText()).includes(f.users.manager.username)&&!manager.url().includes('auth.finance'));
+  await reauthDialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  check(['UX-028'],'cancelling the password dialog does not retry the operation',!await manager.getByRole('dialog').count()&&unlockWrites.length===1);
+  await zone.getByRole('button',{name:'Unlock account',exact:true}).click();await manager.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();await reauthDialog.waitFor();
+  await reauthDialog.getByLabel('Current password',{exact:true}).fill(f.passwords.domain);await reauthDialog.getByRole('button',{name:'Confirm operation',exact:true}).click();
+  await reauthDialog.getByRole('alert').waitFor();
+  check(['UX-026','UX-027','UX-028'],'another valid person password is rejected and the dialog stays open',await reauthDialog.isVisible()&&!(await api(manager,'/api/me')).data.recent_authentication&&unlockWrites.length===2);
+  await reauthDialog.getByLabel('Current password',{exact:true}).fill(f.passwords.manager);await reauthDialog.getByRole('button',{name:'Confirm operation',exact:true}).click();
+  await zone.locator('.form-result .result[role=status]').waitFor({timeout:45000});
+  check(['UX-026','UX-028'],'own domain password restores recent authentication and the operation runs once',!await manager.getByRole('dialog').count()&&(await api(manager,'/api/me')).data.recent_authentication&&unlockWrites.length===3);
+  manager.off('request',countUnlock);
+  const reauthAudit=(await api(manager,'/api/audit')).data.records.filter(r=>r.action==='session.reauth');
+  check(['UX-027'],'password re-authentication audits success and failure without passwords',reauthAudit.some(r=>r.directory==='saved')&&reauthAudit.some(r=>r.directory==='denied')&&secretValues.every(secret=>!JSON.stringify(reauthAudit).includes(secret)));
+  await reauth(domainPage,'domain');
   result=await api(domainPage,'/api/administration/execute',{...expiringOperation,proof:expiringProof,actor_password:f.passwords.domain});
   check([56],'expired confirmation rejected after fresh OIDC',result.status===403&&result.data.error==='confirmation_required');
   report.stage='native-domain-operations';

@@ -131,6 +131,7 @@ func TestThemeImportUsesCurrentAdministratorCSRFAndRecentAuthentication(t *testi
 	f.session.CSRF = old
 	session := f.session
 	session.AuthTime = time.Now().Add(-10 * time.Minute)
+	session.VerifiedAt = time.Time{}
 	f.server.store.add(session)
 	if r = f.request("POST", "/api/themes", body); r.Code != 403 || !strings.Contains(r.Body.String(), "recent_authentication_required") {
 		t.Fatal("stale auth accepted", r.Body.String())

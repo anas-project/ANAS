@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/anas-project/ANAS/internal/directorymail"
 	"github.com/go-ldap/ldap/v3"
@@ -62,7 +61,7 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "invalid_request")
 		return
 	}
-	if !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
+	if !s.recentSession(v) {
 		s.rejected(actor.Anchor, "", "user.create", "platform_admin")
 		failure(w, 403, "recent_authentication_required")
 		return

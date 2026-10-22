@@ -191,7 +191,7 @@
       "timeout": "5m",
       "sensitive_data": "仅内存测试身份；无真实目录凭据",
       "requirement_digest": "sha256:db272c4baba703253049ad7638293434bd2e388d83553b58bc339a0661a12b54",
-      "implementation_digest": "sha256:22f26f0e52f3258c8d93ef05bfa9450453f13bed6bc9959d52065976305c1437"
+      "implementation_digest": "sha256:b3a1c5d8f99ed78cb03db5f8bff1f3ae3f369d523cca4225030d9612b8296177"
     },
     {
       "id": "APPTHEME-T-004",
@@ -436,7 +436,7 @@
       "timeout": "5m",
       "sensitive_data": "仅内存测试身份；无真实目录凭据",
       "requirement_digest": "sha256:56a68813510fb96b5fdb7740585ced0e17baad531ad14e74c7cc071ceca4f444",
-      "implementation_digest": "sha256:fedec88e556ca8ee2b74073c89625472e10a7c62bad11ddd0bc2e2d3a47ea916"
+      "implementation_digest": "sha256:3994c50edb392642462eeac1cc04fa7d23701f43311bfa89bb0057a817e7e817"
     },
     {
       "id": "APPTHEME-T-008",

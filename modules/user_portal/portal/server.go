@@ -164,6 +164,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/logout/complete", s.logout)
 	m.HandleFunc("GET "+browserlogout.Path, s.browserLogout)
 	m.HandleFunc("POST /api/reauth", s.reauth)
+	m.HandleFunc("POST /api/reauth/password", s.reauthPassword)
 	m.HandleFunc("POST /api/password/change", s.changePassword)
 	m.HandleFunc("POST /api/password/recover", s.recoverPassword)
 	m.HandleFunc("POST /api/users/{anchor}/reset", s.resetPassword)
@@ -392,7 +393,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			actions = append(actions, "user.create")
 		}
 	}
-	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "preferences": s.visiblePreferences(s.preferences.get(p.Anchor), account, p), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": recent(v.AuthTime, s.config.RecentWindow, time.Now())})
+	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "preferences": s.visiblePreferences(s.preferences.get(p.Anchor), account, p), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": s.recentSession(v)})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
@@ -882,7 +883,7 @@ func (s *Server) adminGuard(w http.ResponseWriter, r *http.Request, targetAnchor
 		failure(w, 403, "access_denied")
 		return v, actor, target, rule, false
 	}
-	if !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
+	if !s.recentSession(v) {
 		s.rejected(v.Subject, targetAnchor, action, rule)
 		failure(w, 403, "recent_authentication_required")
 		return v, actor, target, rule, false
@@ -892,7 +893,7 @@ func (s *Server) adminGuard(w http.ResponseWriter, r *http.Request, targetAnchor
 
 func (s *Server) validWriteSession(ctx context.Context, id, subject string, needRecent bool) bool {
 	v, ok := s.store.get(id)
-	if !ok || v.Anonymous || v.Subject != subject || needRecent && !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
+	if !ok || v.Anonymous || v.Subject != subject || needRecent && !s.recentSession(v) {
 		return false
 	}
 	_, err := s.oidc.account(ctx, v.Authentication)

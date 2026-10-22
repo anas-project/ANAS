@@ -14,7 +14,8 @@ import (
 
 type accountFake struct {
 	*fakeDirectory
-	asCalls int
+	asCalls     int
+	verifyCalls int
 }
 
 func (d *accountFake) Groups() ([]Group, error) {

@@ -117,7 +117,7 @@ node scripts/application-themes.mjs --check
 - 级别：`unit`
 - 覆盖需求：`APPTHEME-R-004`、`APPTHEME-R-006`、`APPTHEME-R-007`、`APPTHEME-R-008`、`APPTHEME-R-009`、`APPTHEME-R-010`、`APPTHEME-R-013`
 - 需求复核摘要：`sha256:db272c4baba703253049ad7638293434bd2e388d83553b58bc339a0661a12b54`
-- 实现复核摘要：`sha256:22f26f0e52f3258c8d93ef05bfa9450453f13bed6bc9959d52065976305c1437`
+- 实现复核摘要：`sha256:b3a1c5d8f99ed78cb03db5f8bff1f3ae3f369d523cca4225030d9612b8296177`
 - Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
 - 目标能力：`go`
 - Oracle 来源：`return-value`、`filesystem`
@@ -307,7 +307,7 @@ node test-env/playwright/application-themes-finance.mjs
 - 级别：`unit`
 - 覆盖需求：`APPTHEME-R-016`
 - 需求复核摘要：`sha256:56a68813510fb96b5fdb7740585ced0e17baad531ad14e74c7cc071ceca4f444`
-- 实现复核摘要：`sha256:fedec88e556ca8ee2b74073c89625472e10a7c62bad11ddd0bc2e2d3a47ea916`
+- 实现复核摘要：`sha256:3994c50edb392642462eeac1cc04fa7d23701f43311bfa89bb0057a817e7e817`
 - Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
 - 目标能力：`node`、`browser`
 - Oracle 来源：`ui`

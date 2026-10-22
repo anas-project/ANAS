@@ -99,6 +99,17 @@ func (d *LDAPDirectory) Groups() ([]Group, error) {
 }
 
 // bindActor proves the operator's own domain password on one connection.
+// VerifyActor binds as the person over LDAPS and checks the bound object's
+// identity; the connection is closed without any write.
+func (d *LDAPDirectory) VerifyActor(actor Person, password string) string {
+	conn, code := d.bindActor(actor, password)
+	if code != "" {
+		return code
+	}
+	conn.Close()
+	return ""
+}
+
 func (d *LDAPDirectory) bindActor(actor Person, password string) (*ldap.Conn, string) {
 	if password == "" || len(password) > 1024 {
 		return nil, "credentials_rejected"

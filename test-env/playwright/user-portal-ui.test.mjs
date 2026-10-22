@@ -101,7 +101,7 @@ test('creation keeps its one-time password usable and disables repeat submission
     await expect(result.locator('input[readonly]')).toHaveValue('OneTime-Fixture-Only9!');
     await expect(result.locator('input[readonly]')).toBeEnabled();
     await expect(form.getByRole('button',{name:'New user',exact:true})).toBeDisabled();
-    await expect(result.getByRole('button',{name:'Details',exact:true})).toBeVisible();
+    await expect(result.getByRole('link',{name:'Details (opens in a new tab)',exact:true})).toHaveAttribute('target','_blank');
     await expect(result).toContainText('created-write-id');
     if(creationWrites()!==1)throw new Error('creation repeated');
   }finally{await context.close();}

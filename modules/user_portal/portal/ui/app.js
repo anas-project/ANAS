@@ -2,6 +2,7 @@
 // ANAS user portal. Plain DOM rendering: every text value is assigned with
 // textContent; the server remains the only authority for permissions.
 const I18N=window.ANAS_I18N;
+let categoryNames={};
 let language='en', csrf='', me=null, prefs=null, catalog=null, iconThemeCatalog=null, logoutState=null, logoutRunning=false, revision=0, content=null;
 const app=document.getElementById('app'), noticeNode=document.getElementById('notice');
 const t=(key,vars)=>{
@@ -41,6 +42,7 @@ const ICONS={
   sun:'M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8|M12 2v2|M12 20v2|M4.9 4.9l1.4 1.4|M17.7 17.7l1.4 1.4|M2 12h2|M20 12h2|M4.9 19.1l1.4-1.4|M17.7 6.3l1.4-1.4',
   moon:'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z', monitor:'M3 4h18v12H3z|M8 20h8|M12 16v4', logout:'M15 4h4v16h-4|M10 8l-4 4 4 4|M6 12h10',
   pin:'M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.9L12 16.4 6.8 19.2l1-5.9L3.5 9.2l5.9-.9z', left:'M15 6l-6 6 6 6', right:'M9 6l6 6-6 6', close:'M6 6l12 12|M18 6L6 18',
+  info:'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 11v5|M12 8h.01',
   check:'M5 12l5 5 9-10', sync:'M21 12a9 9 0 1 1-3-6.7|M21 4v5h-5', alert:'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18|M12 8v4|M12 16h.01', plus:'M12 5v14|M5 12h14',
 };
 function icon(name,size=18) {
@@ -69,7 +71,7 @@ function safeLink(url,text,attrs={}) {
 }
 function initial(person) {return [...(person?.display_name||person?.username||'?').trim()][0]?.toUpperCase()||'?';}
 function avatar(person,size='') {return el('span',initial(person),{class:'avatar'+(size?' '+size:''),'aria-hidden':'true'});}
-async function api(path,body) {
+async function api(path,body,retry=true) {
   let response,data;
   try {
     response=await fetch(path+(path.includes('?')?'&':'?')+'lang='+encodeURIComponent(language), {
@@ -80,6 +82,9 @@ async function api(path,body) {
     data=await response.json();
   } catch { throw new Error(t('request_failed')); }
   if(response.status===401) { me=null;csrf='';loginPage();notice(t('authentication_required'),true); }
+  // An expired recent authentication asks for the person's own password in
+  // the page, then repeats this request once.
+  if(response.status===403&&data.error==='recent_authentication_required'&&retry&&me&&await reauthDialog())return api(path,body,false);
   if(!response.ok&&!data.directory) {
     const error=new Error(t(data.error||'unexpected_response'));error.code=data.error;error.status=response.status;throw error;
   }
@@ -255,11 +260,6 @@ function adminSidebar(active) {
   const side=el('aside',null,{class:'admin-sidebar','aria-label':t('adminNav')}),nav=el('nav');
   nav.append(el('p',t('identitySection'),{class:'side-label'}),navLink('#/admin/users',t('users'),'users',active==='users'));
   if(me.actions.includes('audit.read'))nav.append(navLink('#/admin/audit',t('audit'),'clock',active==='audit'));
-  const backends=(catalog||[]).filter(a=>a.kind==='admin');
-  if(backends.length){
-    nav.append(el('p',t('systemBackends'),{class:'side-label'}));
-    for(const a of backends){const link=safeLink(a.url,null,{class:'nav-link'});link.append(appIcon(a,18),el('span',a.display_name));link.append(icon('external',14));nav.append(link);}
-  }
   if(me.administration)nav.append(navLink('#/admin/themes',t('iconThemes'),'monitor',active==='themes'));
   nav.append(navLink('#/apps',t('backToWorkbench'),'back',false,'side-back'));
   side.append(nav);return side;
@@ -275,7 +275,7 @@ function rerender() {
 // --- routing -------------------------------------------------------------------
 async function loadCatalog() {
   const data=await api('/api/apps'),list=[];
-  for(const group of data.groups)for(const c of group.categories)for(const a of c.applications)list.push({...a,kind:group.kind||group.id,categoryName:c.display_name});
+  for(const group of data.groups)for(const c of group.categories){categoryNames[c.id]=c.display_name;for(const a of c.applications)list.push({...a,kind:group.kind||group.id,categoryName:c.display_name});}
   catalog=list;return data;
 }
 async function render() {
@@ -294,7 +294,7 @@ async function render() {
     if(!section||section==='apps')return await homePage(current);
     if(section==='account'&&['profile','security','groups','mail','log',undefined].includes(sub))return await accountPage(sub||'profile',current);
     if(section==='admin'&&canManage()) {
-      if(sub==='themes'&&me.administration){renderShell('admin','themes');document.body.dataset.page='admin-themes';heading(t('iconThemes'),t('themeLibraryHelp'));content.append(recentForm(),iconThemeCard(true));return;}
+      if(sub==='themes'&&me.administration){renderShell('admin','themes');document.body.dataset.page='admin-themes';heading(t('iconThemes'),t('themeLibraryHelp'));content.append(iconThemeCard(true));return;}
       if((!sub||sub==='users')&&!third)return await usersPage(current);
       if(sub==='users'&&third==='new'&&me.actions.includes('user.create'))return newUserPage();
       if(sub==='users'&&third)return await userDetails(third,current);
@@ -358,15 +358,43 @@ function pinButton(a) {
   b.setAttribute('aria-pressed',String(pinned));b.setAttribute('aria-label',t(pinned?'unpin':'pin')+': '+a.display_name);b.title=t(pinned?'unpin':'pin');
   b.disabled=!pinned&&prefs.pinned.length>=24;return b;
 }
+function infoButton(a) {
+  const b=withIcon(button('',()=>appInfo(a),'icon-button info'),'info',16);
+  b.setAttribute('aria-label',t('appInfo',{name:a.display_name}));b.title=t('appInfo',{name:a.display_name});return b;
+}
 function applicationCard(a) {
   const card=el('article',null,{class:'card app-card'});
   const main=safeLink(a.url,null,{class:'app-main'});
-  const text=el('span',null,{class:'app-text'});text.append(el('span',a.display_name,{class:'app-name'}),el('span',a.summary,{class:'app-summary'}));
-  main.append(appIcon(a),text,icon('external',16));
-  const foot=el('div',null,{class:'app-foot'}),details=el('details');
-  details.append(el('summary',t('details')),el('p',a.description));
-  if(a.documentation_url)details.append(safeLink(a.documentation_url,t('docs')));
-  foot.append(details,pinButton(a));card.append(main,foot);return card;
+  const text=el('span',null,{class:'app-text'}),name=el('span',null,{class:'app-name'});
+  name.append(el('span',a.display_name),icon('external',13));
+  text.append(name,el('span',a.summary,{class:'app-summary'}));
+  main.append(appIcon(a),text);
+  const actions=el('div',null,{class:'app-actions'});actions.append(infoButton(a),pinButton(a));
+  card.append(main,actions);return card;
+}
+// Application details open in the page; the card itself stays a plain entry.
+function appInfo(a) {
+  document.querySelector('dialog.app-info')?.remove();
+  const dialog=el('dialog',null,{class:'app-info','aria-labelledby':'app-info-title'}),head=el('div',null,{class:'app-info-head'});
+  const title=el('div');title.append(el('h2',a.display_name,{id:'app-info-title'}),el('p',a.summary,{class:'muted'}));
+  const close=withIcon(button('',()=>finish(),'icon-button'),'close',16);close.setAttribute('aria-label',t('cancel'));
+  head.append(appIcon(a,48),title,close);dialog.append(head);
+  if(a.description)dialog.append(el('p',a.description,{class:'app-info-description'}));
+  const names=(a.categories||[]).map(id=>categoryNames[id]||id).filter(Boolean);
+  if(names.length){const chips=el('div',null,{class:'chip-list','aria-label':t('categoriesLabel')});for(const n of names)chips.append(el('span',n,{class:'badge'}));dialog.append(chips);}
+  const foot=el('div',null,{class:'app-info-actions'});
+  if(a.documentation_url)foot.append(withIcon(safeLink(a.documentation_url,t('docs'),{class:'button'}),'external',14));
+  const pinned=prefs.pinned.includes(a.name),pin=withIcon(button(t(pinned?'unpin':'pin'),async()=>{
+    const list=pinned?prefs.pinned.filter(n=>n!==a.name):[...prefs.pinned,a.name].slice(0,24);
+    if(await savePreferences({pinned:list})){finish();if(document.body.dataset.page==='home')homePage(revision);}
+  }),'pin',16);
+  pin.disabled=!pinned&&prefs.pinned.length>=24;foot.append(pin);
+  const open=safeLink(a.url,t('openApp'),{class:'button primary'});open.append(icon('external',14));foot.append(open);
+  dialog.append(foot);document.body.append(dialog);
+  function finish(){if(dialog.open)dialog.close();dialog.remove();}
+  dialog.addEventListener('cancel',event=>{event.preventDefault();finish();});
+  dialog.addEventListener('click',event=>{if(event.target===dialog)finish();});
+  dialog.showModal();close.focus();
 }
 function pinnedSection() {
   const section=el('section',null,{class:'section','aria-labelledby':'pinned-title'}),head=el('div',null,{class:'section-head'});
@@ -485,29 +513,42 @@ function field(form,key,type='text',required=true,value='') {
   if(type==='text')input.maxLength=64;input.value=value;label.append(input);form.append(label);return input;
 }
 function resultSlot(form) {const slot=el('div',null,{class:'form-result'});form.append(slot);return slot;}
-function renderResult(data,slot,successKey='saved') {
+function renderResult(data,slot,account,successKey='saved') {
   const bad=data.directory!=='saved',box=el('div',null,{class:'result'+(bad?' error':''),role:bad?'alert':'status',tabindex:'-1'});
   const labels={saved:t(successKey),rejected:t('rejected'),denied:t('access_denied'),unavailable:t('identity_unavailable'),conflict:t('conflict'),unknown:t('unknownResult'),not_attempted:t('auditFailure')};
   box.append(el('p',labels[data.directory]??(t(data.directory)||t('unknownResult')),{class:'result-title'}));
-  // Only confirmed outcomes belong in the result message.
+  // Report the operation we actually completed. Unobserved downstream states
+  // are not progress, so they do not belong in the person's result message.
   if(data.ownership)box.append(el('p',t('ownershipStep')+': '+(data.ownership==='not_attempted'?t('not_attempted'):(labels[data.ownership]??t(data.ownership)))),el('p',t('membershipStep')+': '+(data.membership==='not_attempted'?t('not_attempted'):(labels[data.membership]??t(data.membership)))));
   if(data.ownership==='saved'&&data.membership!=='saved')box.append(el('p',t('ownershipRetained')));
   if(data.audit==='unavailable'||data.audit===false)box.append(el('p',t('auditFailure')));
   if(data.request_id)box.append(el('small',data.request_id,{class:'mono'}));
   if(data.temporary_password) {
-    box.append(el('p',t('oneTime')));const secret=el('input',null,{type:'text',readonly:'',value:data.temporary_password,'aria-label':t('oneTime'),class:'mono'});
-    box.append(secret,button(t('copy'),async event=>{try{await navigator.clipboard.writeText(secret.value);event.target.textContent=t('copied');}catch{secret.focus();secret.select();}}));
+    box.append(el('p',t('oneTime')));
+    const row=el('div',null,{class:'secret-row'}),secret=el('input',null,{type:'text',readonly:'',value:data.temporary_password,'aria-label':t('tempPassword'),class:'mono'});
+    row.append(secret,copyButton(t('copyPassword'),t('copied'),()=>secret.value,secret));box.append(row);
+    if(account?.force)box.append(el('p',t('firstLoginNote'),{class:'notice warning'}));
+    if(account)box.append(copyButton(t('copyAll'),t('copiedAll'),()=>accountSummary(account,data.temporary_password),secret));
   }
   if(data.reauthenticate){me=null;box.append(el('p',t('reauthenticate')),loginLink(t('login'),{class:'button primary'}));}
   if(slot)slot.replaceChildren(box);else content.append(box);box.focus({preventScroll:true});box.scrollIntoView({block:'nearest',behavior:'smooth'});return box;
 }
+function copyButton(label,done,text,fallback) {
+  const b=button(label,async()=>{
+    try{await navigator.clipboard.writeText(text());b.textContent=done;}
+    catch{if(fallback){fallback.focus();fallback.select();}}
+  },'small');return b;
+}
+// Everything an administrator hands to the person, in the page language.
+function accountSummary(account,password) {
+  const portal=location.origin+'/',lines=[[t('username'),account.username],[t('display_name'),account.display_name],[t('email'),account.email],[t('tempPassword'),password],[t('loginUrl'),portal]];
+  if(account.force)lines.push([t('changeUrl'),portal+'#/recover']);
+  const text=lines.filter(([,v])=>v).map(([k,v])=>k+': '+v);
+  if(account.force)text.push('',t('firstLoginNote'));
+  return text.join('\n');
+}
 function formError(slot,error) {
   slot.replaceChildren(el('div',error.message||t('request_failed'),{class:'result error',role:'alert',tabindex:'-1'}));slot.firstChild.focus({preventScroll:true});slot.scrollIntoView({block:'nearest'});
-}
-function recentForm() {
-  const form=el('form',null,{method:'post',action:'/api/reauth',class:'reauth-form'});
-  form.append(el('p',t('recentIntro'),{class:'muted'}),el('input',null,{type:'hidden',name:'csrf',value:csrf}),el('button',t('recent'),{type:'submit'}));
-  form.addEventListener('submit',()=>{try{sessionStorage.setItem('anas.portal.return',location.hash||'#/apps');}catch{}});return form;
 }
 function profileForm(person,version,admin=false,requiresDomain=false) {
   const form=el('form',null,{class:'card form-card'});form.append(el('h2',t('edit')),el('p',t('profileHelp'),{class:'muted'}));
@@ -546,7 +587,7 @@ function passwordForm(recover) {
   const submit=el('button',t('submit'),{type:'submit',class:'primary'});form.append(submit);const slot=resultSlot(form);content.append(form);
   form.addEventListener('submit',async event=>{
     event.preventDefault();submit.disabled=true;
-    try{const data=await api('/api/password/'+(recover?'recover':'change'),Object.fromEntries(new FormData(form)));renderResult(data,slot,'passwordChanged');}
+    try{const data=await api('/api/password/'+(recover?'recover':'change'),Object.fromEntries(new FormData(form)));renderResult(data,slot,undefined,'passwordChanged');}
     catch(error){formError(slot,error);}finally{for(const input of form.querySelectorAll('input[type=password]'))input.value='';submit.disabled=false;}
   });
 }
@@ -580,7 +621,7 @@ async function accountPage(section,current) {
   try {
     if(section==='profile') {
       content.append(identityCard(me.person),personDetails(me.person));
-      if(me.profile_editable)content.append(profileForm(me.person,me.profile_version),recentForm());
+      if(me.profile_editable)content.append(profileForm(me.person,me.profile_version));
       content.append(preferencesCard());
     } else if(section==='security') {
       const p=me.person,card=el('section',null,{class:'card'}),stats=el('div',null,{class:'stats'});
@@ -658,16 +699,18 @@ function newUserPage() {
       const values=Object.fromEntries(new FormData(form)),op={username:values.username,profile:{given_name:values.given_name.trim(),surname:values.surname.trim(),display_name:values.display_name.trim()},force_change:force.checked};
       if(!await operationDialog(op,false,{person:{username:op.username,...op.profile},action:'user.create'}))return;
       const result=await api('/api/users',op);if(!form.isConnected)return;
-      const box=renderResult(result,slot);
+      const box=renderResult(result,slot,{username:op.username,display_name:op.profile.display_name,email:op.username.toLowerCase()+'@'+me.mail_domain,force:op.force_change});
       if(result.directory==='saved'){
         // Do not navigate away automatically: the temporary password is only
         // displayed in this result. Explicitly opening details discards it.
         for(const input of form.querySelectorAll('input:not([readonly]),textarea'))input.disabled=true;
-        box.append(button(t('details'),()=>{location.hash='#/admin/users/'+encodeURIComponent(result.target);}));return;
+        // Details open in a new tab so this one-time result stays available.
+        const details=el('a',t('details'),{href:'/#/admin/users/'+encodeURIComponent(result.target),target:'_blank',rel:'noopener',class:'button small'});
+        details.append(icon('external',14),el('span',t('openNewTab'),{class:'sr-only'}));box.append(details);return;
       }
       if(result.directory==='conflict')box.append(el('p',t('accountConflict')));
     }catch(error){if(form.isConnected)formError(slot,error);}finally{if(!form.querySelector('input:disabled'))submit.disabled=false;}
-  });content.append(form,recentForm());
+  });content.append(form);
 }
 async function operationDialog(op,domain,context={}) {
   const confirmed=domain||Boolean(context.adminRole);
@@ -718,7 +761,7 @@ async function userDetails(anchor,current=revision) {
   renderShell('admin','users');document.body.dataset.page='admin-user';
   const data=await api('/api/users/'+encodeURIComponent(anchor));if(current!==revision)return;
   const crumbs=el('nav',null,{class:'crumbs','aria-label':t('breadcrumb')});crumbs.append(el('a',t('users'),{href:'#/admin/users'}),el('span','/',{'aria-hidden':'true'}),el('span',data.person.display_name||data.person.username));
-  content.append(crumbs,identityCard(data.person,true),personDetails(data.person),recentForm());
+  content.append(crumbs,identityCard(data.person,true),personDetails(data.person));
   if(data.actions.includes('profile.update'))content.append(profileForm(data.person,data.profile_version,true,data.requires_domain&&data.person.anchor!==me.person.anchor));
   const operationSlot=el('div',null,{class:'form-result'});
   if(data.actions.includes('password.reset')||data.actions.includes('account.unlock')) {
@@ -734,7 +777,7 @@ async function userDetails(anchor,current=revision) {
         let result;
         if(data.administration)result=await executeAdmin(op,data.requires_domain,{person:data.person});
         else if(await operationDialog(op,false,{person:data.person}))result=await api('/api/users/'+encodeURIComponent(anchor)+'/'+(action==='password.reset'?'reset':'unlock'),action==='password.reset'?{force_change:force}:{});
-        if(result)renderResult(result,slot);
+        if(result)renderResult(result,slot,action==='password.reset'?{username:data.person.username,display_name:data.person.display_name,email:data.person.email,force}:undefined);
       }catch(error){formError(slot,error);}finally{buttons.forEach(b=>b.disabled=false);}
     }
     if(data.actions.includes('password.reset')) {
@@ -786,6 +829,35 @@ async function userDetails(anchor,current=revision) {
   }
   content.append(operationSlot);if(data.administration)content.append(advanced);
   advanced.addEventListener('toggle',()=>loadGroups().catch(error=>formError(operationSlot,error)));await loadGroups();
+}
+
+// --- in-page recent authentication ----------------------------------------------------
+let reauthPending=null;
+function reauthDialog() {
+  if(reauthPending)return reauthPending;
+  reauthPending=new Promise(resolve=>{
+    const dialog=el('dialog',null,{class:'operation-dialog reauth-dialog','aria-labelledby':'reauth-title'}),form=el('form');
+    form.append(el('h2',t('reauthTitle'),{id:'reauth-title'}),el('p',t('reauthIntro'),{class:'muted'}));
+    const who=el('div',null,{class:'who'});who.append(avatar(me.person,'small'),el('span',me.person.username,{class:'mono'}));form.append(who);
+    const password=field(form,'old_password','password');password.setAttribute('autocomplete','current-password');
+    const slot=resultSlot(form),row=el('div',null,{class:'row dialog-actions'}),cancel=button(t('cancel'),()=>finish(false)),submit=el('button',t('confirmAction'),{type:'submit',class:'primary'});
+    row.append(cancel,submit);form.append(row);dialog.append(form);document.body.append(dialog);
+    let settled=false;
+    function finish(ok){if(settled)return;settled=true;password.value='';dialog.close();dialog.remove();reauthPending=null;resolve(ok);}
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();submit.disabled=true;
+      try{
+        const r=await fetch('/api/reauth/password?lang='+encodeURIComponent(language),{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({password:password.value}),signal:AbortSignal.timeout(30000)});
+        const data=await r.json().catch(()=>({}));
+        if(r.ok){finish(true);return;}
+        password.value='';formError(slot,new Error(t(data.error||'request_failed')));password.focus();
+      }catch{formError(slot,new Error(t('request_failed')));}
+      finally{submit.disabled=false;}
+    });
+    dialog.addEventListener('cancel',event=>{event.preventDefault();finish(false);});
+    dialog.showModal();password.focus();
+  });
+  return reauthPending;
 }
 
 // --- quick search (⌘K / Ctrl+K) ---------------------------------------------------------

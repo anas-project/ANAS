@@ -252,7 +252,7 @@ func (s *Server) prepareOperation(w http.ResponseWriter, r *http.Request) {
 		failure(w, 400, "invalid_request")
 		return
 	}
-	if !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
+	if !s.recentSession(v) {
 		s.rejected(v.Subject, p.Anchor, op.Action, rule)
 		failure(w, 403, "recent_authentication_required")
 		return
@@ -312,7 +312,7 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 		failure(w, status, code)
 		return
 	}
-	if !recent(v.AuthTime, s.config.RecentWindow, time.Now()) {
+	if !s.recentSession(v) {
 		s.rejected(v.Subject, p.Anchor, op.Action, "")
 		failure(w, 403, "recent_authentication_required")
 		return

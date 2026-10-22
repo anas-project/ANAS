@@ -12,9 +12,9 @@
 | 用例 ID | 级别 | 需求 ID | 实现 |
 | --- | --- | --- | --- |
 | `PORTALUX-T-001` | unit | `PORTALUX-R-001`、`PORTALUX-R-002` | internal/appcatalog/catalog_test.go<br>test-env/playwright/user-portal-experience.test.mjs |
-| `PORTALUX-T-002` | unit | `PORTALUX-R-006`、`PORTALUX-R-007`、`PORTALUX-R-008`、`PORTALUX-R-009`、`PORTALUX-R-010`、`PORTALUX-R-013` | modules/user_portal/portal/prefs_test.go |
-| `PORTALUX-T-003` | unit | `PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-032` | test-env/playwright/user-portal-experience.test.mjs |
-| `PORTALUX-T-004` | e2e | `PORTALUX-R-006`、`PORTALUX-R-021`、`PORTALUX-R-022` | test-env/playwright/user-portal-account-management.mjs |
+| `PORTALUX-T-002` | unit | `PORTALUX-R-006`、`PORTALUX-R-007`、`PORTALUX-R-008`、`PORTALUX-R-009`、`PORTALUX-R-010`、`PORTALUX-R-013`、`PORTALUX-R-026`、`PORTALUX-R-027` | modules/user_portal/portal/prefs_test.go<br>modules/user_portal/portal/reauth_password_test.go |
+| `PORTALUX-T-003` | unit | `PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-023`、`PORTALUX-R-024`、`PORTALUX-R-025`、`PORTALUX-R-028`、`PORTALUX-R-029`、`PORTALUX-R-030`、`PORTALUX-R-032` | test-env/playwright/user-portal-experience.test.mjs |
+| `PORTALUX-T-004` | e2e | `PORTALUX-R-006`、`PORTALUX-R-021`、`PORTALUX-R-022`、`PORTALUX-R-026`、`PORTALUX-R-027`、`PORTALUX-R-028` | test-env/playwright/user-portal-account-management.mjs |
 | `PORTALUX-T-006` | e2e | `PORTALUX-R-032`、`PORTALUX-R-033` | test-env/playwright/iam-appearance-finance.mjs<br>test-env/scripts/application-themes-directory-fixture.py |
 
 ## `PORTALUX-T-001` 八种界面语言与语言匹配
@@ -22,7 +22,7 @@
 - 级别：`unit`
 - 覆盖需求：`PORTALUX-R-001`、`PORTALUX-R-002`
 - 需求复核摘要：`sha256:0ed6fe37bb039a35de2b3bdad27943d183c6e731cab623580aa185c61756cc93`
-- 实现复核摘要：`sha256:ea0fadf1cae31966aaf12057ee88ef977958dc3a0c6e5a72e37ff7dda9bb1f04`
+- 实现复核摘要：`sha256:11c0fb9afaeedebfe977c78c80b00a63b74f7f57a67327d577b842ad037357a2`
 - Fixture：Go 语言匹配表与生产语言包、前端源码；无网络
 - 目标能力：`go`、`node`
 - Oracle 来源：`return-value`
@@ -69,9 +69,9 @@ node test-env/playwright/user-portal-experience.test.mjs
 ## `PORTALUX-T-002` 账号偏好存储、白名单与授权过滤
 
 - 级别：`unit`
-- 覆盖需求：`PORTALUX-R-006`、`PORTALUX-R-007`、`PORTALUX-R-008`、`PORTALUX-R-009`、`PORTALUX-R-010`、`PORTALUX-R-013`
-- 需求复核摘要：`sha256:2e57b633fbec26a470f4674e1ef0ae1505daabe2fcad88b4ec42467e7fb3540c`
-- 实现复核摘要：`sha256:6b28d39c1108a82a16081b2fd91b5ae74cf559849c00ce87a08f68d01d8fb56e`
+- 覆盖需求：`PORTALUX-R-006`、`PORTALUX-R-007`、`PORTALUX-R-008`、`PORTALUX-R-009`、`PORTALUX-R-010`、`PORTALUX-R-013`、`PORTALUX-R-026`、`PORTALUX-R-027`
+- 需求复核摘要：`sha256:b04ba211ceee2062c903896843dc6c9c25f1dc950088ea0de1a17b48abc5dd58`
+- 实现复核摘要：`sha256:09d68fa6e46baaee5e85c8cbf1442cfcd5b94add433a2e6c06e9ed654a14fccd`
 - Fixture：内存目录、模拟 IAM 与临时偏好目录
 - 目标能力：`go`、`https-test-server`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
@@ -115,9 +115,9 @@ go test -race ./modules/user_portal/portal -run Preference
 ## `PORTALUX-T-003` 主题、常用、快速搜索与界面结构
 
 - 级别：`unit`
-- 覆盖需求：`PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-017`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-032`
-- 需求复核摘要：`sha256:70a962387b349e33ade2abd55781c26b5cf515e17df041d5b834d7a71a90fae7`
-- 实现复核摘要：`sha256:8cbad62aafd5e9e34a47285670b36faa1582322aae3537e85b567d659dbe9ab2`
+- 覆盖需求：`PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-023`、`PORTALUX-R-024`、`PORTALUX-R-025`、`PORTALUX-R-028`、`PORTALUX-R-029`、`PORTALUX-R-030`、`PORTALUX-R-032`
+- 需求复核摘要：`sha256:edace9fb42fe6e194c9f5359318c36c774a5ead75e751d9fa87605322208c405`
+- 实现复核摘要：`sha256:788738407834ef588a173508a223696ee37b1ce33d4d1852e81a60462a831661`
 - Fixture：生产静态资源配模拟 API；不使用真实账号
 - 目标能力：`playwright-chromium`
 - Oracle 来源：`ui`
@@ -161,9 +161,9 @@ node test-env/playwright/user-portal-experience.test.mjs
 ## `PORTALUX-T-004` finance 新界面账号偏好、手机排版与完整回归
 
 - 级别：`e2e`
-- 覆盖需求：`PORTALUX-R-006`、`PORTALUX-R-021`、`PORTALUX-R-022`
-- 需求复核摘要：`sha256:584302f12ef69d7d4e0fc4507e7185cbaff26d850f66d6fe23e445cbf7df3d34`
-- 实现复核摘要：`sha256:9a9072bc8081c7a1382314c2bd0a5d62cd4670ba9c1651b3cf77e980ad9053df`
+- 覆盖需求：`PORTALUX-R-006`、`PORTALUX-R-021`、`PORTALUX-R-022`、`PORTALUX-R-026`、`PORTALUX-R-027`、`PORTALUX-R-028`
+- 需求复核摘要：`sha256:6052ef019b9961b4776f53059292a3cad1c6aec1a3148a33995ad76b67573c65`
+- 实现复核摘要：`sha256:0de66dfd4f7062458b169967ab9bf65fe7a814b35535b5a52a78d86e7b7b47ad`
 - Fixture：finance 新制品与带专属标记的普通测试人员；不授予域权限
 - 目标能力：`oidc`、`ldaps`、`casdoor`、`private-browser`
 - Oracle 来源：`ui`、`api`、`report`

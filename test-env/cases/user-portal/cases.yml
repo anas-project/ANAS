@@ -3,14 +3,14 @@ topic: "user-portal"
 title: "独立用户门户验收用例"
 requirement_document: "modules/user_portal/dev-docs/requirements/user-portal.md"
 plan_document: "modules/user_portal/dev-docs/plans/archived/user-portal.md"
-requirement_scope: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-041", "PORTAL-R-042", "PORTAL-R-077", "PORTAL-R-044", "PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-047", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-054", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-060", "PORTAL-R-062", "PORTAL-R-063", "PORTAL-R-064", "PORTAL-R-065", "PORTAL-R-066", "PORTAL-R-067", "PORTAL-R-068", "PORTAL-R-069", "PORTAL-R-073", "PORTAL-R-071", "PORTAL-R-072", "PORTAL-R-075", "PORTAL-R-076", "PORTAL-R-078", "PORTAL-R-079", "PORTAL-R-080", "PORTAL-R-081", "PORTAL-R-082"]
+requirement_scope: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-026", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-035", "PORTAL-R-036", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-041", "PORTAL-R-042", "PORTAL-R-077", "PORTAL-R-044", "PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-047", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-054", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-060", "PORTAL-R-062", "PORTAL-R-063", "PORTAL-R-064", "PORTAL-R-065", "PORTAL-R-066", "PORTAL-R-067", "PORTAL-R-068", "PORTAL-R-069", "PORTAL-R-073", "PORTAL-R-071", "PORTAL-R-072", "PORTAL-R-075", "PORTAL-R-076", "PORTAL-R-078", "PORTAL-R-079", "PORTAL-R-080", "PORTAL-R-081", "PORTAL-R-082"]
 cases:
   - id: "PORTAL-T-001"
     title: "协议、授权和失败关闭单元/契约"
     status: "active"
     level: "unit"
-    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-025", "PORTAL-R-035", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-041", "PORTAL-R-080", "PORTAL-R-082"]
-    requirement_digest: "sha256:23340dee7cad104e1dce4d618193987f96a0d5d822ad45c3f5e32bf5fe6c29b2"
+    requirements: ["PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-007", "PORTAL-R-012", "PORTAL-R-016", "PORTAL-R-018", "PORTAL-R-025", "PORTAL-R-035", "PORTAL-R-037", "PORTAL-R-038", "PORTAL-R-039", "PORTAL-R-032", "PORTAL-R-034", "PORTAL-R-041", "PORTAL-R-080", "PORTAL-R-082"]
+    requirement_digest: "sha256:79fc78a28bd813c6dfe9cd6d5d1ece80353008a137a1631b53422eb4826038f0"
     implementation_digest: "sha256:44d9a4f54ae2e8b5bd1f7e303fd213b512b5b80ef34259f00c977644fbe495aa"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "https-test-server"]
@@ -34,8 +34,8 @@ cases:
     title: "真实页面、原生 OIDC 与目录操作"
     status: "active"
     level: "e2e"
-    requirements: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-006", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-039", "PORTAL-R-041"]
-    requirement_digest: "sha256:3ee2efcaee7b757199d830f3404a93554a36338409a1d77dc699bb3834e857bc"
+    requirements: ["PORTAL-R-001", "PORTAL-R-002", "PORTAL-R-003", "PORTAL-R-004", "PORTAL-R-005", "PORTAL-R-007", "PORTAL-R-008", "PORTAL-R-010", "PORTAL-R-011", "PORTAL-R-018", "PORTAL-R-019", "PORTAL-R-020", "PORTAL-R-021", "PORTAL-R-022", "PORTAL-R-023", "PORTAL-R-024", "PORTAL-R-025", "PORTAL-R-027", "PORTAL-R-028", "PORTAL-R-029", "PORTAL-R-030", "PORTAL-R-031", "PORTAL-R-032", "PORTAL-R-033", "PORTAL-R-034", "PORTAL-R-039", "PORTAL-R-041"]
+    requirement_digest: "sha256:7c6a615e4a940bceda959a73fad84d98a7853370d9f6799ee933b2a37d079efa"
     implementation_digest: "sha256:2e0c5d05db721e363b60897add96119e8c063646c8e90a9140eca5f0b426ef1c"
     fixture: "固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号"
     capabilities: ["go", "oidc", "ldaps", "casdoor", "private-docker"]
@@ -136,7 +136,7 @@ cases:
     level: "unit"
     requirements: ["PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-062", "PORTAL-R-063", "PORTAL-R-064", "PORTAL-R-065", "PORTAL-R-066", "PORTAL-R-067", "PORTAL-R-069", "PORTAL-R-073", "PORTAL-R-071", "PORTAL-R-072", "PORTAL-R-075", "PORTAL-R-076", "PORTAL-R-077", "PORTAL-R-081"]
     requirement_digest: "sha256:92dfd8f76d9f7e9fdfb575194893bf68123072c7001d13e1b23b999c8cc8919a"
-    implementation_digest: "sha256:39afe91a9bba349ac79799cdadf17060c6b5af26b339673c1b4cb56d1dbb7597"
+    implementation_digest: "sha256:d3f42ee58186d25298617d3052e47252b89f091971e0244ede3b772d17759d7c"
     fixture: "内存目录与 HTTPS 服务、无 Samba 写入的配置守卫和生产静态资源配模拟 API；不使用真实账号"
     capabilities: ["go", "https-test-server", "python3", "playwright-chromium"]
     preconditions: ["安装锁定的 Playwright；浏览器使用默认 Chromium 或 PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH 指定的独立测试进程"]
@@ -161,7 +161,7 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-042", "PORTAL-R-077", "PORTAL-R-044", "PORTAL-R-045", "PORTAL-R-046", "PORTAL-R-047", "PORTAL-R-048", "PORTAL-R-049", "PORTAL-R-050", "PORTAL-R-051", "PORTAL-R-052", "PORTAL-R-053", "PORTAL-R-054", "PORTAL-R-055", "PORTAL-R-056", "PORTAL-R-057", "PORTAL-R-058", "PORTAL-R-059", "PORTAL-R-060", "PORTAL-R-062", "PORTAL-R-063", "PORTAL-R-064", "PORTAL-R-065", "PORTAL-R-066", "PORTAL-R-067", "PORTAL-R-069", "PORTAL-R-073", "PORTAL-R-071", "PORTAL-R-072", "PORTAL-R-075", "PORTAL-R-076"]
     requirement_digest: "sha256:34f48dfb6867e20c12750f4d1f7f86756462509462843d61038b06c02e1fa301"
-    implementation_digest: "sha256:491cad85de2e7080d2cb9828989016924cf719e5549ee7f4ac14e578a3518ee0"
+    implementation_digest: "sha256:6ac8e144aa317ed88c67926dccaacc06b61df31a397901be14d6bf8e2be93063"
     fixture: "本轮固定候选；finance 仅使用带专属标记和稳定标识的测试人员/组，不修改已有人员密码或成员关系"
     capabilities: ["oidc", "ldaps", "casdoor", "private-browser"]
     preconditions: ["候选源码、镜像和私有夹具路径已核对；原始凭据仅保留在测试主机；真实写入前须有目录专用账号/ACL 的明确授权；只读探针可独立运行", "finance 所有新夹具均无域角色；域级成功写入和所有权验证只在 PORTAL-T-008 的隔离假域执行", "账号套件仅放行门户/IAM请求，其他应用帧可能显示未确认；退出要求明确IAM结果、门户401、主页按钮及原生重新登录表单，完整跨应用退出与其他设备隔离由独立T-010判定"]
@@ -187,7 +187,7 @@ cases:
     level: "e2e"
     requirements: ["PORTAL-R-055", "PORTAL-R-057", "PORTAL-R-068"]
     requirement_digest: "sha256:343b85b4a48ed846aa64633ed4c545a54ac6fedae2b5b8d1cd50742d5d518b03"
-    implementation_digest: "sha256:512f5da97f845ad00a4076674c5fd62f14eca5889dd73f7a5e6a81235470cf89"
+    implementation_digest: "sha256:9ea9f27c96a459c8cfc350d9410bb572aa6875f6e88c1028e72f51530e77abcc"
     fixture: "完全断网的 owner.test 假域，无生产信任或现有目录凭据；使用本轮生产 Go 适配器"
     capabilities: ["go", "docker", "openssl", "python3", "ldaps"]
     preconditions: ["本地已有候选 Samba 镜像；PORTAL_OWNER_IMAGE、PORTAL_OWNER_BINARY、PORTAL_OWNER_EVIDENCE 指向专用输入/结果目录；测试二进制使用 portal_native 构建"]
@@ -213,7 +213,7 @@ cases:
     level: "contract"
     requirements: ["PORTAL-R-069", "PORTAL-R-073", "PORTAL-R-071", "PORTAL-R-072", "PORTAL-R-075", "PORTAL-R-076"]
     requirement_digest: "sha256:7ef1fe16a6ee2f6c67f4aeef704c6b6f1f2d2d2fba2ebacd870111a909717de2"
-    implementation_digest: "sha256:6525c5c36b5c43bfc2944cb005633acb3c5ad148d428c9923f5aa4fe97efe16d"
+    implementation_digest: "sha256:255b678f637421eb2d3d09b6441bce5db259183ef31630a20b0683ce92942142"
     fixture: "生产前端加隔离模拟 API 和 Go 目录替身"
     capabilities: ["go", "playwright"]
     preconditions: ["本机 Chrome 或 Playwright Chromium"]

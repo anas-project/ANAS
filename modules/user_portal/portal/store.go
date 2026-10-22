@@ -10,6 +10,8 @@ type Session struct {
 	Authentication
 	Anonymous bool
 	Expires   time.Time
+	// VerifiedAt is the last portal-side directory password check.
+	VerifiedAt time.Time
 }
 
 type Store struct {
@@ -118,6 +120,17 @@ func (s *Store) consumeFlow(state string) (Flow, bool) {
 	f, ok := s.flows[state]
 	delete(s.flows, state)
 	return f, ok && f.Expires.After(time.Now())
+}
+func (s *Store) verified(id, subject string, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.sessions[id]
+	if !ok || v.Anonymous || !v.Expires.After(time.Now()) || v.Subject != subject {
+		return false
+	}
+	v.VerifiedAt = at
+	s.sessions[id] = v
+	return true
 }
 func (s *Store) reauthenticate(id string, a Authentication) bool {
 	s.mu.Lock()

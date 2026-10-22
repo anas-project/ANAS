@@ -19,7 +19,7 @@
 - 级别：`unit`
 - 覆盖需求：`GROUPCAT-R-001`、`GROUPCAT-R-002`、`GROUPCAT-R-003`、`GROUPCAT-R-005`、`GROUPCAT-R-006`
 - 需求复核摘要：`sha256:d03885c2080f2f375e7487422561dbad54baac6769ddd89326e87641db7c9a33`
-- 实现复核摘要：`sha256:7ebbee2b14f24cf83ac0dd66df12bb15b73e4663bba9538c6958ff00a6ac7e3f`
+- 实现复核摘要：`sha256:72eab37af8aac1095dc568608ea8d82e1181f990cc07f585d598249a6d4cd53c`
 - Fixture：固定 Module 声明和隔离 Go 目录替身
 - 目标能力：`go`
 - Oracle 来源：`ui`、`api`、`error-contract`
@@ -66,7 +66,7 @@ go test ./internal/groupcatalog ./internal/runner -run 'Test(IdentityCatalog|Exp
 - 级别：`e2e`
 - 覆盖需求：`GROUPCAT-R-002`、`GROUPCAT-R-004`、`GROUPCAT-R-005`
 - 需求复核摘要：`sha256:e20316076465a4f2a2b2bdc5dc32b82a9cf1c095f5f3434786636eb24ca8f9aa`
-- 实现复核摘要：`sha256:a41be5d808729f949dc7022ac0d43dc0822588b542d8918c3d41d9c54299a35e`
+- 实现复核摘要：`sha256:ac8d9629d3eed2c225fb7bacf4714d0ea5dcc62cfea129553233458c6b80dd10`
 - Fixture：finance 指定测试服务和不发布端口、无网络、无生产信任的 owner.test 假域
 - 目标能力：`docker`、`samba`、`playwright`、`ldaps`
 - Oracle 来源：`runtime`、`ui`、`api`、`report`

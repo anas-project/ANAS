@@ -14,11 +14,11 @@ const directory=new URL('../../modules/user_portal/portal/ui/',import.meta.url);
 const app=(name,kind='user')=>({name,display_name:name.toUpperCase(),summary:name+' summary',description:name+' description',url:'https://'+name+'.example.test/start?x=1#frag',documentation_url:'https://docs.example.test/'+name,categories:['files'],icons:{}});
 const groups=[{kind:'user',id:'user',display_name:'User applications',categories:[{id:'files',display_name:'Files',applications:['alpha','beta','gamma'].map(n=>app(n))}]},{kind:'admin',id:'admin',display_name:'Administration',categories:[{id:'identity',display_name:'Identity',applications:[app('console','admin')]}]}];
 
-async function portal({admin=false,authenticated=true,scheme='light',preferences={language:'',theme:'system',show_categories:true,pinned:[]},width=1280,height=900,storage}={}) {
+async function portal({admin=false,authenticated=true,scheme='light',preferences={language:'',theme:'system',show_categories:true,pinned:[]},width=1280,height=900,storage,stale=false}={}) {
   const context=await browser.newContext({colorScheme:scheme,viewport:{width,height}}),page=await context.newPage();
-  const saved=[];let prefs={...preferences};
+  const saved=[],reauth=[],writes=[];let prefs={...preferences},fresh=!stale;
   const person={anchor:'actor',username:'alice',display_name:'Alice Wang',email:'alice@example.test',groups:[],password_state_known:true};
-  const me=()=>({person,csrf:'csrf',actions:admin?['users.read','password.reset','account.unlock','profile.update']:[],administration:admin,profile_editable:true,profile_version:'v1',mail_domain:'example.test',preferences:prefs});
+  const me=()=>({person,csrf:'csrf',actions:admin?['users.read','user.create','password.reset','account.unlock','profile.update']:[],administration:admin,profile_editable:true,profile_version:'v1',mail_domain:'example.test',preferences:prefs});
   await context.route('**/*',async route=>{
     const r=route.request(),u=new URL(r.url()),p=u.pathname,json=(d,s=200)=>route.fulfill({status:s,contentType:'application/json',body:JSON.stringify(d)});
     if(p==='/')return route.fulfill({contentType:'text/html',body:await readFile(new URL('index.html',directory),'utf8')});
@@ -27,15 +27,19 @@ async function portal({admin=false,authenticated=true,scheme='light',preferences
     if(p==='/api/me')return authenticated?json(me()):json({error:'authentication_required'},401);
     if(p==='/api/apps')return json({groups});
     if(p==='/api/me/preferences'){const body=r.postDataJSON();saved.push(body);prefs=body;return json({preferences:body});}
+    if(p==='/api/users'&&r.method()==='POST')return json({directory:'saved',audit:'saved',request_id:'cid',target:'new-anchor',temporary_password:'Temp-Fixture-Only1!'});
     if(p==='/api/users')return json({users:[{...person,anchor:'bob',username:'bob',display_name:'Bob Lee'}],count:1});
     if(p==='/api/users/bob')return json({person:{...person,anchor:'bob',username:'bob',display_name:'Bob Lee'},actions:['profile.update','password.reset','account.unlock'],profile_version:'v1',requires_domain:false,administration:true});
     if(p==='/api/groups')return json({groups:[]});
     if(p==='/api/audit')return json({records:[]});
     if(p==='/api/me/profile')return json({directory:'saved',iam:'pending',external_sessions:'unverified',audit:'saved',request_id:'rid'});
+    if(p==='/api/reauth/password'){const body=r.postDataJSON();reauth.push({csrf:r.headers()['x-csrf-token'],body});if(body.password!=='right-pass')return json({error:'authentication_rejected'},403);fresh=true;return json({recent_authentication:true});}
+    if(p==='/api/administration/execute'&&!fresh)return json({error:'recent_authentication_required'},403);
+    if(p==='/api/administration/execute'){writes.push(r.postDataJSON());return json({directory:'saved',audit:'saved',request_id:'rid',temporary_password:'Reset-Fixture-Only2!'});}
     return route.abort();
   });
   if(storage)await context.addInitScript(values=>{for(const [k,v] of Object.entries(values))localStorage.setItem(k,v);},storage);
-  return {context,page,saved};
+  return {context,page,saved,reauth,writes};
 }
 const background=page=>page.evaluate(()=>getComputedStyle(document.body).backgroundColor);
 const ready=(page,name)=>expect(page.locator('body[data-page='+name+']')).toHaveCount(1);
@@ -179,7 +183,7 @@ test('every page has its own address that survives reload, back and forward; unk
   }finally{await context.close();}
 });
 
-test('manage mode is offered only with personnel rights and lists administration applications',async()=>{
+test('manage mode is offered only with personnel rights and its sidebar lists no applications',async()=>{
   for(const admin of [false,true]){
     const {context,page}=await portal({admin});
     try{
@@ -188,21 +192,29 @@ test('manage mode is offered only with personnel rights and lists administration
       await page.goto(origin+'/#/admin/users');
       if(!admin){await ready(page,'home');continue;}
       await ready(page,'admin-users');
-      await expect(page.locator('.admin-sidebar').getByRole('link',{name:/CONSOLE/})).toHaveAttribute('href','https://console.example.test/start?x=1#frag');
+      await expect(page.locator('.admin-sidebar').getByRole('link',{name:/CONSOLE/})).toHaveCount(0);
+      if(await page.locator('.admin-sidebar a[target=_blank]').count())throw Error('manage sidebar lists an external application');
     }finally{await context.close();}
   }
 });
 
-test('the whole card opens the declared entry in a new window and documentation is a separate link',async()=>{
+test('the whole card opens the declared entry and the info button opens page-internal details',async()=>{
   const {context,page}=await portal();
   try{
     await page.goto(origin);await ready(page,'home');
     const card=page.locator('.app-card').first(),main=card.locator('a.app-main');
     await expect(main).toHaveAttribute('href','https://alpha.example.test/start?x=1#frag');await expect(main).toHaveAttribute('target','_blank');
     await expect(main).toHaveAttribute('rel','noopener noreferrer');
-    await card.getByText('Details',{exact:true}).click();
-    await expect(card.getByRole('link',{name:'Documentation',exact:true})).toHaveAttribute('href','https://docs.example.test/alpha');
+    if(await card.locator('details').count())throw Error('card still expands details inline');
+    await card.getByRole('button',{name:'About ALPHA',exact:true}).click();
+    const info=page.getByRole('dialog',{name:'ALPHA'});await expect(info).toBeVisible();
+    await expect(info).toContainText('alpha description');await expect(info).toContainText('Files');
+    await expect(info.getByRole('link',{name:'Documentation',exact:true})).toHaveAttribute('href','https://docs.example.test/alpha');
+    await expect(info.getByRole('link',{name:'Open',exact:true})).toHaveAttribute('href','https://alpha.example.test/start?x=1#frag');
     if(await card.locator('a.app-main a').count())throw Error('documentation nested in the entry link');
+    await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+    await card.getByRole('button',{name:'About ALPHA',exact:true}).click();await expect(info).toBeVisible();
+    await page.mouse.click(5,5);await expect(page.getByRole('dialog')).toHaveCount(0);
   }finally{await context.close();}
 });
 
@@ -244,6 +256,74 @@ test('no page scrolls horizontally at 390px and navigation sits at the bottom',a
       }
     }finally{await context.close();}
   }
+});
+
+async function captureClipboard(page){await page.evaluate(()=>{window.__copied=[];navigator.clipboard.writeText=async text=>{window.__copied.push(text);};});}
+test('new user result copies the password and all details, and details open in a new tab',async()=>{
+  const {context,page}=await portal({admin:true});
+  try{
+    await page.goto(origin+'/#/admin/users/new');await ready(page,'admin-new-user');await captureClipboard(page);
+    const form=page.locator('form').filter({has:page.locator('input[name=username]')});
+    await form.getByLabel('Username',{exact:true}).fill('new.person');await form.getByLabel('Display name',{exact:true}).fill('New Person');
+    await form.getByRole('button',{name:'New user',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();
+    const result=form.locator('.form-result');
+    await result.getByRole('button',{name:'Copy password',exact:true}).click();
+    await expect(result.getByRole('button',{name:'Copied',exact:true})).toBeVisible();
+    await expect(result).toContainText('Before the first sign-in, open the password change address');
+    await result.getByRole('button',{name:'Copy all details',exact:true}).click();
+    const copied=await page.evaluate(()=>window.__copied);
+    if(copied[0]!=='Temp-Fixture-Only1!')throw Error('password copy '+copied[0]);
+    for(const part of ['Username: new.person','Display name: New Person','Email: new.person@example.test','Temporary password: Temp-Fixture-Only1!','Sign-in address: '+origin+'/','Password change address: '+origin+'/#/recover','Before the first sign-in'])
+      if(!copied[1].includes(part))throw Error('copy-all lacks '+part+'\n'+copied[1]);
+    const details=result.getByRole('link',{name:'Details (opens in a new tab)',exact:true});
+    await expect(details).toHaveAttribute('target','_blank');await expect(details).toHaveAttribute('href','/#/admin/users/new-anchor');
+    const [opened]=await Promise.all([context.waitForEvent('page'),details.click()]);
+    await opened.waitForLoadState('domcontentloaded');
+    if(!opened.url().endsWith('#/admin/users/new-anchor'))throw Error('details did not open in a new page');
+    await expect(result.locator('input[readonly]')).toHaveValue('Temp-Fixture-Only1!');
+  }finally{await context.close();}
+});
+
+test('reset result copies the password and all details with the first sign-in instruction',async()=>{
+  const {context,page}=await portal({admin:true});
+  try{
+    await page.goto(origin+'/#/admin/users/bob');await ready(page,'admin-user');await captureClipboard(page);
+    const zone=page.locator('section.danger-zone');
+    await zone.getByRole('button',{name:'Reset password',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();
+    const result=zone.locator('.form-result');
+    await expect(result.locator('input[readonly]')).toHaveValue('Reset-Fixture-Only2!');
+    await expect(result).toContainText('Before the first sign-in, open the password change address');
+    await result.getByRole('button',{name:'Copy password',exact:true}).click();await result.getByRole('button',{name:'Copy all details',exact:true}).click();
+    const copied=await page.evaluate(()=>window.__copied);
+    if(copied[0]!=='Reset-Fixture-Only2!'||!copied[1].includes('Username: bob')||!copied[1].includes('Password change address: '+origin+'/#/recover'))throw Error('reset copy '+JSON.stringify(copied));
+    await zone.getByLabel('Require password change at next sign-in',{exact:true}).uncheck();
+    await zone.getByRole('button',{name:'Reset password',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();
+    await expect(result).not.toContainText('Before the first sign-in');
+    await result.getByRole('button',{name:'Copy all details',exact:true}).click();
+    if((await page.evaluate(()=>window.__copied)).at(-1).includes('#/recover'))throw Error('change address copied without a required change');
+  }finally{await context.close();}
+});
+
+test('an expired recent authentication opens a password dialog and retries the operation once',async()=>{
+  const {context,page,reauth,writes}=await portal({admin:true,stale:true});
+  try{
+    await page.goto(origin+'/#/admin/users/bob');await ready(page,'admin-user');
+    const zone=page.locator('section.danger-zone');
+    const unlock=async()=>{await zone.getByRole('button',{name:'Unlock account',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();};
+    await unlock();
+    let dialog=page.getByRole('dialog',{name:'Confirm your identity'});await expect(dialog).toBeVisible();await expect(dialog).toContainText('alice');
+    await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(dialog).toHaveCount(0);
+    if(writes.length||reauth.length)throw Error('cancel performed a write');
+    await unlock();await expect(dialog).toBeVisible();
+    await dialog.getByLabel('Current password',{exact:true}).fill('wrong-pass');await dialog.getByRole('button',{name:'Confirm operation',exact:true}).click();
+    await expect(dialog.getByRole('alert')).toBeVisible();await expect(dialog).toBeVisible();
+    if(writes.length)throw Error('a rejected password retried the write');
+    await dialog.getByLabel('Current password',{exact:true}).fill('right-pass');await dialog.getByRole('button',{name:'Confirm operation',exact:true}).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect.poll(()=>writes.length).toBe(1);
+    if(reauth.length!==2||reauth.some(x=>x.csrf!=='csrf'||Object.keys(x.body).join()!=='password'))throw Error('reauth requests '+JSON.stringify(reauth.map(x=>x.csrf)));
+    await expect(zone.locator('.form-result')).toContainText('Saved.');
+  }finally{await context.close();}
 });
 
 // TEST_CASES: APPTHEME-T-007

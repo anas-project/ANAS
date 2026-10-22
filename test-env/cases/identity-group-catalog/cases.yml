@@ -11,7 +11,7 @@ cases:
     level: "unit"
     requirements: ["GROUPCAT-R-001", "GROUPCAT-R-002", "GROUPCAT-R-003", "GROUPCAT-R-005", "GROUPCAT-R-006"]
     requirement_digest: "sha256:d03885c2080f2f375e7487422561dbad54baac6769ddd89326e87641db7c9a33"
-    implementation_digest: "sha256:7ebbee2b14f24cf83ac0dd66df12bb15b73e4663bba9538c6958ff00a6ac7e3f"
+    implementation_digest: "sha256:72eab37af8aac1095dc568608ea8d82e1181f990cc07f585d598249a6d4cd53c"
     fixture: "固定 Module 声明和隔离 Go 目录替身"
     capabilities: ["go"]
     preconditions: ["本机临时 HTTPS 端口可用"]
@@ -36,7 +36,7 @@ cases:
     level: "e2e"
     requirements: ["GROUPCAT-R-002", "GROUPCAT-R-004", "GROUPCAT-R-005"]
     requirement_digest: "sha256:e20316076465a4f2a2b2bdc5dc32b82a9cf1c095f5f3434786636eb24ca8f9aa"
-    implementation_digest: "sha256:a41be5d808729f949dc7022ac0d43dc0822588b542d8918c3d41d9c54299a35e"
+    implementation_digest: "sha256:ac8d9629d3eed2c225fb7bacf4714d0ea5dcc62cfea129553233458c6b80dd10"
     fixture: "finance 指定测试服务和不发布端口、无网络、无生产信任的 owner.test 假域"
     capabilities: ["docker", "samba", "playwright", "ldaps"]
     preconditions: ["完整恢复点已验证；候选镜像与原生测试二进制已固定；不在 finance 域创建高权测试身份"]
