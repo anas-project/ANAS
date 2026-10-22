@@ -1,5 +1,13 @@
 # Architecture
 
+## anasd service APIs
+
+[Service API authentication and portal credentials](service-api.md) describes independent service
+tokens, host-managed grants, automatic renewal and local file delivery. The first API lets the portal
+read explicitly declared local administration credentials after checking current administrator access
+and its existing five-minute recent authentication. Automated validation does not imply host deployment
+or target-application login acceptance.
+
 ## Portal account administration and mail ownership
 
 The [Chinese extension design](/architecture/portal-account-mail-administration) separates AD-owned

@@ -94,6 +94,9 @@ Casdoor 用户自己的 token 读取 UserInfo/get-account；后端不持有应�
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护分组的 anchor JSON 数组 |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护人员的 anchor JSON 数组 |
 | `user_portal.recent_window_seconds` | int | `5..300` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | 否 | 否 | 否 | 是 | `container_recreate` | 近期认证窗口；默认 300 秒 |
+| `user_portal.service_api_credentials_dir` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_CREDENTIALS_DIR` | 否 | 否 | 否 | 是 | `container_recreate` | anasd 为此门户客户端准备的宿主专用令牌目录；只读挂载，与服务地址和工作区一起配置 |
+| `user_portal.service_api_url` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_URL` | 否 | 否 | 否 | 是 | `container_recreate` | 门户服务端调用 anasd 的 HTTPS origin；与工作区和令牌目录一起配置，默认关闭凭据获取 |
+| `user_portal.service_api_workspace` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_WORKSPACE` | 否 | 否 | 否 | 是 | `container_recreate` | 服务令牌已获授权的 anasd 工作区 ID；与服务地址和令牌目录一起配置 |
 
 `delegation_rules` 是 JSON 数组：每条包含 id、operator_groups、actions、target_users、target_user_groups、editable_groups，引用为稳定 anchor。动作固定为 users.read、password.reset、account.unlock、groups.member.add、groups.member.remove、audit.read。空目标不授权，规则不能拼接。操作者组、范围组与其保护关系不可修改。
 

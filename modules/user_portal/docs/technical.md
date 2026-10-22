@@ -13,7 +13,7 @@
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 4 |
+| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 5 |
 <!-- generated:compose-topology:end -->
 
 单个 Go 进程交付嵌入页面和 API，只有 Traefik 路由，无宿主发布端口。不挂 Docker socket。root 启动仅通过固定审计挂载的目录描述符初始化权限，再不可逆切换至 UID/GID 65532。应用 rootfs 只读。
@@ -40,6 +40,9 @@
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护分组的 anchor JSON 数组 |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | 否 | 否 | 否 | 是 | `container_recreate` | 额外保护人员的 anchor JSON 数组 |
 | `user_portal.recent_window_seconds` | int | `5..300` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | 否 | 否 | 否 | 是 | `container_recreate` | 近期认证窗口；默认 300 秒 |
+| `user_portal.service_api_credentials_dir` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_CREDENTIALS_DIR` | 否 | 否 | 否 | 是 | `container_recreate` | anasd 为此门户客户端准备的宿主专用令牌目录；只读挂载，与服务地址和工作区一起配置 |
+| `user_portal.service_api_url` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_URL` | 否 | 否 | 否 | 是 | `container_recreate` | 门户服务端调用 anasd 的 HTTPS origin；与工作区和令牌目录一起配置，默认关闭凭据获取 |
+| `user_portal.service_api_workspace` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_WORKSPACE` | 否 | 否 | 否 | 是 | `container_recreate` | 服务令牌已获授权的 anasd 工作区 ID；与服务地址和令牌目录一起配置 |
 
 参数库存以 module.yml 为准。规则默认关闭，写绑定不自动扩权。Runtime 使用显式 environment，不交付 IAM 注册或通用应用 secret。
 
@@ -164,3 +167,23 @@ ANAS 管理员角色组（含嵌套继承该角色的组）的加入和移出需
 
 从门户点击登录会将当时的明暗模式传为 Casdoor 原生 `theme=dark/default`；系统模式在点击时解析，已打开的 IAM 标签页不会实时跟随。门户以 `hidden: true` 的专属品牌声明给 IAM 登录及再次验证页提供512px圆角logo，不增加可见自链或准入组。
 Casdoor 的 ANAS 目录登录页提供“首次／到期改密 · Set new password”，通过原生 `forgetUrl` 跳到门户 `/#/recover`。该页验证旧/临时密码后写入 AD；本地恢复管理员保留 Casdoor 原生找回页面。Samba强制改密会先拒绝LDAP登录，首期不承诺IAM自动弹出改密、不新增Casdoor补丁或目录授权。
+
+### 非 IAM 后台登录信息
+
+明确声明本地凭据来源的 Module 管理入口可以显示“获取登录信息”。门户按当前 IAM 应用策略、目录准入组和 ANAS 管理员角色过滤 `credentials_available`；普通用户、IAM 入口、外部条目、未声明凭据的入口均不显示。`POST /api/apps/{name}/credentials` 再次检查这些条件、同源 CSRF 和当前会话最近 5 分钟真实认证；已有认证可复用，过期时使用现有页内本人密码验证，不额外要求域级操作确认。
+
+该功能默认关闭。同时配置以下三个参数后启用：
+
+| 参数 | 内容 |
+| --- | --- |
+| `service_api_url` | anasd 的 HTTPS origin，例如 `https://anasd.example.net:8443`；不接受路径、用户信息或查询参数 |
+| `service_api_workspace` | anasd 已授权的工作区 ID |
+| `service_api_credentials_dir` | 宿主上该门户客户端的专用令牌目录，与 anasd 登记的交付目录一致；只能挂客户端目录，不能挂整个 `/run` |
+
+首次启用前由 anasd 创建客户端专用目录及其权限；Compose 禁止自动创建已配置的目录，避免 Docker 抢先创建后与 anasd 的安全检查冲突。Compose 将专用目录只读挂载到 `/run/anas/service-client`；`token` 是完整服务令牌，服务端每次调用时重新读取。未启用时由 `render_env` hook 准备并只读挂载空的 `${DATA_PATH}/user_portal/service-client` 目录。配置的目录及文件必须允许门户 UID/GID 65532 读取，并拒绝其他用户读取；令牌由 anasd 维护，门户不写入。目录已存在但令牌尚未发布时不影响门户启动：获取请求暂时失败，后续请求自动读取新发布文件。服务令牌不进入浏览器、应用目录、偏好、审计或模块环境变量。
+
+门户通过现有 CA 信任包验证 anasd TLS，向 `POST /api/v1/service/workspaces/{workspace}/applications/{application}/credentials` 发送 Bearer 服务令牌、当前操作者 anchor 和随机请求 ID。禁止跟随重定向；仅在 401 后重新读取到不同令牌时重试一次。网络、TLS、服务拒绝或文件不可读均返回不含后台错误正文的不可用提示，不缓存后台账号密码。anasd 决定该服务可用的 API 和资源范围，门户决定具体用户权限。
+
+获取前先持久写审计意图，返回前重新确认会话、目录角色与 IAM 权限并持久写结果；任一步失败不交付密码。审计动作是 `application.credentials.read`，只含操作者、入口、请求 ID 和结果。页面分别提供用户名、密码复制按钮；密码默认遮盖，关闭、页内导航或退出时清空输入，晚到响应不能重建弹框。剪贴板中已复制的内容由用户管理。
+
+本地验证为 `go test ./modules/user_portal/portal ./modules/user_portal/hook` 和 `node --test test-env/playwright/user-portal-credentials.test.mjs`。后者使用真实门户界面与模拟 API；不代表真实主机、anasd 或目标后台的验收。

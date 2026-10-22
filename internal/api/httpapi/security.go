@@ -79,6 +79,8 @@ const (
 	PermissionHostPreflight       Permission = "host.preflight"
 )
 
+const PermissionApplicationCredentialRead Permission = "application.credentials.read"
+
 type ObjectScope string
 
 const (
@@ -89,6 +91,7 @@ const (
 type Authentication string
 
 const (
+	AuthenticationService    Authentication = "service"
 	AuthenticationNone       Authentication = "none"
 	AuthenticationBootstrap  Authentication = "bootstrap"
 	AuthenticationEnrollment Authentication = "enrollment"
@@ -213,7 +216,7 @@ func validateRoutePolicy(policy RoutePolicy) error {
 			return fmt.Errorf("route %s %s declares unknown state %q", policy.Method, policy.Pattern, state)
 		}
 		if access.Authentication != AuthenticationNone && access.Authentication != AuthenticationBootstrap &&
-			access.Authentication != AuthenticationEnrollment && access.Authentication != AuthenticationOwner {
+			access.Authentication != AuthenticationEnrollment && access.Authentication != AuthenticationOwner && access.Authentication != AuthenticationService {
 			return fmt.Errorf("route %s %s has no authentication policy for %s", policy.Method, policy.Pattern, state)
 		}
 		if len(access.Transports) == 0 {

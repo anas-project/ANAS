@@ -31,6 +31,7 @@ type Rule struct {
 }
 
 type Config struct {
+	ServiceAPIURL, ServiceAPIWorkspace, ServiceAPITokenFile                           string
 	URL, Issuer, ClientID, ReauthClientID, Catalog, CAFile, AuditDir, Language        string
 	LDAPURL, LDAPBindDN, LDAPBindPassword, BaseDN, UsersDN, GroupsDN, AnchorAttribute string
 	PasswordBindDN, PasswordBindPassword, GroupBindDN, GroupBindPassword              string
@@ -53,6 +54,10 @@ func loadConfig() (Config, error) {
 	e := func(k string) string { return strings.TrimSpace(os.Getenv("USER_PORTAL_" + k)) }
 	c := Config{URL: e("URL"), Issuer: e("ISSUER"), ClientID: e("CLIENT_ID"), ReauthClientID: e("REAUTH_CLIENT_ID"), Catalog: e("CATALOG"), CAFile: e("CA_FILE"), AuditDir: e("AUDIT_DIR"), Language: e("LANGUAGE"), LDAPURL: e("LDAP_URL"), LDAPBindDN: e("LDAP_BIND_DN"), LDAPBindPassword: os.Getenv("USER_PORTAL_LDAP_BIND_PASSWORD"), BaseDN: e("BASE_DN"), UsersDN: e("USERS_DN"), AnchorAttribute: e("ANCHOR_ATTRIBUTE"), PasswordBindDN: e("PASSWORD_BIND_DN"), PasswordBindPassword: os.Getenv("USER_PORTAL_PASSWORD_BIND_PASSWORD"), GroupBindDN: e("GROUP_BIND_DN"), GroupBindPassword: os.Getenv("USER_PORTAL_GROUP_BIND_PASSWORD"), ProxyHost: e("PROXY_HOST"), RecentWindow: 5 * time.Minute, SessionTTL: 2 * time.Hour, AuditMaxBytes: 64 << 20}
 	c.ProfileBindDN, c.ProfileBindPassword = e("PROFILE_BIND_DN"), os.Getenv("USER_PORTAL_PROFILE_BIND_PASSWORD")
+	c.ServiceAPIURL, c.ServiceAPIWorkspace, c.ServiceAPITokenFile = e("SERVICE_API_URL"), e("SERVICE_API_WORKSPACE"), e("SERVICE_API_TOKEN_FILE")
+	if err := validateServiceAPIConfig(c); err != nil {
+		return c, err
+	}
 	c.CreateBindDN, c.CreateBindPassword = e("CREATE_BIND_DN"), os.Getenv("USER_PORTAL_CREATE_BIND_PASSWORD")
 	c.MailDomain, c.UPNSuffix = e("MAIL_DOMAIN"), e("UPN_SUFFIX")
 	if c.MailDomain != "" {

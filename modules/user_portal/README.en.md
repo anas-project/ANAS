@@ -94,6 +94,9 @@ No database consumer/provider. Samba AD owns users, groups and passwords.
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | no | no | no | yes | `container_recreate` | Additional protected group anchors as JSON |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | no | no | no | yes | `container_recreate` | Additional protected user anchors as JSON |
 | `user_portal.recent_window_seconds` | int | `5..300` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | no | no | no | yes | `container_recreate` | Recent authentication window; default 300 seconds |
+| `user_portal.service_api_credentials_dir` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_CREDENTIALS_DIR` | no | no | no | yes | `container_recreate` | Dedicated host token directory prepared by anasd for this portal client; mounted read-only and configured together with the service origin and workspace |
+| `user_portal.service_api_url` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_URL` | no | no | no | yes | `container_recreate` | anasd HTTPS origin called by the portal server; configure together with the workspace and token directory, with credential retrieval disabled by default |
+| `user_portal.service_api_workspace` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_WORKSPACE` | no | no | no | yes | `container_recreate` | anasd workspace ID authorized for the service token; configure together with the service origin and token directory |
 
 Delegation rules are a JSON array with id, operator_groups, actions, target_users, target_user_groups and editable_groups, using stable anchors. The fixed actions are users.read, password.reset, account.unlock, groups.member.add, groups.member.remove and audit.read. Empty targets deny access; rules cannot be combined. Operator/scope boundary groups and their protection relationships are immutable.
 

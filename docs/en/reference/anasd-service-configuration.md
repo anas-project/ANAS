@@ -50,6 +50,8 @@ trusted_proxy:
 
 The paths are illustrative; lego fields must point at the deployment's actual published `ANAS_TLS_*` artifacts.
 
+Certificate, issuer, trust-bundle and internal-CA PEM blocks may be separated by ASCII whitespace and blank lines. Non-certificate data, invalid blocks and disallowed duplicate certificates remain rejected; chain and hostname validation is unchanged.
+
 ## Fields
 
 | Field | Constraint and purpose |
@@ -72,7 +74,12 @@ The paths are illustrative; lego fields must point at the deployment's actual pu
 
 When both sources are configured, a valid lego certificate takes priority. Every handshake uses dynamic `GetCertificate` state. A new pair is published atomically only after its key match, validity, ServerAuth usage, SANs, chain, and issuer marker validate. A failed update keeps the last-known-good pair; it never downgrades to the temporary certificate or expands plaintext capabilities.
 
-The service configuration is read only when `anasd` starts; changing its port, mode, Hosts, workspaces, store, trusted proxy, or TLS paths requires a restart. Direct serving-certificate artifacts at those paths are the exception: later TLS handshakes revalidate and hot-swap them without restarting the daemon.
+The port, mode, Hosts, workspaces, store, trusted proxy, TLS paths and service credential directory are fixed at startup; changing them requires a restart. Service API authentication and token maintenance reload client enablement and grants from the host configuration, so revocation or reduced grants apply to the next request. Configuration read failures deny service requests. Direct serving-certificate artifacts are another exception: later TLS handshakes revalidate and hot-swap them without restarting the daemon.
+
+Optional `service_api` contains `credentials_dir` and `clients` for service identities and private token
+delivery. Tokens authorize only explicit service APIs and never become console owners. The directory
+must be outside workspaces and backup targets; `/var/lib/anas/service-clients` fits the supplied systemd
+write policy. See [service APIs](/en/architecture/service-api) for the full configuration and portal setup.
 
 At startup, `backup_targets` paths are cleaned and any resolvable symlink boundaries are checked. The daemon refuses to start when either the direct or resolved path contains, or is contained by, the control plane, a workspace, or another backup target. Capability, plan, list, and terminal-descriptor HTTP requests use public target IDs rather than root-configured paths; only a server-generated descriptor `argv` may include the registered canonical path required by the CLI invocation.
 

@@ -51,6 +51,8 @@ trusted_proxy:
 
 示例路径只说明字段形状；lego 路径应指向当前部署实际发布的 `ANAS_TLS_*` 制品。
 
+证书、issuer、trust bundle 和内部 CA 的 PEM 块之间允许 ASCII 空白和空行；仍拒绝非证书内容、无效块和不符合规则的重复证书，证书链与域名校验保持不变。
+
 ## 字段
 
 | 字段 | 约束与作用 |
@@ -62,6 +64,7 @@ trusted_proxy:
 | `allowed_dns_hosts` | 额外允许的精确 ASCII DNS Host；不接受 IP、端口或 wildcard。数值 Host 仍必须等于该连接实际命中的本机地址。 |
 | `console_store` | 审计、单向 capability state、认证与任务事件状态的绝对路径；目录为 `0700`、私有状态文件为 `0600`，且必须在所有注册 workspace 之外，避免 snapshot/backup/restore 覆盖控制面状态。 |
 | `workspaces` | 服务端注册的 `id -> absolute path`；客户端 API 只提交 ID。workspace 必须已存在并包含 `.anas/`。 |
+| `service_api` | 可选的服务身份授权与私有令牌文件交付配置，包含 `credentials_dir` 和 `clients`。令牌只授权显式服务 API，不映射控制台 owner；完整配置见[服务 API](/architecture/service-api)。目录必须在 workspace、备份目标之外，建议 `/var/lib/anas/service-clients`。 |
 | `backup_targets` | root 注册的 `id -> absolute path` 备份目的地 allowlist；浏览器和 API 只能选择 ID，不能提交或覆盖宿主路径。ID 与路径都必须唯一，目标不得与 `console_store`、任何 workspace 或其他目标重叠。 |
 | `tls.lego` | lego 发布的长期证书、私钥、issuer、trust bundle、独立 `anas-internal-ca.crt` 和 `.issuer` marker。`anasd` 只消费并验证这些文件，不签发长期证书。 |
 | `tls.temporary` | 可选的临时自签叶证书路径和显式 SAN；至少给出一个 `dns_names` 或具体 `ip_addresses`，不做主机名、网卡或环境变量发现。文件名必须是示例中的固定名称，供显式 CLI 生成。 |
@@ -73,7 +76,7 @@ trusted_proxy:
 
 `tls.lego` 与 `tls.temporary` 都配置时，验证通过的 lego 证书优先。每次 TLS 握手都经动态 `GetCertificate` 读取当前验证快照；新 pair 只有在私钥匹配、有效期、ServerAuth、SAN、链和 issuer marker 全部通过后才原子切换。更新失败会继续使用 last-known-good，不会回退到临时证书或扩大明文能力。
 
-服务配置只在 `anasd` 启动时读取；修改端口、模式、Host、workspace、store、受信代理或 TLS 路径后必须重启。证书路径指向的直连服务证书制品是例外：进程会在后续 TLS 握手重新校验并热切换，无需重启。
+端口、模式、Host、workspace、store、受信代理、TLS 路径和服务凭据目录在 `anasd` 启动时固定，修改后必须重启。服务 API 每次鉴权与令牌维护会重新读取宿主配置中的客户端启用状态与授权范围，缩权或停用立即用于下一次请求；配置读取失败拒绝服务请求。证书路径指向的直连服务证书制品也是例外：进程会在后续 TLS 握手重新校验并热切换，无需重启。
 
 `backup_targets` 的路径会在启动时清理并检查可解析的符号链接边界；直接路径或解析后的路径只要与控制面、workspace 或另一备份目标互相包含，服务就拒绝启动。HTTP 的 capability、plan、list 与终端 descriptor 响应公开目标 ID，不把 root 配置路径当作请求输入；只有执行 CLI 所必需的服务器生成 descriptor `argv` 会包含已注册的规范路径。
 

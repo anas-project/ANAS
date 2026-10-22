@@ -55,6 +55,90 @@ tags:
   - name: Modules
   - name: Maintenance
 paths:
+  /api/v1/service/workspaces/{ws}/applications/{application}/credentials:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: application
+        in: path
+        required: true
+        schema: {type: string, minLength: 1, maxLength: 128}
+    post:
+      operationId: readServiceApplicationCredential
+      summary: Read a registered backend credential using a bounded service grant
+      description: |
+        Available only on the direct TLS listener in full state when service_api
+        is configured. The caller authenticates using its daemon-issued service
+        token. anasd checks the exact API permission, workspace and application
+        grant; user authorization and recent password verification belong to the
+        calling server. actor is only service-declared audit context, never a
+        user authentication claim. Secrets are returned only after durable audit
+        succeeds. No workspace path or arbitrary secret name is accepted.
+      tags: [Service]
+      security:
+        - serviceBearer: []
+      x-anas-permission: application.credentials.read
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        full: {authentication: service, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [actor]
+              properties:
+                actor: {type: string, minLength: 1, maxLength: 256}
+                request_id: {type: string, minLength: 1, maxLength: 128}
+      responses:
+        "200":
+          description: Current credential, returned only after audit succeeds.
+          headers:
+            Cache-Control:
+              schema: {type: string, const: no-store}
+            Pragma:
+              schema: {type: string, const: no-cache}
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [api_version, workspace_id, application, username, password, url]
+                properties:
+                  api_version: {type: string, const: anas.dev/api/v1}
+                  workspace_id: {type: string}
+                  application: {type: string}
+                  username: {type: string}
+                  password: {type: string}
+                  url: {type: string}
+        "400":
+          $ref: "#/components/responses/BadRequestProblem"
+        "401":
+          $ref: "#/components/responses/UnauthorizedProblem"
+        "403":
+          $ref: "#/components/responses/ForbiddenProblem"
+        "404":
+          $ref: "#/components/responses/NotFoundProblem"
+        "405":
+          $ref: "#/components/responses/PostMethodNotAllowedProblem"
+        "408":
+          $ref: "#/components/responses/RequestCanceledProblem"
+        "412":
+          $ref: "#/components/responses/PreconditionProblem"
+        "413":
+          $ref: "#/components/responses/PayloadTooLargeProblem"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaTypeProblem"
+        "428":
+          $ref: "#/components/responses/PreconditionRequiredProblem"
+        "500":
+          $ref: "#/components/responses/InternalProblem"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailableProblem"
+        "504":
+          $ref: "#/components/responses/DeadlineProblem"
   /api/v1/workspaces/{ws}/host/actions/incus.status:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"
@@ -2962,6 +3046,10 @@ paths:
         "504": { $ref: "#/components/responses/DeadlineProblem" }
 components:
   securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      description: Daemon-issued service identity limited to exact API and resource grants.
     preAuthCSRFCookie:
       type: apiKey
       in: cookie

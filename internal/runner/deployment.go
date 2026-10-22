@@ -713,13 +713,14 @@ func buildDeploymentManifest(a *app, id, cfgPath string, imagesBuilt bool) (*dep
 			Consumes:             append([]string{}, mod.Consumes...),
 			Dependencies:         append([]string{}, a.deps[name]...),
 			UseHostLAN:           mod.UseHostLAN, Changes: mod.Changes,
-			Providers:           cloneContractProviders(mod.ContractProviders),
-			LocalAccounts:       append([]LocalAccount{}, mod.LocalAccounts...),
-			ManagementSurfaces:  managementSurfaces,
-			CredentialProviders: cloneCredentialProviders(mod.CredentialProviders),
-			CredentialConsumers: cloneCredentialConsumers(mod.CredentialConsumers),
-			CommandExecutor:     commandExecutor,
-			Commands:            cloneModuleCommands(mod.Commands),
+			Providers:              cloneContractProviders(mod.ContractProviders),
+			LocalAccounts:          append([]LocalAccount{}, mod.LocalAccounts...),
+			ManagementSurfaces:     managementSurfaces,
+			ApplicationCredentials: freezeApplicationCredentials(mod),
+			CredentialProviders:    cloneCredentialProviders(mod.CredentialProviders),
+			CredentialConsumers:    cloneCredentialConsumers(mod.CredentialConsumers),
+			CommandExecutor:        commandExecutor,
+			Commands:               cloneModuleCommands(mod.Commands),
 		}
 	}
 	for _, request := range a.resourceRequests {

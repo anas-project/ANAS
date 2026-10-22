@@ -51,6 +51,7 @@ type handler struct {
 	deploymentHTTP *deploymentHTTPState
 	audit          *auditHTTPState
 	systemHTTP     *systemHTTPState
+	serviceAPI     *ServiceAPIOptions
 	hostActions    *HostActionOptions
 	authHTTP       authHTTPState
 	routes         []routeSpec
@@ -76,6 +77,7 @@ type Options struct {
 	Audit       *AuditQueryOptions
 	System      *SystemOptions
 	HostActions *HostActionOptions
+	ServiceAPI  *ServiceAPIOptions
 }
 
 // New builds a console handler from Options. Every other constructor in this
@@ -134,6 +136,17 @@ func New(options Options) (http.Handler, error) {
 		options.Enrollment, jobState, configState, deploymentState, auditState, systemState)
 	if err != nil {
 		return nil, err
+	}
+	if options.ServiceAPI != nil {
+		if options.ServiceAPI.Authenticate == nil || options.ServiceAPI.Factory == nil || options.ServiceAPI.Audit == nil {
+			return nil, errors.New("service API requires authentication, credential service and audit")
+		}
+		copy := *options.ServiceAPI
+		h.serviceAPI = &copy
+		h.routes = h.routeSpecs()
+		if err := validateRouteSpecs(h.routes); err != nil {
+			return nil, err
+		}
 	}
 	if options.HostActions != nil {
 		copy := *options.HostActions

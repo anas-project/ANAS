@@ -109,6 +109,15 @@ catalog; only explicitly declared IAM consumers receive it. Local-auth entry vis
 the target URL. Native IAM display limitations and end-to-end acceptance are tracked in the
 [catalog design](/architecture/app-catalog-design).
 
+### Portal administration credentials
+
+`collabora-admin` explicitly declares `credentials.username_from: COLLABORA_ADMIN_USERNAME` and
+`password_from: COLLABORA_ADMIN_PASSWORD`. With the portal [service API](/en/architecture/service-api)
+configured, current administrators can separately copy the username and password using five-minute
+recent authentication. anasd reads applied values from the active running deployment's `.env`; pending
+configuration changes are not shown early. This does not change administrator configuration or add
+managed local-account rotation, and no password is stored in the catalog.
+
 ### Application icon provenance
 
 `applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.

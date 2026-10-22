@@ -34,14 +34,23 @@ type Metadata struct {
 }
 
 type Declaration struct {
-	Metadata   `yaml:",inline"`
-	URLFrom    string     `yaml:"url_from"`
-	EnabledBy  string     `yaml:"enabled_by"`
-	Enabled    *bool      `yaml:"enabled"`
-	AllowHTTP  bool       `yaml:"allow_http"`
-	Icons      IconInput  `yaml:"icons"`
-	Access     Access     `yaml:"access"`
-	Visibility Visibility `yaml:"visibility"`
+	Metadata    `yaml:",inline"`
+	URLFrom     string               `yaml:"url_from"`
+	EnabledBy   string               `yaml:"enabled_by"`
+	Enabled     *bool                `yaml:"enabled"`
+	AllowHTTP   bool                 `yaml:"allow_http"`
+	Icons       IconInput            `yaml:"icons"`
+	Access      Access               `yaml:"access"`
+	Visibility  Visibility           `yaml:"visibility"`
+	Credentials *CredentialReference `yaml:"credentials,omitempty"`
+}
+
+// CredentialReference is module-owned metadata, never a secret value. It is
+// frozen into the private deployment manifest, not the application catalog.
+type CredentialReference struct {
+	LocalAccount string `yaml:"local_account,omitempty" json:"local_account,omitempty"`
+	UsernameFrom string `yaml:"username_from,omitempty" json:"username_from,omitempty"`
+	PasswordFrom string `yaml:"password_from,omitempty" json:"password_from,omitempty"`
 }
 
 type IconInput struct {
@@ -115,13 +124,14 @@ type Icon struct {
 
 type Application struct {
 	Metadata
-	Enabled       bool            `json:"enabled"`
-	Access        Access          `json:"access"`
-	Visibility    Visibility      `json:"visibility"`
-	Groups        []string        `json:"groups"`
-	Icons         map[string]Icon `json:"icons"`
-	OriginalIcons map[string]Icon `json:"original_icons,omitempty"`
-	Source        Source          `json:"source"`
+	CredentialsAvailable bool            `json:"credentials_available,omitempty"`
+	Enabled              bool            `json:"enabled"`
+	Access               Access          `json:"access"`
+	Visibility           Visibility      `json:"visibility"`
+	Groups               []string        `json:"groups"`
+	Icons                map[string]Icon `json:"icons"`
+	OriginalIcons        map[string]Icon `json:"original_icons,omitempty"`
+	Source               Source          `json:"source"`
 }
 
 type Catalog struct {
@@ -238,6 +248,16 @@ func validateMetadata(meta Metadata, bilingual bool, allowHTTP bool, resolved bo
 }
 
 func ValidateDeclaration(d Declaration, builtin bool) error {
+	if c := d.Credentials; c != nil {
+		if !builtin || d.Kind != "admin" || d.Access.Mode != "local" {
+			return fmt.Errorf("credentials require a built-in local administration entry")
+		}
+		local := c.LocalAccount != "" && namePattern.MatchString(c.LocalAccount) && c.UsernameFrom == "" && c.PasswordFrom == ""
+		env := c.LocalAccount == "" && c.UsernameFrom != "" && c.PasswordFrom != "" && c.UsernameFrom != c.PasswordFrom
+		if !local && !env {
+			return fmt.Errorf("credentials require exactly one local account or username/password sources")
+		}
+	}
 	if err := validateMetadata(d.Metadata, builtin, d.AllowHTTP, false); err != nil {
 		return err
 	}

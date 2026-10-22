@@ -178,6 +178,28 @@ func TestManagerBuildsACMEServiceChainWithoutTrustAnchor(t *testing.T) {
 	}
 }
 
+func TestManagerAcceptsWhitespaceSeparatedCertificateBundle(t *testing.T) {
+	material := newACMEMaterial(t, "example.test", leafOptions{})
+	candidate := writeCandidate(t, t.TempDir(), "lego", "example.test", material, true)
+	writeFile(t, candidate.CertificatePath, append(append([]byte{}, material.leaf.certificatePEM...), material.issuer...), 0o644)
+	for _, path := range []string{candidate.CertificatePath, candidate.IssuerPath, candidate.TrustBundlePath, candidate.InternalCAPath} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body = bytes.ReplaceAll(body, []byte("-----END CERTIFICATE-----\n"), []byte("-----END CERTIFICATE-----\n\r\n \t"))
+		writeFile(t, path, append([]byte(" \t\r\n"), body...), 0o644)
+	}
+	manager := newTestManager(t, Options{Lego: &candidate})
+	if err := manager.Reload(); err != nil {
+		t.Fatalf("valid PEM whitespace rejected: %v", err)
+	}
+	appendFile(t, candidate.CertificatePath, []byte("garbage\n"))
+	if err := manager.Reload(); err == nil {
+		t.Fatal("non-certificate data after whitespace accepted")
+	}
+}
+
 func TestStrictCandidateValidationRejectsInvalidMaterial(t *testing.T) {
 	baseDomain := "example.test"
 	tests := []struct {

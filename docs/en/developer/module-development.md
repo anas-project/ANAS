@@ -481,6 +481,44 @@ ANAS_APP_CATALOG_FILE and projects existing native IAM objects. The source catal
 the separate user_portal protects APIs and icons using current IAM/AD state from this private bundle. See the [catalog design](/architecture/app-catalog-design).
 
 
+### Portal backend credentials
+
+New Modules, new administration entries and changes to local administration authentication **must
+support portal credential retrieval and separate username/password copying** whenever the backend
+does not use IAM and ANAS manages its username and password. Publishing a login link alone is not
+sufficient. Eligible built-in `kind: admin`, `access.mode: local` entries must explicitly declare `credentials`.
+Use `local_account: primary` for a declared local account with the same management entry,
+or `username_from` / `password_from` for two distinct variables under the publishing module's
+environment prefix. These alternatives are exclusive; IAM, external and user entries cannot declare
+credentials. Runner freezes references in the deployment manifest and publishes only the
+`credentials_available` flag in the catalog and cards, never source keys, passwords or service tokens.
+anasd reads current local-account values from the existing Secret Store, or applied environment values
+from the active running deployment. The host must separately grant the entry to the calling service.
+The portal checks current administrator access and reuses its five-minute recent authentication.
+See [service APIs](/en/architecture/service-api) for configuration and deployment.
+
+Modules declare their own credential source and reuse the shared portal/anasd implementation; they
+must not add a separate token mechanism or password API. The source must belong to the Module and
+match the actual administration login. Prefer a managed local account; an existing configuration-based
+administrator may reference the active deployment's username/password environment variables. Never
+mount the full Secret Store, persist another backend-password copy, or put secrets in catalogs, URLs,
+logs, preferences or documentation.
+
+IAM/ForwardAuth backends without separate credentials are not applicable. Directory user logins,
+configuration-only passphrases, database root credentials and IAM break-glass accounts must not be
+misrepresented as ordinary backend credentials. An inapplicable Module must explain its actual
+authentication and reason in both README languages and technical pages. `access.mode: local` alone
+does not establish eligibility. This rule governs future integrations; it does not claim that existing
+undeclared entries already support credential retrieval.
+
+Acceptance must cover administrator retrieval and separate copying, rejection of ordinary/revoked
+users and invisible/disabled entries, reuse and expiry of the existing five-minute authentication,
+current values after rotation/deployment, safe failure and automatic recovery when the service token
+becomes available, secret-free auditing and dialog cleanup. A real deployment must also verify login
+to the matching backend with the returned credentials. The operator explicitly grants each application
+ID on the host; Module declarations and workspace restores cannot grant themselves access. Record
+evidence and outstanding work in the Module's paired implementation plan.
+
 ### Group descriptions and the shared catalog
 
 Declare group metadata in the owning Module's `identity.groups`: `id`, `name` (or `name_from` / `names_from`), `parent_dn_from`, `managed`, `category`, `order`, `risk`, `display_name` and `description`. English is required; Simplified Chinese is optional. `risk` is normal/resource/domain and never grants directory permissions. Dynamic capability families declare `select_prefix: <module>_` and `name_prefix: CAP_`; text may include `{name}`. `when` references a resolved boolean. Only the selected directory Provider declares system descriptions by `sid` or `domain_rid`; these groups are not created from metadata. Do not duplicate APP_ names already defined by `identity.application_group`.

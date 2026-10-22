@@ -95,6 +95,9 @@ func Load(path string, policy FileSecurityPolicy) (Config, error) {
 	if err := validateResolvedStorageBoundary(config); err != nil {
 		return Config{}, err
 	}
+	if err := validateServiceConfigLocation(config, path); err != nil {
+		return Config{}, err
+	}
 	return config, nil
 }
 

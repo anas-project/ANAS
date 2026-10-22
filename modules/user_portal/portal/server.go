@@ -154,6 +154,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("POST /api/administration/prepare", s.prepareOperation)
 	m.HandleFunc("POST /api/administration/execute", s.executeOperation)
 	m.HandleFunc("GET /api/apps", s.apps)
+	m.HandleFunc("POST /api/apps/{name}/credentials", s.applicationCredentials)
 	m.HandleFunc("GET /api/assets/{name}/{size}", s.asset)
 	m.HandleFunc("GET /api/users", s.users)
 	m.HandleFunc("POST /api/users", s.createUser)
@@ -422,6 +423,7 @@ func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
 			icons[size] = icon
 		}
 		app.Icons = icons
+		app.CredentialsAvailable = s.credentialsEnabled() && s.administrator(person) && credentialApplication(app)
 		allowed = append(allowed, app)
 	}
 	respond(w, 200, appcatalog.BuildView(s.catalog.Categories, allowed, lang, r.URL.Query()["category"]))
@@ -626,6 +628,12 @@ func (s *Server) auditQuery(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 	for _, record := range s.audit.list() {
+		if record.Action == "application.credentials.read" {
+			if record.Actor == actor.Anchor || s.administrator(actor) {
+				allowed = append(allowed, record)
+			}
+			continue
+		}
 		if record.Target == actor.Anchor || record.Target == "" && record.Actor == actor.Anchor || record.Action == "user.create" && record.Actor == actor.Anchor {
 			allowed = append(allowed, record)
 			continue

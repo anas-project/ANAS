@@ -112,6 +112,7 @@ export const zhSidebar: DefaultTheme.Sidebar = {
         { text: 'Samba 身份锚点', link: '/architecture/samba-identity-anchor' },
         { text: 'IAM 能力', link: '/architecture/iam-capability-design' },
         { text: '应用目录', link: '/architecture/app-catalog-design' },
+        { text: 'anasd 服务 API', link: '/architecture/service-api' },
         { text: '独立用户门户', link: '/architecture/user-portal-design' },
         { text: '门户账号、邮箱与域级管理', link: '/architecture/portal-account-mail-administration' },
         { text: '动态 DNS', link: '/architecture/dynamic-dns-capability-design' },
@@ -276,6 +277,7 @@ export const enSidebar: DefaultTheme.Sidebar = {
         { text: 'Immich Module (Chinese)', link: '/architecture/immich-module-design' },
         { text: 'IAM capability design', link: '/en/architecture/iam-capability-design' },
         { text: 'User portal design (Chinese)', link: '/architecture/user-portal-design' },
+        { text: 'anasd service APIs', link: '/en/architecture/service-api' },
         { text: 'Portal accounts, mail and domain administration (Chinese)', link: '/architecture/portal-account-mail-administration' },
         { text: 'Object storage capability design', link: '/en/architecture/object-storage-capability-design' }
       ]

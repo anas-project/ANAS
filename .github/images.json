@@ -172,7 +172,13 @@
       "go.mod",
       "go.sum",
       "internal/appcatalog",
-      "internal/securefs"
+      "internal/apptheme",
+      "internal/groupcatalog",
+      "internal/securefs",
+      "internal/directorymail",
+      "internal/configschema",
+      "internal/localization",
+      "modules/user_portal/browserlogout"
     ]
   },
   {

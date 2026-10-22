@@ -12,6 +12,7 @@
 | [Immich Module](immich-module-design.md) | developing；服务器与网页基线通过，移动端待验收 | 空库纯 OIDC 与 anchor 绑定、共享 PG、专属队列、媒体与 ANAS 备份 |
 | [Module 专属命令能力设计](module-command-capability-design.md) | 当前模型与明确标注的演进方案 | 命令发现、类型化参数、CLI/anasd 共享调用与执行边界 |
 | [管理员账号系统](admin-account-system.md) | 当前模型与路线图 | 目录管理员、应用角色、本地账号、Secret 与 CLI 生命周期 |
+| [anasd 服务 API](service-api.md) | 当前实现；自动测试与实机部署边界分别记录 | 服务令牌、宿主授权、自动交付与门户后台凭据复制 |
 | [Samba AD 用户、组命名与权限规划](samba-ad-user-planning.md) | 当前目录与权限规范 | 目录结构、部门/角色/应用/资源组命名、账号分类与权限矩阵 |
 | [Samba AD identity anchor](samba-identity-anchor.md) | 当前实现与迁移规范 | 永久身份锚点、PEN OID、schema/ACL 契约与 legacy 单 DC 迁移 |
 | [IAM 能力](iam-capability-design.md) | 当前模型 | IAM provider、OIDC/SAML 协议选择、绑定与双向登出注册 |

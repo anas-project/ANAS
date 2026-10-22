@@ -470,7 +470,9 @@ func parseIssuerMarker(body []byte) (Source, error) {
 }
 
 func parseCertificatePEM(body []byte, role FileRole) ([]*x509.Certificate, error) {
-	remaining := body
+	// PEM bundles commonly separate certificate blocks with blank lines.
+	// Accept ASCII whitespace only; pem.Decode must not skip arbitrary data.
+	remaining := bytes.Trim(body, " \t\r\n")
 	certificates := []*x509.Certificate{}
 	seen := map[[sha256.Size]byte]bool{}
 	for len(remaining) > 0 {
@@ -491,7 +493,7 @@ func parseCertificatePEM(body []byte, role FileRole) ([]*x509.Certificate, error
 		}
 		seen[digest] = true
 		certificates = append(certificates, certificate)
-		remaining = rest
+		remaining = bytes.Trim(rest, " \t\r\n")
 	}
 	if len(certificates) == 0 {
 		return nil, fmt.Errorf("%s PEM contains no certificates", role)

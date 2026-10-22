@@ -42,6 +42,9 @@ func handle(r request) (response, error) {
 		return out, nil
 	}
 	e := r.Env
+	if err := validateServiceAPI(e); err != nil {
+		return out, err
+	}
 	for _, key := range []string{"DELEGATION_RULES", "PROTECTED_USERS", "PROTECTED_GROUPS"} {
 		v := e["USER_PORTAL_"+key]
 		if v == "" {
@@ -98,7 +101,13 @@ func handle(r request) (response, error) {
 	out.Env["USER_PORTAL_ADMIN_GROUP_DN"] = e["SAMBA_DC_ADMIN_GROUP_DN"]
 	out.Env["USER_PORTAL_SERVICE_ACCOUNTS_DN"] = e["SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN"]
 	out.Env["USER_PORTAL_LANGUAGE"] = appcatalog.SelectLanguage(e["USER_PORTAL_LANGUAGE"], "", e["DEFAULT_LANGUAGE"])
+	for _, key := range []string{"SERVICE_API_URL", "SERVICE_API_WORKSPACE", "SERVICE_API_CREDENTIALS_DIR"} {
+		out.Env["USER_PORTAL_"+key] = e["USER_PORTAL_"+key]
+	}
 	if r.Phase == "render_env" {
+		if err := prepareDisabledServiceAPIDirectory(e); err != nil {
+			return out, err
+		}
 		catalog, err := appcatalog.FromEnvironment(e)
 		if err != nil {
 			return out, err

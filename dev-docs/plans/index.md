@@ -41,6 +41,7 @@
 
 | 文档 | 结论去向 | 状态 |
 | --- | --- | --- |
+| [anasd 服务授权与门户后台凭据](archived/service-api.md) | [服务 API](../../docs/architecture/service-api.md)、[Module 接入规范](../../docs/developer/module-development.md#门户后台凭据)、finance 13 项服务与 28 项浏览器验收 | 已完成（已归档） |
 | [应用图标与可导入主题](archived/application-themes.md) | [主题指南](../../docs/guide/application-themes.md)、[机制](../../docs/architecture/application-themes.md)、finance主题29项及IAM外观41项验收 | 已完成（已归档） |
 | [分组共享清单](archived/identity-group-catalog.md) | [Module开发规范](../../docs/developer/module-development.md#分组介绍与共享清单)、Samba/门户技术文档及finance验收 | 已完成（已归档） |
 | [目录主邮箱与门户建号](archived/directory-primary-email.md) | [门户与邮箱设计](../../docs/architecture/portal-account-mail-administration.md)、[Samba技术文档](../../modules/samba_dc/docs/technical.md)；finance R7验收 | 已完成（已归档） |

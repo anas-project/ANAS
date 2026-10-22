@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/anas-project/ANAS/internal/serviceauth"
 )
 
 const (
@@ -51,6 +53,7 @@ type Config struct {
 	BackupTargets   []BackupTarget      `yaml:"backup_targets,omitempty"`
 	TLS             TLSConfig           `yaml:"tls,omitempty"`
 	TrustedProxy    *TrustedProxyConfig `yaml:"trusted_proxy,omitempty"`
+	ServiceAPI      *serviceauth.Config `yaml:"service_api,omitempty"`
 	// HostActions explicitly opts into the installed non-root host preflight
 	// queue. It is not a privilege override or automatic host installation.
 	HostActions bool `yaml:"host_actions,omitempty"`
@@ -240,6 +243,9 @@ func (config *Config) validateAndNormalize() error {
 		config.BackupTargets = []BackupTarget{}
 	}
 
+	if err := validateServiceAPI(config); err != nil {
+		return err
+	}
 	if err := normalizeTLSConfig(&config.TLS); err != nil {
 		return err
 	}
@@ -483,11 +489,27 @@ func validateResolvedStorageBoundary(config Config) error {
 		}
 		resolvedWorkspaces[workspace.ID] = resolvedWorkspace
 	}
+	var resolvedServiceDirectory string
+	if config.ServiceAPI != nil {
+		directory, err := resolvePathAllowMissing(config.ServiceAPI.Directory)
+		if err != nil {
+			return fmt.Errorf("resolve service_api.credentials_dir: %w", err)
+		}
+		resolvedServiceDirectory = directory
+		for id, workspace := range resolvedWorkspaces {
+			if pathsOverlap(directory, workspace) {
+				return fmt.Errorf("service_api.credentials_dir resolves across registered workspace %q", id)
+			}
+		}
+	}
 	resolvedTargets := make(map[string]string, len(config.BackupTargets))
 	for _, target := range config.BackupTargets {
 		resolvedTarget, err := resolvePathAllowMissing(target.Path)
 		if err != nil {
 			return fmt.Errorf("resolve backup target %q: %w", target.ID, err)
+		}
+		if resolvedServiceDirectory != "" && pathsOverlap(resolvedServiceDirectory, resolvedTarget) {
+			return fmt.Errorf("backup target %q resolves across service_api.credentials_dir", target.ID)
 		}
 		if pathsOverlap(resolvedStore, resolvedTarget) {
 			return fmt.Errorf("backup target %q resolves across console_store", target.ID)

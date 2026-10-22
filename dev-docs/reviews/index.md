@@ -6,6 +6,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [门户后台账号复制与 anasd 服务授权方案](2026-10-23-portal-backend-credentials.md) | 2026-10-23，`058d5c2ce872` 加工作树 | 调查方案已采纳；5 分钟本人认证、宿主服务授权与自动令牌交付，当前实现和验收结果转入 service-api 配套计划 |
 | [Immich 初始接入评审与修正](2026-10-02-immich-integration-plan-review.md) | 固定 v3.2.4 与用户确认边界 | 设计评审；末尾修正早期方案，执行结果见私有计划 |
 | [Immich master 整合评估](2026-10-07-immich-master-integration.md) | 9fc699c 与未提交工作树 | 基线差异与验证限制；最新 aa1944a 回归见私有计划 |
 | [Casdoor 可信角色与撤权声明核对](2026-10-04-casdoor-claims-verification.md) | 2026-10-04，`7d612be5` 加当前未提交工作树 | 目录身份、准入和 back-channel 已实现；目录撤权已由另一任务接入；未找到 `anasRole` / CAEP 声明，本地测试通过，声明来源待确认 |

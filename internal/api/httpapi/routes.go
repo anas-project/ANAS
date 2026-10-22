@@ -385,6 +385,13 @@ func (h *handler) routeSpecs() []routeSpec {
 			routeSpec{policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply", Permission: PermissionHostPreflight, Scope: ScopeWorkspace, Listeners: allListeners, Access: lifecycleAccess}, handler: h.invokeHostActionApply},
 		)
 	}
+	if h.serviceAPI != nil {
+		routes = append(routes, routeSpec{
+			policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/service/workspaces/{ws}/applications/{application}/credentials", Permission: PermissionApplicationCredentialRead, Scope: ScopeWorkspace, Listeners: directOnly,
+				Access: map[ConsoleState]RouteAccess{StateFull: {Authentication: AuthenticationService, Transports: []RequestTransport{TransportTLS}}}},
+			handler: h.readServiceApplicationCredential,
+		})
+	}
 	return routes
 }
 
@@ -469,7 +476,11 @@ func (h *handler) dispatch(w http.ResponseWriter, r *http.Request) {
 		}
 		access := match.route.policy.Access[state]
 		if access.Authentication != AuthenticationNone {
-			principal, err := h.security.Authorize(r, AuthorizationRequest{Policy: match.route.policy, Params: copyParams(match.params)})
+			authorize := h.security.Authorize
+			if access.Authentication == AuthenticationService {
+				authorize = h.authorizeService
+			}
+			principal, err := authorize(r, AuthorizationRequest{Policy: match.route.policy, Params: copyParams(match.params)})
 			switch {
 			case errors.Is(err, ErrUnauthenticated):
 				writeProblem(w, http.StatusUnauthorized, "unauthenticated", "authentication is required")
@@ -572,7 +583,7 @@ func uniqueStrings(values []string) []string {
 func RouteInventory(registry *Registry, factory ServiceFactory) ([]RoutePolicy, error) {
 	// Inventory describes the complete production contract. Runtime handlers
 	// still omit deployment routes unless their audited dependencies validate.
-	h := &handler{registry: registry, factory: factory, hostActions: &HostActionOptions{}, jobs: &jobHTTPState{
+	h := &handler{registry: registry, factory: factory, serviceAPI: &ServiceAPIOptions{}, hostActions: &HostActionOptions{}, jobs: &jobHTTPState{
 		cancel: func(context.Context, string) (consolejobs.Job, error) { return consolejobs.Job{}, nil },
 	}, deploymentHTTP: &deploymentHTTPState{
 		stepUp:                routeInventoryStepUp{},

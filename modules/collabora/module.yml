@@ -34,6 +34,9 @@ applications:
       - collaboration
     access:
       mode: local
+    credentials:
+      username_from: COLLABORA_ADMIN_USERNAME
+      password_from: COLLABORA_ADMIN_PASSWORD
     visibility:
       mode: subjects
       any_of:

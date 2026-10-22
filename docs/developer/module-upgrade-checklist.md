@@ -55,6 +55,7 @@
 
 ## 6. IAM、API 与管理面（条件项）
 
+- [ ] 未接入 IAM 且由 ANAS 管理用户名/密码的后台已按[门户后台凭据规则](/developer/module-development#门户后台凭据)声明来源，并验证复制、近期认证、拒绝路径及升级/轮换后的真实登录；不适用时中英文文档已说明原因。
 - [ ] OIDC/SAML/LDAP/Kerberos endpoint、redirect/SLS/logout URI、scope、claim 和 Group 映射与目标版本一致。
 - [ ] 本地账号、break-glass 入口、apply/rotate/rollback handler 在升级后仍可用。
 - [ ] 应用发起、IAM 发起和管理员无浏览器撤销的支持结论已按目标版本重新验证，旧 endpoint 未残留。

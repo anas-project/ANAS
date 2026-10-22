@@ -4,6 +4,36 @@
  */
 
 export interface paths {
+    "/api/v1/service/workspaces/{ws}/applications/{application}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a registered backend credential using a bounded service grant
+         * @description Available only on the direct TLS listener in full state when service_api
+         *     is configured. The caller authenticates using its daemon-issued service
+         *     token. anasd checks the exact API permission, workspace and application
+         *     grant; user authorization and recent password verification belong to the
+         *     calling server. actor is only service-declared audit context, never a
+         *     user authentication claim. Secrets are returned only after durable audit
+         *     succeeds. No workspace path or arbitrary secret name is accepted.
+         */
+        post: operations["readServiceApplicationCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/host/actions/incus.status": {
         parameters: {
             query?: never;
@@ -2752,6 +2782,60 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    readServiceApplicationCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    actor: string;
+                    request_id?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Current credential, returned only after audit succeeds. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store";
+                    Pragma?: "no-cache";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        api_version: "anas.dev/api/v1";
+                        workspace_id: string;
+                        application: string;
+                        username: string;
+                        password: string;
+                        url: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            412: components["responses"]["PreconditionProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            428: components["responses"]["PreconditionRequiredProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
     invokeHostIncusPreflight: {
         parameters: {
             query?: never;

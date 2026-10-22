@@ -108,6 +108,14 @@ Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录�
 本地认证入口的目录可见规则不保护目标 URL。原生显示限制与真实会话验收见
 [目录设计](/architecture/app-catalog-design)。
 
+### 门户后台凭据
+
+`collabora-admin` 通过 `credentials.username_from: COLLABORA_ADMIN_USERNAME` 与
+`password_from: COLLABORA_ADMIN_PASSWORD` 显式登记后台凭据。门户配置
+[服务 API](/architecture/service-api)后，当前管理员可复用 5 分钟本人认证并分别复制用户名、
+密码。anasd 从当前运行部署的 `.env` 读取已应用值；尚未 apply 的配置变更不会提前显示。
+这不改变现有管理员配置或新增本地账号轮换能力，目录中也不写入密码。
+
 ### 应用图标来源
 
 应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。

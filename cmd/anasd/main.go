@@ -62,7 +62,7 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 	if err != nil {
 		return err
 	}
-	return runConfigured(ctx, config, logger)
+	return runConfiguredWithServiceReload(ctx, config, logger, nil, func() (consoleconfig.Config, error) { return consoleconfig.LoadService(opts.configPath) })
 }
 
 func parseOptions(args []string) (options, error) {
@@ -87,6 +87,10 @@ func runConfigured(ctx context.Context, config consoleconfig.Config, logger *log
 }
 
 func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config, logger *log.Logger, listen consolelistener.ListenFunc) (result error) {
+	return runConfiguredWithServiceReload(ctx, config, logger, listen, nil)
+}
+
+func runConfiguredWithServiceReload(ctx context.Context, config consoleconfig.Config, logger *log.Logger, listen consolelistener.ListenFunc, reload func() (consoleconfig.Config, error)) (result error) {
 	if err := validateHostActionDaemon(config); err != nil {
 		return err
 	}
@@ -118,6 +122,11 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 			result = errors.Join(result, err)
 		}
 	}()
+	serviceAPI, stopServiceAPI, err := configureServiceAPI(ctx, config, reload, auditWriter, logger)
+	if err != nil {
+		return fmt.Errorf("configure service API: %w", err)
+	}
+	defer stopServiceAPI()
 	stateStore, err := consolestate.Open(ctx, config.ConsoleStore, consoleaudit.StateSink{Writer: auditWriter})
 	if err != nil {
 		return fmt.Errorf("initialize console capability state: %w", err)
@@ -362,6 +371,7 @@ func runConfiguredWithListener(ctx context.Context, config consoleconfig.Config,
 		}
 	}
 	directOptions := consoleSurfaces
+	directOptions.ServiceAPI = serviceAPI
 	directOptions.Security = httpapi.SecurityOptions{
 		State:       stateProvider,
 		HostAllowed: hostPolicy.Allowed,

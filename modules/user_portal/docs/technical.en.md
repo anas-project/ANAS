@@ -13,7 +13,7 @@ Native OIDC binding supplies the issuer; Casdoor self APIs supply current IAM fa
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 4 |
+| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 5 |
 <!-- generated:compose-topology:end -->
 
 One Go process embeds UI/API. Traefik is the only ingress; no host ports or Docker socket. Root bootstrap initializes only the fixed audit mount through directory descriptors, then irreversibly switches to UID/GID 65532. Application rootfs is read-only.
@@ -40,6 +40,9 @@ One Go process embeds UI/API. Traefik is the only ingress; no host ports or Dock
 | `user_portal.protected_groups` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_GROUPS` | no | no | no | yes | `container_recreate` | Additional protected group anchors as JSON |
 | `user_portal.protected_users` | string | — | `[]` | `static` | `USER_PORTAL_PROTECTED_USERS` | no | no | no | yes | `container_recreate` | Additional protected user anchors as JSON |
 | `user_portal.recent_window_seconds` | int | `5..300` | `300` | `static` | `USER_PORTAL_RECENT_WINDOW_SECONDS` | no | no | no | yes | `container_recreate` | Recent authentication window; default 300 seconds |
+| `user_portal.service_api_credentials_dir` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_CREDENTIALS_DIR` | no | no | no | yes | `container_recreate` | Dedicated host token directory prepared by anasd for this portal client; mounted read-only and configured together with the service origin and workspace |
+| `user_portal.service_api_url` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_URL` | no | no | no | yes | `container_recreate` | anasd HTTPS origin called by the portal server; configure together with the workspace and token directory, with credential retrieval disabled by default |
+| `user_portal.service_api_workspace` | string | — | `""` | `static` | `USER_PORTAL_SERVICE_API_WORKSPACE` | no | no | no | yes | `container_recreate` | anasd workspace ID authorized for the service token; configure together with the service origin and token directory |
 
 module.yml is authoritative. Additional delegation rules default to empty. ANAS administration is a separate registered role; dedicated directory ACLs are an explicit operator step. Explicit runtime environment excludes application API secrets and IAM registration variables.
 
@@ -164,3 +167,23 @@ See the [theme guide](/en/guide/application-themes) for provenance and configura
 
 Portal sign-in passes the resolved current color mode as Casdoor's native `theme=dark/default`; system mode is resolved on click, without live synchronization of already-open IAM tabs. A `hidden: true` portal branding entry supplies a 512px rounded logo for sign-in and reauthentication without adding a visible self-link or access groups.
 ANAS directory sign-in pages expose “首次／到期改密 · Set new password” through native `forgetUrl`, targeting the portal `/#/recover` page. That page verifies the old/temporary password before writing AD. The local recovery administrator keeps Casdoor's native recovery flow. Since Samba rejects LDAP binds before login when a password change is mandatory, this version provides an entry link, not an automatic IAM password-change screen, with no additional Casdoor patch or directory grant.
+
+### Login details for backends without IAM
+
+Module administration entries with an explicit local credential declaration can show “Get login details”. The portal filters `credentials_available` using current IAM application policy, directory admission groups and the ANAS administrator role. Ordinary users, IAM entries, external entries and entries without a credential declaration do not receive the action. `POST /api/apps/{name}/credentials` checks these conditions again, along with same-origin CSRF and real authentication within the existing five-minute window. Expired proof uses the existing in-page own-password verification without an additional domain-operation confirmation.
+
+The feature is disabled by default. Enable it by supplying all three settings:
+
+| Setting | Content |
+| --- | --- |
+| `service_api_url` | The anasd HTTPS origin, such as `https://anasd.example.net:8443`, without a path, user information or query |
+| `service_api_workspace` | The workspace ID authorized by anasd |
+| `service_api_credentials_dir` | This portal client's dedicated token directory on the host, matching the delivery directory registered in anasd; never mount the whole `/run` tree |
+
+Before initial enablement, anasd must create the dedicated client directory with its permissions. Compose is forbidden from creating a configured directory, avoiding a Docker-created path that conflicts with anasd security checks. Compose mounts the dedicated directory read-only at `/run/anas/service-client`. The `token` file contains the complete bearer credential and is reread on every service call. When disabled, the `render_env` hook prepares only the empty `${DATA_PATH}/user_portal/service-client` directory for the read-only mount. The directory and file must be readable by portal UID/GID 65532 and inaccessible to other users. anasd maintains the token; the portal never writes it. An existing directory with no token does not prevent portal startup: credential requests fail temporarily and automatically recover once the file is published. Service tokens never enter the browser, application catalog, preferences, audit records or module environment values.
+
+The portal verifies anasd TLS with its existing CA bundle and calls `POST /api/v1/service/workspaces/{workspace}/applications/{application}/credentials` with the bearer token, current actor anchor and a random request ID. Redirects are forbidden. A 401 permits exactly one retry only if rereading the file yields a different token. Network, TLS, service rejection and unreadable-file failures return a generic unavailable response without upstream error bodies; backend passwords are not cached. anasd controls the client's API and resource scope, while the portal controls user authorization.
+
+A durable intent precedes retrieval. Before returning credentials, the portal rechecks the session, directory role and IAM permissions and durably records the result. Failure at either step prevents disclosure. The `application.credentials.read` audit action records the actor, application, request ID and outcome only. Separate buttons copy username and password; passwords are masked by default. Close, in-page navigation and logout clear the inputs, and delayed responses cannot recreate the dialog. Copied clipboard values remain under the user's control.
+
+Local validation uses `go test ./modules/user_portal/portal ./modules/user_portal/hook` and `node --test test-env/playwright/user-portal-credentials.test.mjs`. The latter runs the production UI against mock APIs; it does not establish real-host, anasd or backend acceptance.

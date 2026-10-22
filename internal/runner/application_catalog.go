@@ -102,6 +102,9 @@ func validateApplicationManifest(mod Module) error {
 			return fmt.Errorf("module %s has duplicate application names", mod.Name)
 		}
 		seen[entry.Name] = true
+		if err := validateApplicationCredentialReference(mod, entry); err != nil {
+			return fmt.Errorf("module %s application %s: %w", mod.Name, entry.Name, err)
+		}
 		for _, key := range []string{entry.URLFrom, entry.Access.GroupsFrom} {
 			if key != "" && !applicationReferenceAllowed(mod, key) {
 				return fmt.Errorf("module %s application references undeclared environment key", mod.Name)
@@ -285,7 +288,7 @@ func (a *app) resolveApplicationInput(mod Module, entry appcatalog.Declaration, 
 	if external {
 		source = appcatalog.Source{Kind: "config", Path: "application_catalog.entries"}
 	}
-	return appcatalog.Input{Application: appcatalog.Application{Metadata: metadata, Enabled: enabled, Access: entry.Access, Visibility: entry.Visibility, Groups: groups, Source: source}, Icons: entry.Icons, Root: root, Builtin: !external, AllowHTTP: entry.AllowHTTP}, nil
+	return appcatalog.Input{Application: appcatalog.Application{Metadata: metadata, CredentialsAvailable: entry.Credentials != nil, Enabled: enabled, Access: entry.Access, Visibility: entry.Visibility, Groups: groups, Source: source}, Icons: entry.Icons, Root: root, Builtin: !external, AllowHTTP: entry.AllowHTTP}, nil
 }
 
 func (a *app) prepareApplicationCatalog() error {

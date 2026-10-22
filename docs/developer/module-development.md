@@ -435,6 +435,39 @@ ANAS_APP_CATALOG_FILE 并投射到已有原生 IAM 对象。源目录仍是事�
 细节见[目录设计](/architecture/app-catalog-design)。
 
 
+### 门户后台凭据
+
+新增 Module、新增管理入口，或调整既有本地后台认证时，**凡提供未接入 IAM、使用 ANAS
+可管理用户名和密码的后台，必须接入门户凭据获取与复制**，不能只发布登录链接。
+适用的内置 `kind: admin`、`access.mode: local` 条目必须显式声明 `credentials`：使用
+`local_account: primary` 引用本 Module 已声明、管理入口相同的本地账号，或使用
+`username_from` / `password_from` 引用本 Module 环境前缀内的两个不同变量。
+两种来源互斥，不允许 IAM、外部或用户条目声明。Runner 在 deployment manifest 冻结引用，
+应用目录和卡片仅发布 `credentials_available`，不包含来源键、密码或服务令牌。
+
+anasd 只读取当前运行部署的已声明入口：本地账号从现有 Secret Store 获取当前值，环境来源
+从当前部署 `.env` 读取已应用值。新增入口还需宿主 `service_api.clients[].grants` 明确授权；
+单独修改目录不能扩大服务授权。门户逐次检查当前管理员权限，并复用 5 分钟本人认证。
+接口和部署接线见[服务 API](/architecture/service-api)。
+
+这项义务不要求每个 Module 自建令牌或密码接口；Module 负责声明正确来源，复用门户和
+anasd 的共同实现。后台凭据必须由本 Module 拥有，来源对应同一个真实登录入口。
+优先采用已声明的托管本地账号；现有应用确实使用配置型管理员账号时，可引用当前部署的
+用户名/密码环境变量。禁止为了接入而复制完整 Secret Store、持久保存第二份后台密码，
+或将密码放入目录、URL、日志、偏好和文档。
+
+无独立用户名/密码的 IAM/ForwardAuth 后台不适用；目录用户登录、单独配置口令、数据库
+root 或 IAM 应急恢复账号不能冒充普通后台凭据。确实不适用的 Module 必须在中英文
+README 和技术说明写明实际认证方式及原因，不得用 `access.mode: local` 推断可复制性。
+此规则面向后续接入，不表示尚未登记的既有入口已经支持。
+
+接入验收必须覆盖：当前管理员可获取并分别复制用户名/密码；普通用户、撤权、不可见或
+禁用条目拒绝；复用现有 5 分钟本人认证，过期验证本人密码；轮换/重新部署后读取当前值；
+服务未就绪安全失败，令牌恢复后自动可用；审计不含秘密，关闭弹框后清除页面结果。
+真实部署还须以返回的凭据验证对应后台登录。宿主授权由部署者明确登记应用 ID，Module
+声明或工作区恢复不得自行增加授权。证据和未完成项写入所属 Module 的配套实施计划。
+
+
 ### 分组介绍与共享清单
 
 在所属 Module 的 `identity.groups` 列表声明 `id`、`name`（或 `name_from` / `names_from`）、`parent_dn_from`、`managed`、`category`、`order`、`risk`、`display_name` 和 `description`。英文必填，简体中文可选；`risk` 为 normal/resource/domain，只描述风险，不能决定目录授权。动态能力列表须声明 `select_prefix: <module>_`、`name_prefix: CAP_`，文本可用 `{name}`。`when` 引用已解析布尔开关；系统组仅由所选目录 Provider 声明 `sid` 或 `domain_rid`，不由清单创建。不要复制已有 `identity.application_group` 的 APP_ 名单。

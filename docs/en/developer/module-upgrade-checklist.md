@@ -53,6 +53,7 @@ documentation-only correction may record `N/A`. The SOP remains normative.
 
 ## 6. IAM, API, and management surfaces (conditional)
 
+- [ ] Non-IAM backends with ANAS-managed usernames/passwords declare their credential source according to the [portal credential integration rules](/en/developer/module-development#portal-backend-credentials); copying, recent authentication, rejection paths and real login after upgrade/rotation have been verified. Inapplicable cases explain why in both documentation languages.
 - [ ] OIDC/SAML/LDAP/Kerberos endpoints, redirects/SLS/logout URIs, scopes, claims, and group mappings match the target version.
 - [ ] Local accounts, break-glass routes, and apply/rotate/rollback handlers remain usable.
 - [ ] Reverify Module-initiated, IAM-initiated, and browserless administrative logout claims; remove stale endpoints.

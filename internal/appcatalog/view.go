@@ -22,15 +22,16 @@ type Subgroup struct {
 }
 
 type Card struct {
-	Name             string          `json:"name"`
-	DisplayName      string          `json:"display_name"`
-	URL              string          `json:"url"`
-	Summary          string          `json:"summary"`
-	Description      string          `json:"description"`
-	DocumentationURL string          `json:"documentation_url"`
-	Weight           int             `json:"weight"`
-	Categories       []string        `json:"categories"`
-	Icons            map[string]Icon `json:"icons"`
+	CredentialsAvailable bool            `json:"credentials_available,omitempty"`
+	Name                 string          `json:"name"`
+	DisplayName          string          `json:"display_name"`
+	URL                  string          `json:"url"`
+	Summary              string          `json:"summary"`
+	Description          string          `json:"description"`
+	DocumentationURL     string          `json:"documentation_url"`
+	Weight               int             `json:"weight"`
+	Categories           []string        `json:"categories"`
+	Icons                map[string]Icon `json:"icons"`
 }
 
 // BuildView must receive the provider's already-authorized applications.
@@ -74,7 +75,8 @@ func BuildView(categories []Category, authorized []Application, lang string, fil
 				}
 				seen[app.Name] = true
 				subgroup.Applications = append(subgroup.Applications, Card{
-					Name: app.Name, DisplayName: app.DisplayName.Resolve(lang), URL: app.URL, Summary: app.Summary.Resolve(lang),
+					CredentialsAvailable: app.CredentialsAvailable,
+					Name:                 app.Name, DisplayName: app.DisplayName.Resolve(lang), URL: app.URL, Summary: app.Summary.Resolve(lang),
 					Description: app.Description.Resolve(lang), DocumentationURL: app.DocumentationURL.Resolve(lang),
 					Weight: Weight(app.Weight), Categories: append([]string{}, app.Categories...), Icons: app.Icons,
 				})

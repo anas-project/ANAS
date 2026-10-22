@@ -26,6 +26,9 @@ services:
       USER_PORTAL_LANGUAGE: ${USER_PORTAL_LANGUAGE}
       USER_PORTAL_CATALOG: /run/anas/application-catalog/catalog.json
       USER_PORTAL_CA_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
+      USER_PORTAL_SERVICE_API_URL: ${USER_PORTAL_SERVICE_API_URL:-}
+      USER_PORTAL_SERVICE_API_WORKSPACE: ${USER_PORTAL_SERVICE_API_WORKSPACE:-}
+      USER_PORTAL_SERVICE_API_TOKEN_FILE: /run/anas/service-client/token
       USER_PORTAL_AUDIT_DIR: /var/lib/anas-user-portal/audit
       USER_PORTAL_LDAP_URL: ${USER_PORTAL_LDAP_URL}
       USER_PORTAL_LDAP_BIND_DN: ${USER_PORTAL_LDAP_BIND_DN}
@@ -62,6 +65,12 @@ services:
       - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
       - "${DATA_PATH}/user_portal:/var/lib/anas-user-portal"
+      - type: bind
+        source: ${USER_PORTAL_SERVICE_API_CREDENTIALS_DIR:-${DATA_PATH}/user_portal/service-client}
+        target: /run/anas/service-client
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: [CMD, /usr/local/bin/anas-user-portal, healthcheck]
       interval: 30s

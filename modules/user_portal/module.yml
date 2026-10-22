@@ -64,6 +64,9 @@ config:
     domain_administration_enabled: false
     recent_window_seconds: 300
     audit_capacity_mb: 64
+    service_api_url: ""
+    service_api_workspace: ""
+    service_api_credentials_dir: ""
   types:
     domain_prefix: string
     iam_protocol:
@@ -87,6 +90,9 @@ config:
     audit_capacity_mb:
       kind: int
       constraints: {minimum: 1, maximum: 1024}
+    service_api_url: string
+    service_api_workspace: string
+    service_api_credentials_dir: string
     language:
       kind: string
       default_source: inherited

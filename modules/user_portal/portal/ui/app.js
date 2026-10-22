@@ -71,7 +71,7 @@ function safeLink(url,text,attrs={}) {
 }
 function initial(person) {return [...(person?.display_name||person?.username||'?').trim()][0]?.toUpperCase()||'?';}
 function avatar(person,size='') {return el('span',initial(person),{class:'avatar'+(size?' '+size:''),'aria-hidden':'true'});}
-async function api(path,body,retry=true) {
+async function api(path,body,retry=true,active=()=>true) {
   let response,data;
   try {
     response=await fetch(path+(path.includes('?')?'&':'?')+'lang='+encodeURIComponent(language), {
@@ -81,10 +81,14 @@ async function api(path,body,retry=true) {
     });
     data=await response.json();
   } catch { throw new Error(t('request_failed')); }
+  if(!active())throw new Error('');
   if(response.status===401) { me=null;csrf='';loginPage();notice(t('authentication_required'),true); }
   // An expired recent authentication asks for the person's own password in
   // the page, then repeats this request once.
-  if(response.status===403&&data.error==='recent_authentication_required'&&retry&&me&&await reauthDialog())return api(path,body,false);
+  if(response.status===403&&data.error==='recent_authentication_required'&&retry&&me&&await reauthDialog()){
+    if(!active())throw new Error('');
+    return api(path,body,false,active);
+  }
   if(!response.ok&&!data.directory) {
     const error=new Error(t(data.error||'unexpected_response'));error.code=data.error;error.status=response.status;throw error;
   }
@@ -246,6 +250,7 @@ function bottomNav(active) {
   return nav;
 }
 function renderShell(mode,active) {
+  clearCredentialDialog();
   document.documentElement.lang=language;document.title=me?'ANAS · '+t('portal'):'ANAS';
   app.replaceChildren();app.className='shell shell-'+mode;
   app.append(header(mode));
@@ -279,6 +284,7 @@ async function loadCatalog() {
   catalog=list;return data;
 }
 async function render() {
+  clearCredentialDialog();
   const current=++revision;notice('');document.body.dataset.page='';
   const parts=route();
   try {
@@ -363,13 +369,15 @@ function infoButton(a) {
   b.setAttribute('aria-label',t('appInfo',{name:a.display_name}));b.title=t('appInfo',{name:a.display_name});return b;
 }
 function applicationCard(a) {
-  const card=el('article',null,{class:'card app-card'});
+  const eligible=me?.administration&&a.credentials_available;
+  const card=el('article',null,{class:'card app-card'+(eligible?' has-credentials':'')});
   const main=safeLink(a.url,null,{class:'app-main'});
   const text=el('span',null,{class:'app-text'}),name=el('span',null,{class:'app-name'});
   name.append(el('span',a.display_name),icon('external',13));
   text.append(name,el('span',a.summary,{class:'app-summary'}));
   main.append(appIcon(a),text);
   const actions=el('div',null,{class:'app-actions'});actions.append(infoButton(a),pinButton(a));
+  if(eligible)actions.prepend(credentialButton(a));
   card.append(main,actions);return card;
 }
 // Application details open in the page; the card itself stays a plain entry.
@@ -383,6 +391,7 @@ function appInfo(a) {
   const names=(a.categories||[]).map(id=>categoryNames[id]||id).filter(Boolean);
   if(names.length){const chips=el('div',null,{class:'chip-list','aria-label':t('categoriesLabel')});for(const n of names)chips.append(el('span',n,{class:'badge'}));dialog.append(chips);}
   const foot=el('div',null,{class:'app-info-actions'});
+  if(me?.administration&&a.credentials_available)foot.append(button(t('getCredentials'),()=>{finish();showCredentials(a);}));
   if(a.documentation_url)foot.append(withIcon(safeLink(a.documentation_url,t('docs'),{class:'button'}),'external',14));
   const pinned=prefs.pinned.includes(a.name),pin=withIcon(button(t(pinned?'unpin':'pin'),async()=>{
     const list=pinned?prefs.pinned.filter(n=>n!==a.name):[...prefs.pinned,a.name].slice(0,24);
@@ -396,6 +405,44 @@ function appInfo(a) {
   dialog.addEventListener('click',event=>{if(event.target===dialog)finish();});
   dialog.showModal();close.focus();
 }
+
+// Credential values live only in this dialog's inputs. Closing it, navigation,
+// sign-out and late network replies cannot restore a dismissed secret.
+let dismissCredentials=null;
+function clearCredentialDialog(){dismissCredentials?.();}
+function credentialButton(a) {
+  const b=withIcon(button('',()=>showCredentials(a),'icon-button'),'lock',16);
+  b.setAttribute('aria-label',t('getCredentialsFor',{name:a.display_name}));b.title=t('getCredentials');return b;
+}
+async function showCredentials(a) {
+  clearCredentialDialog();
+  const current=revision,subject=me?.person.anchor;
+  const dialog=el('dialog',null,{class:'credentials-dialog','aria-labelledby':'credentials-title'});
+  const head=el('div',null,{class:'app-info-head'}),title=el('div');
+  title.append(el('h2',t('getCredentials'),{id:'credentials-title'}),el('p',a.display_name,{class:'muted'}));
+  const close=withIcon(button('',finish,'icon-button'),'close',16);close.setAttribute('aria-label',t('cancel'));head.append(title,close);
+  const slot=el('div',t('credentialsLoading'),{role:'status'});
+  dialog.append(head,slot);document.body.append(dialog);
+  let closed=false;
+  const active=()=>!closed&&dialog.isConnected&&revision===current&&me?.person.anchor===subject;
+  function finish(){if(closed)return;closed=true;cancelReauth?.();for(const input of dialog.querySelectorAll('input'))input.value='';dialog.replaceChildren();if(dialog.open)dialog.close();dialog.remove();if(dismissCredentials===finish)dismissCredentials=null;}
+  dismissCredentials=finish;
+  dialog.addEventListener('cancel',event=>{event.preventDefault();finish();});
+  dialog.addEventListener('click',event=>{if(event.target===dialog)finish();});
+  dialog.showModal();close.focus();
+  try {
+    const data=await api('/api/apps/'+encodeURIComponent(a.name)+'/credentials',{},true,active);
+    if(!active()){data.username='';data.password='';return;}
+    slot.replaceChildren();
+    for(const [key,label,copy] of [['username','username','copyUsername'],['password','credentialPassword','copyPassword']]){
+      const field=el('label',t(label)),row=el('div',null,{class:'secret-row'});
+      const input=el('input',null,{type:key==='password'?'password':'text',readonly:'',autocomplete:'off','data-credential':key,'aria-label':t(label)});input.value=data[key];
+      row.append(input,copyButton(t(copy),t('copied'),()=>input.value,input));field.append(row);slot.append(field);data[key]='';
+    }
+    slot.append(el('p',t('credentialsHelp'),{class:'muted'}));
+  }catch(error){if(active()){slot.className='notice error';slot.textContent=error.message;}}
+}
+window.addEventListener('pagehide',clearCredentialDialog);
 function pinnedSection() {
   const section=el('section',null,{class:'section','aria-labelledby':'pinned-title'}),head=el('div',null,{class:'section-head'});
   head.append(el('h2',t('pinned'),{id:'pinned-title'}));
@@ -646,7 +693,8 @@ async function auditTable(current) {
   const table=el('table'),head=el('tr');
   for(const key of ['time','action','target','result'])head.append(el('th',t(key)));table.append(head);
   for(const record of data.records){
-    const row=el('tr'),result=el('td',t(record.directory||record.phase));
+    const outcome=record.service?({read:'credentialsRetrieved',unavailable:'credentials_unavailable',denied:'denied'}[record.service]||'unknownResult'):record.directory||record.phase;
+    const row=el('tr'),result=el('td',t(outcome));
     if(record.ownership)result.append(el('p',t('ownershipStep')+': '+t(record.ownership)),el('p',t('membershipStep')+': '+t(record.membership)));
     row.append(el('td',new Date(record.time).toLocaleString(language)),el('td',t(record.action)),el('td',record.target||'—',{class:'mono'}),result);table.append(row);
   }
@@ -832,7 +880,7 @@ async function userDetails(anchor,current=revision) {
 }
 
 // --- in-page recent authentication ----------------------------------------------------
-let reauthPending=null;
+let reauthPending=null,cancelReauth=null;
 function reauthDialog() {
   if(reauthPending)return reauthPending;
   reauthPending=new Promise(resolve=>{
@@ -843,7 +891,8 @@ function reauthDialog() {
     const slot=resultSlot(form),row=el('div',null,{class:'row dialog-actions'}),cancel=button(t('cancel'),()=>finish(false)),submit=el('button',t('confirmAction'),{type:'submit',class:'primary'});
     row.append(cancel,submit);form.append(row);dialog.append(form);document.body.append(dialog);
     let settled=false;
-    function finish(ok){if(settled)return;settled=true;password.value='';dialog.close();dialog.remove();reauthPending=null;resolve(ok);}
+    function finish(ok){if(settled)return;settled=true;password.value='';dialog.close();dialog.remove();reauthPending=null;cancelReauth=null;resolve(ok);}
+    cancelReauth=()=>finish(false);
     form.addEventListener('submit',async event=>{
       event.preventDefault();submit.disabled=true;
       try{
@@ -972,6 +1021,7 @@ async function runLogout(data) {
   logoutRunning=false;saveLogout();renderLogout();
 }
 async function completeNativeLogout() {
+  clearCredentialDialog();
   if(logoutRunning)return;
   logoutRunning=true;me=null;prefs=null;catalog=null;++revision;nativeLogoutPage();notice(t('logoutWorking'));
   try{

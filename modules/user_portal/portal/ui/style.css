@@ -320,6 +320,7 @@ button.nav-link{justify-content:flex-start;border:0;background:none;font-weight:
 /* application card: whole card is the entry; info and pin sit in the corner */
 .app-card{position:relative}
 .app-card .app-main{padding:18px 92px 18px 18px;align-items:center}
+.app-card.has-credentials .app-main{padding-right:130px}
 .app-name{display:inline-flex;align-items:center;gap:6px}
 .app-name svg{color:var(--text-3);flex:0 0 auto}
 .app-actions{position:absolute;top:10px;right:10px;display:flex;gap:2px}
@@ -335,6 +336,11 @@ button.nav-link{justify-content:flex-start;border:0;background:none;font-weight:
 .app-info-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .step.info{background:var(--surface-2);color:var(--text-2)}
 .reauth-dialog .who{padding:8px 0}
+.credentials-dialog{width:min(560px,calc(100vw - 32px));padding:24px;max-height:calc(100dvh - 32px);overflow:auto}
+.credentials-dialog [role=status]{display:grid;gap:16px;margin-top:16px}
+.credentials-dialog label{display:grid;gap:8px}
+.credentials-dialog .secret-row input{min-width:0;width:0}
+.credentials-dialog .secret-row button{white-space:nowrap}
 
 /* Data-only application themes use the same controls and narrow-screen flow. */
 .icon-theme-settings{margin-top:20px;padding-top:20px;border-top:1px solid var(--line);display:grid;gap:12px;min-width:0}

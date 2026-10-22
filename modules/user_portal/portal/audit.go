@@ -28,6 +28,7 @@ type Record struct {
 	Ownership      string   `json:"ownership,omitempty"`
 	Membership     string   `json:"membership,omitempty"`
 	IAM            string   `json:"iam,omitempty"`
+	Service        string   `json:"service,omitempty"`
 	ConfigDigest   string   `json:"config_digest"`
 	ForceChange    *bool    `json:"force_change,omitempty"`
 	ExpectedDirect *bool    `json:"expected_direct,omitempty"`
