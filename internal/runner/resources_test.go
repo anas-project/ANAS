@@ -20,6 +20,37 @@ func TestResourceEnsureComposeRunIsNonInteractive(t *testing.T) {
 	}
 }
 
+func TestRelationalDatabaseMultipleResourcesKeepSeparateCredentials(t *testing.T) {
+	resource := func(id, name string) ResourceRequirement {
+		return ResourceRequirement{ID: id, Contract: "relational_database", Binding: "db_type", Spec: map[string]any{
+			"name": name, "principal": name, "credential": map[string]any{"policy": "generated"}, "deletion_policy": "retain",
+		}}
+	}
+	a := &app{
+		order: []string{"mail"}, reg: map[string]Module{"mail": {Name: "mail", EnvPrefix: "MAIL", Resources: []ResourceRequirement{resource("primary_database", "mail"), resource("webmail", "mail_webmail")}}},
+		resolvedBindings: map[string]map[string]string{"mail": {"relational_database": "postgres", "relational_database.interface": "postgres"}},
+		env:              map[string]string{"POSTGRES_HOST": "postgres", "POSTGRES_PORT": "5432", "POSTGRES_NETWORK_NAME": "private_db"}, envOwner: map[string]string{},
+		secrets: &secretStore{values: map[string]string{}, metadata: map[string]secretMetadata{}},
+	}
+	if err := a.materializeResourceSecrets(); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.resourceRequests) != 2 || a.resourceRequests[0].Credential == a.resourceRequests[1].Credential {
+		t.Fatal("database credentials shared")
+	}
+	if err := a.publishModuleResources("mail"); err != nil {
+		t.Fatal(err)
+	}
+	if a.env["MAIL_DB_NAME"] != "mail" || a.env["MAIL_WEBMAIL_DB_NAME"] != "mail_webmail" || a.env["MAIL_DB_PASSWORD"] == a.env["MAIL_WEBMAIL_DB_PASSWORD"] {
+		t.Fatal("database projection overwritten")
+	}
+	for _, key := range []string{"MAIL_DB_PASSWORD", "MAIL_WEBMAIL_DB_PASSWORD"} {
+		if a.envOwner[key] != "mail" || !a.runnerSensitive[key] || a.scopedEnv("unrelated")[key] != "" {
+			t.Fatal("database credential scope changed")
+		}
+	}
+}
+
 func TestObjectStorageResourcesAreOptionalAndIsolatedPerModule(t *testing.T) {
 	a := &app{
 		order: []string{"photos", "backup", "unrelated"},

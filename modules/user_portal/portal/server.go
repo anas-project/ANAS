@@ -20,6 +20,7 @@ import (
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/internal/apptheme"
+	"github.com/anas-project/ANAS/internal/directorymail"
 	"github.com/anas-project/ANAS/modules/user_portal/browserlogout"
 )
 
@@ -32,7 +33,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", s.config.Issuer+"/.well-known/openid-configuration", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(s.config.Issuer, "/")+"/.well-known/openid-configuration", nil)
 	if err != nil {
 		failure(w, 503, "identity_unavailable")
 		return
@@ -59,6 +60,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 const sessionCookie = "__Host-anas_portal"
 const flowCookie = "__Host-anas_portal_flow"
+const logoutCookie = "__Host-anas_portal_logout"
 
 type Server struct {
 	config    Config
@@ -143,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /login", s.login)
 	m.HandleFunc("GET /oidc/callback", s.callback)
 	m.HandleFunc("GET /oidc/reauth-callback", s.callback)
+	m.HandleFunc("GET /oidc/logout-callback", s.oidcLogoutCallback)
 	m.HandleFunc("POST /oidc/backchannel-logout", s.backchannel)
 	m.HandleFunc("GET /api/bootstrap", s.bootstrap)
 	m.HandleFunc("GET /api/me", s.me)
@@ -158,6 +161,7 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /api/assets/{name}/{size}", s.asset)
 	m.HandleFunc("GET /api/users", s.users)
 	m.HandleFunc("POST /api/users", s.createUser)
+	m.HandleFunc("GET /api/users/mail-conflict", s.creationMailConflict)
 	m.HandleFunc("GET /api/users/{anchor}", s.user)
 	m.HandleFunc("GET /api/groups", s.groups)
 	m.HandleFunc("GET /api/audit", s.auditQuery)
@@ -226,7 +230,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) begin(w http.ResponseWriter, r *http.Request, v Session, reauth bool) {
-	f := Flow{State: randomID(), Nonce: randomID(), Verifier: randomID(), Cookie: randomID(), Reauth: reauth, Expires: time.Now().Add(5 * time.Minute)}
+	f := Flow{State: randomID(), Nonce: randomID(), Verifier: randomID(), Cookie: randomID(), Reauth: reauth, Silent: !reauth && r.URL.Query().Get("check") == "1", Expires: time.Now().Add(5 * time.Minute)}
 	if theme := r.URL.Query().Get("theme"); theme == "dark" || theme == "default" {
 		f.Theme = theme
 	}
@@ -242,7 +246,13 @@ func (s *Server) begin(w http.ResponseWriter, r *http.Request, v Session, reauth
 	http.Redirect(w, r, s.oidc.authorizeURL(f), http.StatusSeeOther)
 }
 
-func (s *Server) login(w http.ResponseWriter, r *http.Request) { s.begin(w, r, Session{}, false) }
+func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	if v, ok := s.session(r); r.URL.Query().Get("check") == "1" && ok && !v.Anonymous {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	s.begin(w, r, Session{}, false)
+}
 func (s *Server) reauth(w http.ResponseWriter, r *http.Request) {
 	v, _, _, ok := s.current(w, r)
 	if !ok {
@@ -257,35 +267,54 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
-	f, ok := s.store.consumeFlow(r.URL.Query().Get("state"))
+	query, parseErr := url.ParseQuery(r.URL.RawQuery)
+	if parseErr != nil || len(r.URL.RawQuery) > 16384 || len(query["state"]) != 1 || len(query["code"]) > 1 || len(query["error"]) > 1 {
+		failure(w, 401, "authentication_rejected")
+		return
+	}
+	f, ok := s.store.consumeFlow(query.Get("state"))
 	c, err := r.Cookie(flowCookie)
-	if !ok || err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(f.Cookie)) != 1 || f.Reauth != (r.URL.Path == "/oidc/reauth-callback") {
+	if !ok || f.Logout || err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(f.Cookie)) != 1 || f.Reauth != (r.URL.Path == "/oidc/reauth-callback") {
 		failure(w, 401, "authentication_rejected")
 		return
 	}
 	cookie(w, flowCookie, "", -1)
-	if r.URL.Query().Get("error") != "" || r.URL.Query().Get("code") == "" {
-		failure(w, 401, "authentication_rejected")
+	reject := func() {
+		if f.Silent {
+			http.Redirect(w, r, "/?iam_check=failed", http.StatusSeeOther)
+		} else {
+			failure(w, 401, "authentication_rejected")
+		}
+	}
+	if query.Get("error") != "" || query.Get("code") == "" {
+		if f.Silent && query.Get("code") == "" {
+			switch query.Get("error") {
+			case "login_required", "interaction_required", "consent_required", "account_selection_required":
+				http.Redirect(w, r, "/?iam_check=required", http.StatusSeeOther)
+				return
+			}
+		}
+		reject()
 		return
 	}
 	a, err := s.oidc.exchange(r.Context(), f, r.URL.Query().Get("code"))
 	if err != nil {
-		failure(w, 401, "authentication_rejected")
+		reject()
 		return
 	}
 	if _, err := s.oidc.account(r.Context(), a); err != nil {
-		failure(w, 401, "authentication_rejected")
+		reject()
 		return
 	}
 	p, err := s.directory.Person(a.Subject)
-	if err != nil || p.Anchor != a.Subject || !p.canLogin() {
-		failure(w, 401, "authentication_rejected")
+	if err != nil || p.Anchor != a.Subject || !p.canAuthenticate(a) {
+		reject()
 		return
 	}
 	if f.Reauth {
 		v, valid := s.session(r)
 		if !valid || v.ID != f.Session || v.Subject != f.Subject || v.DirectoryGUID != p.GUID || !s.store.reauthenticate(v.ID, a) {
-			failure(w, 401, "authentication_rejected")
+			reject()
 			return
 		}
 	} else {
@@ -324,7 +353,7 @@ func (s *Server) current(w http.ResponseWriter, r *http.Request) (Session, Perso
 		return v, Person{}, u, false
 	}
 	p, err := s.directory.Person(v.Subject)
-	if err != nil || p.Anchor != v.Subject || p.GUID != v.DirectoryGUID || !p.canLogin() {
+	if err != nil || p.Anchor != v.Subject || p.GUID != v.DirectoryGUID || !p.canAuthenticate(v.Authentication) {
 		if errors.Is(err, errDenied) || err == nil {
 			s.store.delete(v.ID)
 			cookie(w, sessionCookie, "", -1)
@@ -345,7 +374,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.store.delete(v.ID)
 	cookie(w, sessionCookie, "", -1)
-	s.logoutResponse(w, !v.Anonymous || r.URL.Path == "/api/logout/complete")
+	s.logoutResponse(w, v, !v.Anonymous || r.URL.Path == "/api/logout/complete")
 }
 
 func (s *Server) backchannel(w http.ResponseWriter, r *http.Request) {
@@ -394,7 +423,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			actions = append(actions, "user.create")
 		}
 	}
-	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "preferences": s.visiblePreferences(s.preferences.get(p.Anchor), account, p), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "recent_authentication": s.recentSession(v)})
+	respond(w, 200, map[string]any{"person": localizePerson(p, r.URL.Query().Get("lang")), "preferences": s.visiblePreferences(s.preferences.get(p.Anchor), account, p), "csrf": v.CSRF, "actions": actions, "administration": s.administrator(p), "domain_administration": s.administrator(p) && s.config.DomainAdministration, "profile_editable": s.managedPerson(p) && s.config.ProfileBindDN != "" && s.config.ProfileBindPassword != "", "profile_version": profileVersion(p), "mail_domain": s.config.MailDomain, "mail_conflict_check": s.config.Mail != nil, "recent_authentication": s.recentSession(v), "passkey_authenticated": v.Passkey})
 }
 
 func (s *Server) apps(w http.ResponseWriter, r *http.Request) {
@@ -683,6 +712,7 @@ func (s *Server) rejected(actor, target, action, rule string) {
 
 // OperationResult preserves each step of a domain membership change.
 type OperationResult struct {
+	Mail       *directorymail.ManagementResult
 	Directory  string
 	Ownership  string
 	Membership string
@@ -716,6 +746,9 @@ func (s *Server) writeResult(w http.ResponseWriter, r *http.Request, record Reco
 		auditStatus = "unavailable"
 	}
 	result := map[string]any{"request_id": record.ID, "directory": outcome, "audit": auditStatus, "iam": "pending", "external_sessions": "unverified"}
+	if details.Mail != nil {
+		result["mail"] = details.Mail
+	}
 	if details.Ownership != "" {
 		result["ownership"], result["membership"] = details.Ownership, details.Membership
 	}
@@ -798,7 +831,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 			return "denied"
 		}
 		p, err := s.directory.Person(v.Subject)
-		if err != nil || p.GUID != person.GUID || !p.canLogin() {
+		if err != nil || p.GUID != person.GUID || !p.canAuthenticate(v.Authentication) {
 			return "denied"
 		}
 		return s.directory.ChangePassword(p, b.OldPassword, b.NewPassword)
@@ -913,7 +946,8 @@ func (s *Server) freshWrite(ctx context.Context, id string, actor, target Person
 		return Person{}, false
 	}
 	freshActor, err := s.directory.Person(actor.Anchor)
-	if err != nil || freshActor.GUID != actor.GUID || !freshActor.canLogin() {
+	v, valid := s.store.get(id)
+	if !valid || err != nil || freshActor.GUID != actor.GUID || !freshActor.canAuthenticate(v.Authentication) {
 		return Person{}, false
 	}
 	fresh, err := s.directory.Person(target.Anchor)

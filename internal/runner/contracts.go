@@ -622,6 +622,9 @@ func (m *resourceMaterializer) materialize(consumer string) error {
 			if _, err := validateRelationalDatabaseSpec(consumer, required.ID, iface, spec); err != nil {
 				return err
 			}
+			if err := a.validateDatabaseEngineBinding(consumer, required.ID, iface); err != nil {
+				return err
+			}
 		}
 		if required.Contract == "relational_database" || required.Contract == "object_storage" || required.Contract == "compute" {
 			credential, ok := spec["credential"].(map[string]any)
@@ -753,6 +756,11 @@ func (a *app) publishModuleResources(consumer string) error {
 			principal, _ := request.Spec["principal"].(string)
 			providerPrefix := defaultEnvPrefix(request.Interface)
 			consumerPrefix := defaultEnvPrefix(consumer)
+			// Keep the established primary projection; other databases need
+			// distinct credentials/endpoints within the same consumer.
+			if request.ID != "primary_database" {
+				consumerPrefix += "_" + defaultEnvPrefix(request.ID)
+			}
 			values = map[string]string{
 				consumerPrefix + "_DB_TYPE":     request.Interface,
 				consumerPrefix + "_DB_HOST":     a.env[providerPrefix+"_HOST"],

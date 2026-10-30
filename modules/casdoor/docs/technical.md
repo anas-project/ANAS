@@ -2,6 +2,10 @@
 
 本文面向 Module 维护者，记录 `casdoor` 的协议契约、安全边界和验证入口。
 
+Consumer 可用通用 `CLAIM_GROUPS` JSON 数组请求目录组成员资格 claim。Provider 将其纳入现有
+目录组/role 投射与 watcher 名单，应用准入权限仍仅从 `ALLOW_GROUPS` 生成。目录组须预先存在，
+不接受用户自报成员关系；逗号、斜线和控制字符等当前对象 ID/watcher 不能表示的组名在 render 前拒绝。
+
 <!-- generated:module-identity:start -->
 > 状态：当前实现；对应 `3.143.0-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
@@ -47,7 +51,7 @@ probe/reconcile/verify 都从 stdin 读取候选，错误不包含值；候选�
 
 LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永久锚点属性已存在。`anas_casdoor_dirwatch` 以只读方式跟随 `ANAS_DIRECTORY_EVENTS_DIR`，按独立游标恢复、过滤并防抖事件，然后使用 Module 自己的受管 Application 凭据调用本地 Casdoor API。每批同步先读取目录和 Casdoor 影子用户，以永久锚点关联改名用户；随后执行上游 LDAP 导入，并收敛 `externalId/name/ldap/properties/groups/isForbidden/isDeleted`。`externalId` 保存 Samba 永久锚点，Casdoor 的不可变 `id` 不被修改；目录属性只合并到 `properties`，不删除人工属性；`displayName/email` 仍只为同步用户刷新，密码和人工权限不被覆盖。
 
-由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。
+由于上游会保留既有 Group，订阅器使用同一受限 Bind 经受信任 LDAPS 查询 `ALLOW_GROUPS`，以 AD matching rule `1.2.840.113556.1.4.1941` 计算直接和递归成员，再权威覆盖受管用户 Group。缺失组、重复/缺失锚点或任何 Casdoor 补丁失败都会使整批失败并保留游标重试。默认 5 分钟的上游自动同步不关闭，因此订阅器仍是低延迟加速器。上游导入先按 LDAP UUID 查已有用户、再插入缺失用户；自动同步与订阅器触发的 `sync-ldap-users` 在同一进程内并发时，两边都会判定新用户缺失，后插入者因重名得到 `<uid>_` 且锚点相同，订阅器随后因锚点冲突拒绝同步。`0009-ldap-user-sync-serialization.patch` 用进程内互斥锁串行化每次 LDAP 用户导入（自动同步、API 和管理界面共用该入口），后一次导入会看到已创建的用户。
 
 当前仅导入和远程认证，不启用密码写回。删除事件把影子记录标为禁止和删除，停用事件标为禁止，两者都清空 Group；重新启用或同锚点改名会复用并恢复原记录。r10 正式双架构构建、OIDC 主体与撤权、真实 Nextcloud、备份恢复、密钥轮换及生命周期通过，见 [2026-10-06 发布验收](../dev-docs/plans/archived/casdoor-iam.md)。ARM64 验证为 QEMU 下的目标 helper 执行；SAML 应用会话与 SLO 仍待实现。
 
@@ -87,7 +91,7 @@ LDAP 连接固定使用受信任 LDAPS，过滤禁用账号并要求 Samba 永�
 - **OIDC**：四种 JWT 格式、UserInfo 和 Logout Token 的 `sub` 都取 `ExternalId`，与目录 anchor
   逐字节一致；自定义 `sub` 配置不能覆盖该校验。恢复管理员 OIDC 保留内部 ID。
 - **SAML**：1.1/2.0 NameID 同取 `ExternalId`，2.0 使用 persistent 格式；显式锚点属性继续提供。
-- **构建**：Dockerfile 应用六个固定源码补丁。`test-casdoor-identity-source.sh` 先复现 r8/r9
+- **构建**：Dockerfile 应用九个固定源码补丁。`test-casdoor-identity-source.sh` 先复现 r8/r9
   配置边界，再应用生产主体与撤权补丁验证签名、缺锚点拒绝和重放范围。实机证据单独记录。
 
 **目录事件撤权（r10）**：沿用现有 helper，没有新增服务、数据库或消息总线。
@@ -211,6 +215,10 @@ Casdoor 初始化仍会补齐客户端字段；列表 API 返回密钥掩码，�
 [目录设计](/architecture/app-catalog-design)。
 
 公开 PKCE 消费方的注册使用 `PUBLIC_CLIENT=true`，不向其交付应用 API secret。原生导入可能生成 Provider 自有 secret；门户不消费它。原生 `tokenFields` 包含 `Groups`，以便 UserInfo 返回当前组。`REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` 创建关闭自动登录与 signin session 的独立客户端，近期认证仍由消费方检查签名 auth_time 和身份一致。
+
+普通 OIDC Application 均启用原生 `enableAutoSignin` 和 `enableSigninSession`，已有 IAM 会话可直接进入新应用，无需再次选择账号；此行为不以声明近期认证客户端为前提。没有有效 IAM 会话时仍走正常认证，应用准入和消费方的实时目录检查保持生效。近期认证客户端明确关闭这两个选项。
+
+`0010-oidc-silent-authorization.patch` 为授权码请求补齐 `prompt=none`：仅接受已登记的精确回调和 S256 PKCE，拒绝重复参数；无会话返回绑定 state 的 `login_required`，需要交互返回 `interaction_required`，不显示登录表单。已有会话仍经原生准入、同意和授权码签发；保留原始 `auth_time`。普通登录和独立重新认证客户端沿用各自流程，不从 Provider 自动生成的应用 secret 推断消费者是否能省略 PKCE。
 
 账户 API 格式由 `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1` 声明；门户按绑定契约检查，不按 IAM Module 名分支。它仍依赖现有原生本人 API，不扩展 API 权限。门户以 `no_prior_release` 登记首次发布基线，不宣称存在旧版本升级通过结果。
 

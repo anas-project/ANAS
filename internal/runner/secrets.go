@@ -167,7 +167,7 @@ func (s *secretStore) clone() map[string]string {
 	return out
 }
 
-// lifecycleManagedValues returns the only Secret Store records that may satisfy
+// lifecycleManagedValues returns the Secret Store records that may satisfy
 // caller-supplied configuration requirements. Generated hook material and local
 // administrator credentials have different lifecycles and must never make an
 // unrelated input_required declaration appear satisfied.
@@ -177,7 +177,7 @@ func (s *secretStore) lifecycleManagedValues() map[string]string {
 		return out
 	}
 	for key, value := range s.values {
-		if s.metadata[key].Kind == "lifecycle_managed" && value != "" {
+		if (s.metadata[key].Kind == "lifecycle_managed" || s.metadata[key].Kind == "managed_input") && value != "" {
 			out[key] = value
 		}
 	}
@@ -314,7 +314,7 @@ func (s *secretStore) Save() error {
 
 // loadImportedSecrets adds imported, user-owned credentials to the runtime view.
 // They are not part of config.yml and therefore cannot be re-applied by a
-// later config edit. Only lifecycle-managed records satisfy runtime inputs;
+// later config edit. Only rotating credentials and managed inputs satisfy runtime inputs;
 // the complete store is attached as private provenance so generated and local
 // administrator plaintext still taints an equal-value config alias without
 // being injected as caller input. Ownership remains explicit so environment
@@ -330,7 +330,7 @@ func (a *app) loadImportedSecrets() error {
 	a.secrets = store
 	a.sensitiveKeys = nil
 	for key, value := range store.values {
-		if store.metadata[key].Kind != "lifecycle_managed" {
+		if store.metadata[key].Kind != "lifecycle_managed" && store.metadata[key].Kind != "managed_input" {
 			continue
 		}
 		a.env[key] = value

@@ -151,7 +151,13 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.mail_address_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_ADDRESS_BIND_PASSWORD` | no | no | yes | no: `rotate-mail-address-bind-password` | `credential_rotate` | Independent generated restricted portal address-writer credential; never granted to read-only mail service |
+| `samba_dc.mail_creator_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_CREATOR_BIND_PASSWORD` | no | no | yes | no: `rotate-mail-creator-bind-password` | `credential_rotate` | Independent generated credential for restricted portal account creation, separate from address and personnel credentials |
+| `samba_dc.mail_directory_enabled` | bool | — | `false` | `static` | `SAMBA_DC_MAIL_DIRECTORY_ENABLED` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Explicitly enable non-login mail bootstrap after verifying a full snapshot and stopping external writers |
 | `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | no | yes | no | no: `migrate-default-mail-addresses` | `data_migrate` | Primary mail domain; inherits the AD domain when unset and reconciles personnel addresses without renaming directory identities |
+| `samba_dc.mail_initial_snapshot_id` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SNAPSHOT_ID` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Verified full snapshot reference for initial mail import; the container cannot prove host-wide quiescence |
+| `samba_dc.mail_initial_source_domain` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SOURCE_DOMAIN` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Converged old primary domain for initial import; pinned after completion, separate from later target domains |
+| `samba_dc.mail_management_policy` | string | — | `""` | `static` | `SAMBA_DC_MAIL_MANAGEMENT_POLICY` | no | no | no | yes | `container_recreate` | Complete JSON policy for managed domains, protected addresses and explicit mailbox/alias/capacity/rate limits |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
@@ -214,6 +220,8 @@ anas plan -c /srv/anas/config.yml
 anas config list samba_dc -w /srv/anas
 anas status -w /srv/anas
 ```
+
+The approved mail-resource/address-claim schema is under development, with definitions and an explicit installer first tested in isolation. Current startup does not install it in business domains. Personnel anchors retain their existing mechanism; mail-directory permissions, migration and writer coordination remain pending. See the technical document.
 
 ## Current limitations
 

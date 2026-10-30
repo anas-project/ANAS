@@ -1,0 +1,173 @@
+api_version: anas.module/v1
+kind: Module
+name: mail
+version: 0.1.0
+revision: 1
+app_version: 0.1.0
+abi:
+  supports: [anas.module-hook/v1]
+title: ANAS Mail
+description: Mail management with directory-owned addresses, DMS and Roundcube; phase-one integration remains under validation.
+category: app
+status: developing
+applications:
+  - name: mail
+    display_name: {en: "ANAS Mail", zh-CN: "ANAS 邮件"}
+    summary: {en: "Your mailboxes and addresses", zh-CN: "管理邮箱和邮件地址"}
+    description: {en: "Open your mailboxes and manage addresses in Mail.", zh-CN: "打开本人邮箱并在邮件服务内管理地址。"}
+    documentation_url:
+      en: https://github.com/anas-project/ANAS/tree/master/modules/mail
+      zh-CN: https://github.com/anas-project/ANAS/tree/master/modules/mail
+    url_from: MAIL_URL
+    kind: user
+    categories: [collaboration]
+    access: {mode: iam, client: mail}
+    visibility: {mode: access}
+    icons: {source: assets/icon.png}
+runtime:
+  type: compose
+  compose_file: docker-compose.yml
+dependencies:
+  requires: [traefik, samba_dc, user_portal]
+  requires_capabilities:
+    - name: iam
+      interface_selected_by: iam_protocol
+      interfaces:
+        any_of: [oidc]
+        prefer: [oidc]
+  contracts:
+    - name: relational_database
+      version: ">=1.0.0 <2.0.0"
+      selected_by: db_type
+      interfaces: [postgres]
+      default: postgres
+resources:
+  requires:
+    - id: primary_database
+      contract: relational_database
+      binding: db_type
+      spec:
+        name: mail
+        principal: mail
+        credential: {policy: generated}
+        deletion_policy: retain
+    - id: webmail
+      contract: relational_database
+      binding: db_type
+      spec:
+        name: mail_webmail
+        principal: mail_webmail
+        credential: {policy: generated}
+        deletion_policy: retain
+identity:
+  application_group: true
+  interfaces: [ldaps]
+features:
+  domain: true
+  additional_domains: [MAIL_WEBMAIL_DOMAIN]
+upgrade:
+  data_breaking: []
+config:
+  defaults:
+    db_type: postgres
+    iam_protocol: oidc
+    domain_prefix: mail
+    webmail_domain_prefix: webmail
+    outbound_routing: ""
+    outbound_passwords: ""
+    ingress_sources: ""
+    ingress_credentials: ""
+    ingress_capacity_bytes: "0"
+    service_api_url: ""
+    service_api_workspace: ""
+    service_api_credentials_dir: ""
+    service_api_socket_dir: ""
+  must_resolve: [language]
+  exports:
+    - ANAS_IAM_CLIENT__MAIL__*
+  consumes:
+    - ANAS_IAM_BINDING__MAIL__*
+    - ANAS_TLS_CERTS_DIR
+    - ANAS_TLS_TRUST_BUNDLE_NAME
+    - LEGO_CERT_NAME
+    - LEGO_KEY_NAME
+    - ANAS_DIRECTORY_EVENTS_DIR
+    - ANAS_DIRECTORY_EVENTS_FILE_NAME
+    - SAMBA_DC_MAIL_DIRECTORY_ENABLED
+    - SAMBA_DC_MAIL_MANAGEMENT_POLICY
+    - SAMBA_DC_MAIL_ADDRESS_BIND_DN
+    - SAMBA_DC_MAIL_ADDRESS_BIND_PASSWORD
+    - SAMBA_DC_MAIL_CREATOR_BIND_DN
+    - SAMBA_DC_APP_FILTER
+    - SAMBA_DC_LDAPS_SERVER_URL_PORT
+    - SAMBA_DC_LDAP_BIND_DN
+    - SAMBA_DC_LDAP_BIND_PASSWORD
+    - SAMBA_DC_BASE_DN
+    - SAMBA_DC_BASE_USERS_DN
+    - SAMBA_DC_BASE_GROUPS_DN
+    - SAMBA_DC_BASE_APP_DN
+    - SAMBA_DC_APP_ALL_DN
+    - SAMBA_DC_ADMIN_GROUP_DN
+    - SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE
+    - SAMBA_DC_MAIL_DOMAIN
+    - USER_PORTAL_URL
+    - TRAEFIK_BASE_PORT
+  types:
+    iam_protocol:
+      enum: [oidc]
+    domain_prefix: string
+    webmail_domain_prefix: string
+    outbound_routing: string
+    outbound_passwords: string
+    ingress_sources: string
+    ingress_credentials: string
+    ingress_capacity_bytes:
+      kind: int
+      constraints:
+        minimum: 0
+        maximum: 9007199254740991
+    service_api_url: string
+    service_api_workspace: string
+    service_api_credentials_dir: string
+    service_api_socket_dir: string
+    language:
+      kind: string
+      default_source: inherited
+    db_type:
+      enum: [postgres]
+  changes:
+    outbound_routing:
+      effect: container_recreate
+      description: Generate native DMS relay routes; queued mail blocks a route change until the old queue finishes.
+    outbound_passwords:
+      effect: container_recreate
+      sensitive: true
+      store_input: true
+      description: Deliver outbound SMTP passwords only through the private DMS runtime binding.
+    ingress_sources:
+      effect: container_recreate
+      description: Explicit managed cloud sources, retention limits and optional Cloudflare zone/Worker binding; draining sources continue retrieval.
+    ingress_credentials:
+      effect: container_recreate
+      sensitive: true
+      store_input: true
+      description: Deliver independent source reader, control, notification, optional routing API and proxy credentials only to Go.
+    ingress_capacity_bytes:
+      effect: container_recreate
+      description: Explicit total cloud capacity reservation for all active and draining sources; zero permits no bound source and never purchases storage.
+    service_api_url:
+      effect: container_recreate
+      description: Optional direct HTTPS origin of anasd for restricted mail installation.
+    service_api_workspace:
+      effect: container_recreate
+      description: Workspace ID granted to the mail installer service identity.
+    service_api_credentials_dir:
+      effect: container_recreate
+      description: Dedicated anasd-issued service-token directory mounted read-only; never mount the credential root.
+    service_api_socket_dir:
+      effect: container_recreate
+      description: Optional dedicated anasd mail installation socket directory mounted read-only.
+logic:
+  hook:
+    command: [go, run, ./hook]
+    phases: [calculate, validate, render_env, runtime_restore]

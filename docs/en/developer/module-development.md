@@ -8,6 +8,9 @@ A module is an independent release and deployment unit. It owns its manifest ide
 
 The frozen deployment must carry everything needed to start. It must not depend on relative paths into a source checkout.
 
+`module.yml` declares a Module's identity. Development directories without it do not enter the runtime or documentation inventory.
+Validation still fails if a listed Module loses its manifest, a present manifest is invalid, or a valid Module is absent from the publication catalog.
+
 Module parameter semantics belong to the Module, not Core. Put cross-parameter
 checks in the `validate` Hook, derived values in `calculate`, and persistent
 state coordination in lifecycle operations or reconcilers. Never request a
@@ -46,6 +49,18 @@ Apply this rule to new Modules and storage changes. Review existing exceptions f
 with quiescing, backup, path/data validation, and failure recovery. Never silently move existing data
 during ordinary apply or treat a mount-path edit as a complete migration.
 
+### Persistent-directory declaration draft (2026-10-13, not implemented)
+
+Modules would declare retained directories by stable name, service or compute Resource, target, UID/GID, permissions
+and sensitivity. The follow-up review recommends only a frozen inventory: reuse DATA_PATH Compose mounts and managed
+compute volumes, without new mount variables, account templates or backup-policy fields. Guest UID is not host UID;
+sensitive is not a backup/encryption switch. Removed declarations retain data/bindings for backup. Existing directories
+are never silently migrated, and database/Secret Store state is not duplicated.
+
+See the [AI Agent persistence design](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/persistence-and-recovery.md) for the proposed `persistent_directories` fields and authentication/disposable-code example.
+The current manifest does not support these fields. Existing `temporary_directories` apply only to Compose and cannot
+be reused across Incus. This is a future contract, not usable module.yml configuration or implemented pool backup.
+
 ## Version and revision ownership
 
 `version` follows the normalized upstream application version. `revision`
@@ -78,7 +93,13 @@ and `changes`; every built-in parameter must have an explicit
    to `must_resolve` when the final resolved value must be non-empty. Do not add
    the legacy `required` form in new code.
 3. Record the real runtime impact with `effect`, `apply`, and a description in
-   `config.changes`; add `sensitive: true` for a secret. Enforce cross-field
+   `config.changes`; add `sensitive: true` for a secret. A sensitive
+   `container_recreate` parameter can explicitly declare `store_input: true`
+   to keep user input in Secret Store and update or remove it through the
+   configuration transaction. This differs from application credential
+   rotation (`credential_rotate`); old plaintext requires migration and
+   conflicts are not overwritten. `anas config set` rejects these values; use
+   the protected configuration transaction or configuration import. Enforce cross-field
    rules in the `validate` Hook or shared application layer, and derive values
    in the `calculate` Hook.
 4. Update the actual consumer in Compose, hooks, templates, tests, and any
@@ -257,6 +278,13 @@ name and its application's `roleClaim`. Consumers with another role model omit t
 This mapping neither changes `sub` nor replaces revocation of existing sessions and independent
 credentials. Each fixed Provider combination requires its own verification.
 
+Consumers needing directory groups for application permissions beyond admission may publish
+`ANAS_IAM_CLIENT__<APP>__CLAIM_GROUPS` as a JSON array of group names. Providers project trusted directory
+membership without adding those groups to `ALLOW_GROUPS`, creating directory groups, or trusting editable user
+attributes. Forgejo requests its team-mapping and administrator groups this way. Casdoor includes them in its
+existing group/role projection and change checks; its IDs and watcher list reject comma, slash, and control
+characters in names. LLNG already returns actual directory groups and needs no extra membership copy.
+
 OIDC consumers that distinguish directory admission loss from ordinary logout may request
 `ANAS_IAM_CLIENT__<APP>__OIDC_CAEP_EVENTS=session-revoked` in the existing generic registration.
 The Provider publishes its supported set in `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` during
@@ -405,9 +433,11 @@ independently generated Secret. A future bulk operation must invoke each
 account handler independently and report per-account results; it must not
 reintroduce a shared password.
 
-## Supporting PostgreSQL and MariaDB
+## Relational database selection and integration
 
-A consumer supporting both engines must integrate through the `relational_database` contract. It must not hard-code a dependency on either provider module or read provider administrator credentials. Its manifest must declare a `db_type` selector, both verified interfaces, a default, and a managed database resource:
+PostgreSQL is the primary database for modules. When the pinned upstream version supports PostgreSQL, use `postgres`; support for MySQL, image defaults, or deployment convenience does not justify adding a MariaDB branch. Use MySQL/MariaDB only when upstream explicitly does not support PostgreSQL, and document the pinned official support statement and exception. The ANAS interface is `mariadb`; an upstream `mysql` name is translated inside the module.
+
+Consumers use the `relational_database` contract, without hard-coded provider-module dependencies or provider administrator credentials. A PostgreSQL consumer declares:
 
 ```yaml
 dependencies:
@@ -415,7 +445,7 @@ dependencies:
     - name: relational_database
       version: ">=1.0.0 <2.0.0"
       selected_by: db_type
-      interfaces: [postgres, mariadb]
+      interfaces: [postgres]
       default: postgres
 resources:
   requires:
@@ -431,17 +461,24 @@ config:
   defaults:
     db_type: auto
     db_name: example_app
+  types:
+    db_type:
+      enum: [auto, postgres]
   changes:
     db_type:
       effect: data_migrate
       apply: migrate-example-app-database
 ```
 
-Use `postgres`, `mariadb`, and `auto` as the public selector values; `mysql` is not a contract interface. After resolution, consume only the runner-owned `<PREFIX>_DB_TYPE`, `_DB_HOST`, `_DB_PORT`, `_DB_NAME`, `_DB_USERNAME`, `_DB_PASSWORD`, and `_NETWORK_DB` values. Join the selected provider's external network through `_NETWORK_DB`; do not attach both database networks or use cross-project `depends_on`.
+`auto` resolves only among declared interfaces and must not fall back from PostgreSQL to MariaDB. An exception module declares only its verified `mariadb` interface, without claiming unverified PostgreSQL support.
 
-The image must contain both required clients and application drivers. Translate the generic binding to any upstream-specific `POSTGRES_*` or `MYSQL_*` settings inside the consumer module. Provider `ensure` owns the database and dedicated user; application startup owns only its idempotent schema initialization and must not grant administrative privileges.
+Consume only the runner-owned `<PREFIX>_DB_TYPE`, `_DB_HOST`, `_DB_PORT`, `_DB_NAME`, `_DB_USERNAME`, `_DB_PASSWORD`, and `_NETWORK_DB` values. Join only the selected provider's external network; do not use cross-project `depends_on` or provider root credentials.
 
-Unit tests must exercise both engine branches, dedicated credentials, and network mapping. Render and Compose tests must cover both interfaces across the matrix, and stable support requires a real-container test of schema initialization, restart, and idempotent re-apply. If upstream supports only one engine, declare only that verified interface.
+Include only clients and application drivers required by supported engines. Translate upstream `POSTGRES_*` or `MYSQL_*` settings inside the module. Provider `ensure` owns the database and dedicated user; application startup owns only idempotent schema initialization and must not grant administrative privileges.
+
+Hook, render/Compose, and real-container tests cover each declared engine, dedicated credentials, network mapping, empty installation, restart, and repeated apply. A PostgreSQL-only module does not require a MariaDB matrix.
+
+When narrowing an existing dual-engine module, record compatibility, explicit migration or rejection of old configuration, and data retention separately. A default change must not automatically migrate, rebind, or delete an existing database. Retained compatibility branches still require testing; this guide alone does not amend existing requirements.
 
 ## Upgrades and compatibility
 
@@ -479,7 +516,6 @@ An IAM consumer declares application_catalog.consumes: true, limitations, the fi
 /run/anas/application-catalog mount and an assets-only public mount. Its render Hook reads the transient
 ANAS_APP_CATALOG_FILE and projects existing native IAM objects. The source catalog remains authoritative;
 the separate user_portal protects APIs and icons using current IAM/AD state from this private bundle. See the [catalog design](/architecture/app-catalog-design).
-
 
 ### Portal backend credentials
 
@@ -531,3 +567,12 @@ Every module with a human web entry or IAM sign-in application must keep a dedic
 
 An IAM client without a catalog card still declares hidden branding (see `user_portal`: `hidden: true`, `access.mode: iam`, `visibility.mode: authenticated`). This enriches its native login logo without a visible self-link. Overrides cannot expose an ungated IAM brand. Gated applications retain access filtering. Only backends without human entry points use `applications_not_published` with a reason.
 Update both built-in themes and attribution for a new entry, run `node scripts/application-themes.mjs --render` / `--check`, and verify native IAM application, sign-in and reauthentication logos. See the [theme guide](/en/guide/application-themes).
+
+Modules with multiple public Web names may declare features.domain: true and features.additional_domains containing up to eight of their own non-sensitive *_DOMAIN hostname keys. Other-module references, URLs, ports and secrets are rejected. After calculate, Root validates and appends the names with the same module owner to the existing DOMAINS protocol. Additional names are also reserved against compute-lease ingress overlap. Existing modules retain their single-domain behavior when the feature is absent.
+
+## Shared Go image build checks
+
+`go run ./cmd/check-shared-build` verifies dependencies in the sources actually copied by each Dockerfile, across
+platforms. Files elsewhere in a shared local build context do not become inputs merely by being in that context.
+Compose entries are matched by both context and Dockerfile; a second image built from the same context may have
+different shared inputs. This is a static gate and does not substitute for building the image.

@@ -4,6 +4,8 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [DMS 与 Roundcube 组合验证](mail-webmail-poc.md) | 隔离环境的统一登录、别名收发、AD 通讯录与撤权、恢复及方案比较 | 20/20 已完成 |
+| [邮件 Module 与目录集成](mail-integration.md) | Go 管理、DMS/Roundcube、AD/IAM、云端持久收件与 Resend/兼容 SMTP 代发、配置 Tutorial、撤权及恢复；M1/M2 内部基础及 M3 目录管理候选已开始，含主箱迁移、系统主址与附加箱/别名；完整功能未验收 | 0/72 已完成 |
 | [anasd 服务授权与门户后台凭据](service-api.md) | 服务身份、API/对象范围、自动令牌交付和门户 5 分钟认证复制 | 20/20 已完成 |
 | [应用图标与可导入主题](application-themes.md) | 全部内置应用图标、两套内置主题、管理员导入、个人选择与Casdoor全站默认 | 16/16 已完成 |
 | [分组共享清单](identity-group-catalog.md) | Module 声明、共享只读清单、Samba 同源建组与门户介绍 | 6/6 已完成 |

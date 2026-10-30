@@ -172,7 +172,7 @@ func (s *Server) applicationCredentials(w http.ResponseWriter, r *http.Request) 
 		fresh, valid := s.store.get(v.ID)
 		freshActor, directoryErr := s.directory.Person(v.Subject)
 		freshAccount, iamErr := s.oidc.account(r.Context(), v.Authentication)
-		if !valid || fresh.Anonymous || fresh.Subject != actor.Anchor || !s.recentSession(fresh) || directoryErr != nil || freshActor.Anchor != actor.Anchor || freshActor.GUID != actor.GUID || !freshActor.canLogin() || !s.administrator(freshActor) || iamErr != nil || !applicationAllowed(s.catalog, selected, freshAccount, freshActor) {
+		if !valid || fresh.Anonymous || fresh.Subject != actor.Anchor || !s.recentSession(fresh) || directoryErr != nil || freshActor.Anchor != actor.Anchor || freshActor.GUID != actor.GUID || !freshActor.canAuthenticate(fresh.Authentication) || !s.administrator(freshActor) || iamErr != nil || !applicationAllowed(s.catalog, selected, freshAccount, freshActor) {
 			err, record.Service = errDenied, "denied"
 		} else {
 			record.Service = "read"

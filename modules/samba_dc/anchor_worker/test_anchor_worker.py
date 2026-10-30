@@ -3,6 +3,8 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from event_journal import EventJournal, DEFAULT_ATTRIBUTES
 
 from anchor_worker import (
     AuditFollower,
@@ -16,6 +18,43 @@ from anchor_worker import (
 
 
 class AnchorWorkerHelpersTest(unittest.TestCase):
+    def test_mail_resource_events_never_attempt_personnel_stamping(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Worker.__new__(Worker)
+            worker.settings = SimpleNamespace(mail_domain='example.test', mail_search_base='DC=example,DC=test',
+                event_attributes=DEFAULT_ATTRIBUTES, user_bases=('OU=People,DC=example,DC=test',),
+                group_bases=(), health_file=Path(directory)/'health.json')
+            worker.journal = EventJournal(Path(directory)/'events.jsonl')
+            worker.health = {'ready': True}
+            worker.directory = SimpleNamespace(read_target=lambda dn: self.fail('mail resource reached personnel stamping'))
+            for ou in ('Mailboxes', 'Addresses'):
+                dn = 'CN=resource,OU='+ou+',OU=Mail,DC=example,DC=test'
+                self.assertFalse(worker.dn_in_scope(dn))
+                self.assertTrue(worker.event_dn_in_scope(dn))
+                event = worker.handle_audit_line(json.dumps({'type':'dsdbChange','dsdbChange':
+                    {'operation':'Add','status':'Success','dn':dn,'attributes':{'anasMailboxID':{'value':'private-value'}}}}))
+                self.assertEqual(event['op'], 'Add')
+                self.assertNotIn('private-value', json.dumps(event))
+            self.assertFalse(worker.event_dn_in_scope('CN=x,OU=Mailboxes,OU=Mail,DC=foreign,DC=test'))
+    def test_published_sequence_is_visible_without_waiting_for_full_scan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            worker = Worker.__new__(Worker)
+            worker.settings = SimpleNamespace(
+                mail_domain='', event_attributes=DEFAULT_ATTRIBUTES,
+                user_bases=('OU=People,DC=example,DC=test',), group_bases=(),
+                health_file=Path(directory) / 'health.json',
+            )
+            worker.journal = EventJournal(Path(directory) / 'events.jsonl')
+            worker.health = {'ready': True, 'last_published_seq': 0}
+            worker.handle_audit_line(json.dumps({'type': 'dsdbChange', 'dsdbChange': {
+                'operation': 'Modify', 'status': 'Success',
+                'dn': 'CN=Alice,OU=People,DC=example,DC=test',
+                'attributes': {'userAccountControl': {'values': ['514']}},
+            }}))
+            state = json.loads(worker.settings.health_file.read_text())
+            self.assertEqual(state['last_published_seq'], 1)
+            self.assertTrue(state['ready'])
+
     def test_printable_anchor_uses_active_directory_guid_byte_order(self):
         raw = bytes.fromhex("e324e6032304d349943a576652f81031")
         self.assertEqual(
@@ -140,6 +179,31 @@ class AuditFollowerRotationTest(unittest.TestCase):
         follower = self.follow()
         # The cursor starts at the end, so what predates it is not re-read.
         self.assertEqual(follower.lines(), [])
+
+    def test_partial_utf8_record_waits_for_its_complete_line(self):
+        self.path.touch()
+        follower = self.follow()
+        record = '{"dn":"CN=测试,DC=example","operation":"Modify"}\n'
+        encoded = record.encode("utf-8")
+        cut = encoded.index("测".encode("utf-8")) + 1
+        with self.path.open("ab") as handle:
+            handle.write(encoded[:cut])
+        self.assertEqual(follower.lines(), [])
+        self.assertEqual(follower.lines(), [])
+        with self.path.open("ab") as handle:
+            handle.write(encoded[cut:])
+        self.assertEqual(follower.lines(), [record])
+        self.assertEqual(follower.lines(), [])
+
+    def test_partial_record_does_not_join_a_replacement_file(self):
+        self.path.touch()
+        follower = self.follow()
+        self.append('complete\n{"unfinished":')
+        self.assertEqual(follower.lines(), ['complete\n'])
+        self.path.rename(self.rotated)
+        self.path.write_text('replacement\n', encoding='utf-8')
+        self.assertEqual(follower.lines(), [])
+        self.assertEqual(follower.lines(), ['replacement\n'])
 
         self.append("before-rotation\n")
         self.path.rename(self.rotated)

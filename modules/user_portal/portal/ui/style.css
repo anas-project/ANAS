@@ -38,6 +38,8 @@ h3,h4{margin:0}
 p{margin:0}
 .muted{color:var(--text-3)}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.92em}
+.mail-management h3,.mail-row .mono{overflow-wrap:anywhere;min-width:0}
+.mail-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
 
 /* shell */

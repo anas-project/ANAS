@@ -70,7 +70,7 @@ test('a late profile refresh cannot restore the browser account after sign-out',
   try{
     await page.getByRole('button',{name:'Save',exact:true}).click();await waiting;
     await page.getByRole('button',{name:'Sign out',exact:true}).click();
-    await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toBeVisible();
+    await expect(page.getByText('The sign-outs listed above are confirmed.',{exact:true})).toBeVisible();
     const refreshed=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/me');
     releaseRefresh();await (await refreshed).finished();
     // Let the fetch/json handler finish before the language control reads me.
@@ -213,7 +213,7 @@ for(const language of ['en','zh-CN'])for(const failed of [false,true])test(`${la
   const home=page.getByRole('link',{name:language==='en'?'Return to homepage':'返回主页',exact:true});
   await expect(home).toBeVisible();await expect(home).toHaveAttribute('href','/');
   if(failed)await expect(page.getByRole('button',{name:language==='en'?'Retry sign-out':'重试退出'})).toBeVisible();
-  else await expect(page.getByText(language==='en'?'This browser has signed out of IAM and the connected applications.':'当前浏览器已退出 IAM 和已接入的应用。',{exact:true})).toBeVisible();
+  else await expect(page.getByText(language==='en'?'The sign-outs listed above are confirmed.':'以上退出操作均已确认。',{exact:true})).toBeVisible();
  }finally{await context.close();}
 });
 
@@ -265,11 +265,11 @@ for(const adapter of ['immich','nextcloud'])test(`${adapter}: native bridge revo
  await page.route('**/api/logout/complete?*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({iam_endpoint:origin+'/mock-iam-logout',targets:[target],flow:'fixture-flow'})}));
  try{
   await page.getByRole('button',{name:'Sign out',exact:true}).click();
-  await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toBeVisible();
+  await expect(page.getByText('The sign-outs listed above are confirmed.',{exact:true})).toBeVisible();
   if(active||writes!==1)throw Error('Native session was not revoked exactly once');
   if(JSON.stringify(messages).includes('private-native-token')||JSON.stringify(messages).includes('native-user-id'))throw Error('Native credential or identity leaked');
   await page.locator('#language').selectOption('zh-CN');
-  await expect(page.getByText('当前浏览器已退出 IAM 和已接入的应用。',{exact:true})).toBeVisible();
+  await expect(page.getByText('以上退出操作均已确认。',{exact:true})).toBeVisible();
  }finally{await context.close();}
 });
 
@@ -288,7 +288,7 @@ test('unavailable bridge is partial; same-origin fresh tickets allow retry after
   await page.locator('#language').selectOption('zh-CN');
   await expect(page.getByRole('button',{name:'重试退出'})).toBeVisible();
   failed=false;await page.getByRole('button',{name:'重试退出'}).click();
-  await expect(page.getByText('当前浏览器已退出 IAM 和已接入的应用。',{exact:true})).toBeVisible();
+  await expect(page.getByText('以上退出操作均已确认。',{exact:true})).toBeVisible();
   if(retries!==2)throw Error('Initial completion and retry did not each execute once');
  }finally{await context.close();}
 });
@@ -337,7 +337,7 @@ for(const mode of ['manual','automatic'])test(`anonymous native callback: ${mode
    if(completions!==0)throw Error('A manual callback ran automatically');
    await page.getByRole('button',{name:'Finish signing out of this browser',exact:true}).click();
   }
-  await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toBeVisible();
+  await expect(page.getByText('The sign-outs listed above are confirmed.',{exact:true})).toBeVisible();
   if(completions!==1)throw Error('Native callback was repeated');
   await expect(page.getByRole('link',{name:'Return to homepage',exact:true})).toBeVisible();
  }finally{await context.close();}
@@ -364,7 +364,7 @@ for(const outcome of ['revoked','repeated-csrf','server-csrf','unavailable'])tes
  });
  try{
   await page.goto(origin+'/signed-out?native=1');
-  if(outcome==='revoked')await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toBeVisible();
+  if(outcome==='revoked')await expect(page.getByText('The sign-outs listed above are confirmed.',{exact:true})).toBeVisible();
   else{
    await expect(page.getByRole('alert')).toBeVisible();
    await expect(page.getByRole('button',{name:'Finish signing out of this browser',exact:true})).toBeEnabled();
@@ -386,7 +386,7 @@ for(const authenticated of [true,false])test(`cached sign-out results respect a 
   if(authenticated){
    await expect(page.locator('body[data-page=home]')).toHaveCount(1);
    await expect(page.locator('#logout')).toBeVisible();
-   await expect(page.getByText('This browser has signed out of IAM and the connected applications.',{exact:true})).toHaveCount(0);
+   await expect(page.getByText('The sign-outs listed above are confirmed.',{exact:true})).toHaveCount(0);
    if(new URL(page.url()).pathname!=='/')throw Error('An authenticated session retained the stale result URL');
   }else{
    await expect(page.getByRole('alert')).toContainText('Some sign-outs could not be confirmed.');

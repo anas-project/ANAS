@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LLNG 2.23.2 anchor subjects and real Nextcloud cookies; isolated Docker only.
+"""LLNG 2.23.4 anchor subjects and real Nextcloud cookies; isolated Docker only.
 
 Requires the test host's cryptography package for RS256 verification.
 The LLNG fixture must register anchorprobe and direct its logout URI to this

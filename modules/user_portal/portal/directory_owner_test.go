@@ -121,7 +121,9 @@ func TestOwnershipPartialOutcomeAndAudit(t *testing.T) {
 	f, _ := adminFixture(t)
 	// Exercise the production result writer with the two independently known outcomes.
 	recorder := httptest.NewRecorder()
-	f.server.writeResult(recorder, httptest.NewRequest("POST", "/api/administration/execute", nil), Record{Actor: f.person.Anchor, Target: "target-anchor", Action: "groups.member.add", Ownership: "pending", Membership: "pending"}, func() OperationResult { return OperationResult{"denied", "saved", "denied"} }, "", false)
+	f.server.writeResult(recorder, httptest.NewRequest("POST", "/api/administration/execute", nil), Record{Actor: f.person.Anchor, Target: "target-anchor", Action: "groups.member.add", Ownership: "pending", Membership: "pending"}, func() OperationResult {
+		return OperationResult{Directory: "denied", Ownership: "saved", Membership: "denied"}
+	}, "", false)
 	if recorder.Code != 409 || !strings.Contains(recorder.Body.String(), `"ownership":"saved"`) || !strings.Contains(recorder.Body.String(), `"membership":"denied"`) {
 		t.Fatal("partial result lost")
 	}

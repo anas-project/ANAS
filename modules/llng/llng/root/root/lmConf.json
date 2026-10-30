@@ -72,6 +72,8 @@
   "ldapVersion": 3,
   "ldapAuthnLevel": 2,
   "ldapPpolicyControl": 0,
+  "ldapChangePasswordAsUser": 1,
+  "ldapAllowResetExpiredPassword": 1,
   "ldapUsePasswordResetAttribute": 1,
   "ldapGroupObjectClass": "group",
   "ldapGroupAttributeName": "member",

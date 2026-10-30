@@ -1,6 +1,6 @@
 # Module 设计与发布检查表
 
-> 状态：**当前基线**。更新：2026-08-21。
+> 状态：**当前基线**。更新：2026-10-30。
 
 本检查表供新建、升级或评审 ANAS Module 时使用。它汇总现有的
 [Module 开发规范](/developer/module-development)、
@@ -105,9 +105,10 @@
 
 ## 10. 关系数据库 Consumer（条件项）
 
-- [ ] `[A/M]` 同时支持 PostgreSQL/MariaDB 时使用 `relational_database` Contract，对外 interface 是 `postgres`/`mariadb`/`auto`，`mysql` 只在 Module 内部映射。
+- [ ] `[M]` 上游支持 PostgreSQL 时使用 PostgreSQL；只有固定版本明确不支持时才使用 MySQL/MariaDB，并记录官方依据和例外原因。
+- [ ] `[A/M]` 使用 `relational_database` Contract，只声明实际支持的 `postgres` 或 `mariadb` interface；`auto` 不越出声明范围，`mysql` 只在 Module 内部映射。
 - [ ] `[A/M]` Hook 只消费 `<PREFIX>_DB_*` 和 `<PREFIX>_NETWORK_DB`，Compose 只连接选中 Provider network，不读取 Provider root/admin 凭据。
-- [ ] `[A/E]` 单元测试覆盖两个 interface、专属凭据和 network 映射；发布前两个引擎都验证空库安装、重启和重复 apply。
+- [ ] `[A/E]` 测试覆盖所声明引擎的专属凭据、network 映射、空库安装、重启和重复 apply；移除既有引擎时明确旧配置处理和数据保留，不静默迁移。
 
 ## 11. 时区与本地化
 

@@ -29,7 +29,7 @@ set_host() {
   printf '%s\t%s\n' "$2" "$1" >>/etc/hosts
 }
 
-waiting_url "http://127.0.0.1" "$LLNG_DOMAIN"
+waiting_url "http://127.0.0.1:8089/reload"
 set_host "$LLNG_DOMAIN" 127.0.0.1
 until [ -s /var/lib/lemonldap-ng/conf/lmConf-1.json ]; do sleep 2; done
 
@@ -44,6 +44,7 @@ lemonldap_ng_cli_delkey="$lemonldap_ng_cli -yes 1 -force 1 delKey"
 config_version=$( $lemonldap_ng_cli info | grep -oP 'Num\s+:\s+\K\d+' )
 
 cat /var/lib/lemonldap-ng/conf/lmConf-$config_version.json \
+  | jq -f /opt/anas/authentication.jq \
   | jq '.reloadUrls = {localhost: "http://127.0.0.1:8089/reload"} | del(.locationRules, .oidcRPMetaDataOptions, .oidcRPMetaDataExportedVars, .samlSPMetaDataXML, .samlSPMetaDataOptions, .samlSPMetaDataExportedAttributes, .applicationList."1apps", .applicationList."1sample", .applicationList."2administration", .applicationList."3documentation", .ldapExportedVars.anasRole) | .applicationList |= with_entries(select(.key | test("^[0-9]+anas-") | not))' \
   | jq --slurpfile apps /opt/anas/application-list.json '.applicationList += $apps[0]' \
   | jq --arg domain "$LLNG_MANAGER_DOMAIN" --arg group "$SAMBA_DC_ADMIN_GROUP_NAME" '. + {locationRules: {($domain): {default: "inGroup(\"\($group)\")"}}}' \
@@ -89,6 +90,8 @@ saml_public_key=$(printf '%b\n' "${LLNG_SAML_SERVICE_PUBLIC_KEY//\"/}")
 oidc_private_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PRIVATE_KEY//\"/}")
 oidc_public_key=$(printf '%b\n' "${LLNG_OIDC_SERVICE_PUBLIC_KEY//\"/}")
 $lemonldap_ng_cli_set \
+        ldapChangePasswordAsUser 1 \
+        ldapAllowResetExpiredPassword 1 \
         passwordPolicyActivation 1 \
         portalDisplayPasswordPolicy 1 \
         passwordPolicyMinSize "$SAMBA_DC_USER_MIN_PASS_LENGTH" \
@@ -111,7 +114,9 @@ $lemonldap_ng_cli_delkey \
         globalStorageOptions Directory \
         globalStorageOptions LockDirectory
 
-traefik_ip=$( ping -c 1 $TRAEFIK_HOSTNAME | sed '1{s/[^(]*(//;s/).*//;q}' )
+# Read the whole ping output: quitting after its first line can send SIGPIPE
+# to ping and abort startup under pipefail before RP/SP registration finishes.
+traefik_ip=$( ping -c 1 "$TRAEFIK_HOSTNAME" | sed -n '1{s/[^(]*(//;s/).*//;p;}' )
 
 saml_get_var() { # $1 app name, $2 key name
   local app_name="$1"
@@ -134,14 +139,18 @@ for app in $SAML_SP_APPS; do
     $lemonldap_ng_cli_addkey \
           samlSPMetaDataXML/$app samlSPMetaDataXML "$(curl "$metadata_url")"
 
-    # TODO: suit every app
+    # An explicit mapping prevents format defaults (mail/login/random values)
+    # from changing an application's account identity when a user is renamed.
     $lemonldap_ng_cli_addkey \
-          samlSPMetaDataOptions/$app samlSPMetaDataOptionsSignSLOMessage 1
+          samlSPMetaDataOptions/$app samlSPMetaDataOptionsSignSLOMessage 1 \
+          samlSPMetaDataOptions/$app samlSPMetaDataOptionsNameIDFormat "$(saml_get_var "$app" NAMEID_FORMAT)" \
+          samlSPMetaDataOptions/$app samlSPMetaDataOptionsForceNameIDFormat 1 \
+          samlSPMetaDataOptions/$app samlSPMetaDataOptionsNameIDSessionKey anasIdentityAnchor
 
     allow_groups=$(saml_get_var $app "ALLOW_GROUPS")
 
     if [ -n "$allow_groups" ]; then
-      groups=($(echo "$allow_groups" | tr ',' ' '))
+      IFS=',' read -r -a groups <<< "$allow_groups"
       has_admin_group=false
       for group in "${groups[@]}"; do
           saml_function_call="inGroup('$group')"
@@ -154,12 +163,13 @@ for app in $SAML_SP_APPS; do
       if [ "$has_admin_group" != true ]; then
         groups_filter="$groups_filter | inGroup('$SAMBA_DC_ADMIN_GROUP_NAME')"
       fi
-      $lemonldap_ng_cli_addkey \
-          samlSPMetaDataOptions/$app samlSPMetaDataOptionsRule "$groups_filter"
-    else 
-      $lemonldap_ng_cli_addkey \
-          samlSPMetaDataOptions/$app samlSPMetaDataOptionsRule ""
+      groups_filter="(defined(\$anasIdentityAnchor) and \$anasIdentityAnchor ne \"\") and ($groups_filter)"
+    else
+      groups_filter='defined($anasIdentityAnchor) and $anasIdentityAnchor ne ""'
     fi
+    registered_rule=$(saml_get_var "$app" RULE)
+    $lemonldap_ng_cli_addkey \
+        samlSPMetaDataOptions/$app samlSPMetaDataOptionsRule "${registered_rule:-$groups_filter}"
 
     index=1
     continue_loop=true
@@ -213,6 +223,8 @@ for app in $OIDC_RP_APPS; do
     echo "Configuring oidc rp $app"
     client_id=$(oidc_get_var $app "CLIENT_ID")
     client_secret=$(oidc_get_var $app "CLIENT_SECRET")
+    public_client=$(oidc_get_var "$app" "PUBLIC_CLIENT")
+    public_client=${public_client:-0}
 
     redirect_uri=$(oidc_get_var $app "REDIRECT_URI")
     logout_redirect_uri=$(oidc_get_var $app "LOGOUT_REDIRECT_URI")
@@ -225,6 +237,8 @@ for app in $OIDC_RP_APPS; do
     $lemonldap_ng_cli_addkey \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientID "$client_id" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsClientSecret "$client_secret" \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsPublic "$public_client" \
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRequirePKCE "$public_client" \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsUserIDAttr anasIdentityAnchor \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenSignAlg RS256 \
           oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsIDTokenForceClaims 1 \
@@ -243,11 +257,11 @@ for app in $OIDC_RP_APPS; do
     allow_groups=$(oidc_get_var $app "ALLOW_GROUPS")
 
     # Reject sessions without a directory anchor before issuing authorization
-    # codes. Keep whatToTrace as the human login/audit label; it is not sub.
+    # codes. The same anchor also identifies persistent Passkey credentials.
     anchor_rule='defined($anasIdentityAnchor) and $anasIdentityAnchor ne ""'
     groups_filter="$anchor_rule"
     if [ -n "$allow_groups" ]; then
-      groups=($(echo "$allow_groups" | tr ',' ' '))
+      IFS=',' read -r -a groups <<< "$allow_groups"
       has_admin_group=false
       for group in "${groups[@]}"; do
           oidc_function_call="inGroup('$group')"
@@ -262,8 +276,9 @@ for app in $OIDC_RP_APPS; do
       fi
       groups_filter="($anchor_rule) and ($groups_filter)"
     fi
+    registered_rule=$(oidc_get_var "$app" RULE)
     $lemonldap_ng_cli_addkey \
-          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRule "$groups_filter"
+          oidcRPMetaDataOptions/$app oidcRPMetaDataOptionsRule "${registered_rule:-$groups_filter}"
           
 
     index=1
@@ -317,3 +332,4 @@ done
 # Do not mark startup complete if workers cannot reload the final registry.
 curl -fsS http://127.0.0.1:8089/reload >/dev/null
 touch /run/llng-configured
+touch /var/lib/lemonldap-ng/conf/.anas-ready

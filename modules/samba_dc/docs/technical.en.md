@@ -8,6 +8,14 @@ This page records the current implementation, security boundaries, and verificat
 
 ## Required modules, capabilities, and contracts
 
+The durable directory journal also publishes the attribute names `lockoutTime` and
+`accountExpires`, without values, so IAM subscribers can recheck lock and expiry state.
+Consumers must still periodically reconcile expiry caused by the passage of time.
+Each successful append updates `last_published_seq` in the health file immediately,
+instead of waiting for the next full scan and reporting a stale journal position.
+
+The mail candidate adds attribute names for primaryGroupID, proxyAddresses, password state, public contact details and anasMail resource versions/operations. Hook upgrades preserve configured extras and add required names without values. With mail configured, objects under the fixed Mailboxes/Addresses OUs also enter the journal. This event scope is separate from personnel/group anchor stamping, so a non-login resource Add never starts personnel-stamping retries. Producer unit coverage exists; actual upgrade and mail-consumer convergence remain pending.
+
 | Dependency | Type | Interface/version |
 | --- | --- | --- |
 | `lego` | Module | — |
@@ -22,7 +30,7 @@ When no enabled Module declares capability codes, the capability-group list may 
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 4 |
+| `anas_samba_dc` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc:4.23.6-r13` | `` | 5 |
 | `anas_samba_dc_anchor` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r13` | `` | 3 |
 | `anas_samba_dc_events_init` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-mirror-ubuntu:resolute-678c6550cc43` | `` | 1 |
 <!-- generated:compose-topology:end -->
@@ -56,7 +64,13 @@ When no enabled Module declares capability codes, the capability-group list may 
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | no | yes | yes | no: `rotate-ldap-bind-password` | `credential_rotate` | Update AD and all LDAP consumers as one transaction. |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
+| `samba_dc.mail_address_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_ADDRESS_BIND_PASSWORD` | no | no | yes | no: `rotate-mail-address-bind-password` | `credential_rotate` | Independent generated restricted portal address-writer credential; never granted to read-only mail service |
+| `samba_dc.mail_creator_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_CREATOR_BIND_PASSWORD` | no | no | yes | no: `rotate-mail-creator-bind-password` | `credential_rotate` | Independent generated credential for restricted portal account creation, separate from address and personnel credentials |
+| `samba_dc.mail_directory_enabled` | bool | — | `false` | `static` | `SAMBA_DC_MAIL_DIRECTORY_ENABLED` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Explicitly enable non-login mail bootstrap after verifying a full snapshot and stopping external writers |
 | `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | no | yes | no | no: `migrate-default-mail-addresses` | `data_migrate` | Primary mail domain; inherits the AD domain when unset and reconciles personnel addresses without renaming directory identities |
+| `samba_dc.mail_initial_snapshot_id` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SNAPSHOT_ID` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Verified full snapshot reference for initial mail import; the container cannot prove host-wide quiescence |
+| `samba_dc.mail_initial_source_domain` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SOURCE_DOMAIN` | no | no | no | no: `bootstrap-mail-directory` | `data_migrate` | Converged old primary domain for initial import; pinned after completion, separate from later target domains |
+| `samba_dc.mail_management_policy` | string | — | `""` | `static` | `SAMBA_DC_MAIL_MANAGEMENT_POLICY` | no | no | no | yes | `container_recreate` | Complete JSON policy for managed domains, protected addresses and explicit mailbox/alias/capacity/rate limits |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | no | no | no | yes | `container_recreate` | The generated smb.conf is installed during container initialization. |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | no | yes | no | no: `replace-domain-controller` | `immutable` | Changing the DC machine identity requires a controlled replacement. |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
@@ -137,6 +151,12 @@ therefore runs `samba_dnsupdate --all-names --use-samba-tool` once over Samba RP
 `SAMBA_DC_DC_DOMAIN` resolves exactly to `SAMBA_DC_HOST_IP` before publishing
 its ready marker.
 
+Initial provisioning explicitly passes `SAMBA_DC_DC_NAME` and `SAMBA_DC_HOST_IP`,
+so the directory's DC identity and native DNS records match the Hook's values
+instead of inheriting the container host's name. Startup does not rename an
+existing directory. Preserve diagnostic data from a workspace provisioned with
+another DC name, then create a new directory with the correct configuration.
+
 Zone-inventory RPC or parse failures fail closed. Before any DNS mutation, the
 reconciler checks every `SAMBA_DC_HOST` and `DOMAINS` FQDN for a closer child
 zone that would intercept it. An A record may be replaced or deleted only when
@@ -159,6 +179,18 @@ directory plus identity and member migration.
 
 `structure.sh` passes `SAMBA_DC_USER_*` to `samba-tool domain passwordsettings set` for the ordinary-user domain policy. It generates or updates the administrator `pso_privileged` from `SAMBA_DC_ADMIN_*` and applies that PSO to built-in `Administrator` and the `Admins` group. Complexity, length, history, minimum/maximum age, and all three lockout settings come from module parameters; the script contains no policy constants.
 
+Before reconciling the structure, startup checks the local LDAP listener up to 60 times at one-second intervals instead of sleeping for a fixed 20 seconds. One native command applies all eight ordinary-user settings, reducing repeated Samba/Python startup during recovery. Listener or policy failures still stop initialization, and the per-boot readiness marker is written only after reconciliation completes. The full Compose AD/DNS health check is unchanged.
+
+Compose allows a 180-second startup grace period for initial directory, ACL,
+and password-policy creation. Each complete check has a 30-second timeout,
+with the existing 30-second interval and six failed checks. A successful check becomes ready during the grace period;
+there is no fixed delay. The previous 90-second grace period triggered recovery
+while initialization was progressing on a constrained host. The revised window
+requires verification with a newly provisioned directory. Full-stack startup
+also repeatedly exceeded the old 10-second check timeout, while the complete
+check succeeded when run separately. All AD/DNS checks remain enabled; the new
+budget requires full-stack verification.
+
 All 16 policy parameters declare `hot_reload`/`samba-password-policy`. The current executor still uses the deployment apply fallback; container initialization idempotently updates the domain policy and any existing PSO.
 
 ## Identity and authorization data flow
@@ -173,6 +205,52 @@ It is authoritative for people, groups, service identities, and identity anchors
 | Directory password writeback | authoritative directory; controlled by ACLs and password policy |
 
 There is currently no generic `anas user/group/password` command. Directory-backed modules synchronize through their own mechanisms. Manage users, groups, and directory passwords in Samba AD/LAM or an application with restricted LDAPS password writeback; neither `anas config set` nor `env.<KEY>` is a directory operation.
+
+## Mail directory schema under development
+
+The approved model uses primary/additional mailbox resources and address claims under one personnel login. `samba_dc/root/usr/local/share/anas/mail-schema.json` fixes two non-login structural classes, `anasMailbox` and `anasMailAddressClaim`, plus 13 attributes with registered OIDs/GUIDs. Each mailbox has its own anasMailboxID and references personnel through anasMailOwnerAnchor; resources carry no personnel anasIdentityAnchor, sAMAccountName, UPN or password. Personnel proxyAddresses retains effective aliases while claims identify their target mailbox.
+
+The development `install-mail-schema.py` defaults to read-only checking, also available as `--check`; `--install` explicitly adds missing definitions. It preflights every name/OID/GUID, type and field, refusing collisions, defunct objects or drift without overwriting schema. Interrupted installation resumes only exact definitions; join mode only verifies existing schema. It creates no OUs/ACLs, changes no personnel or primary-address policy, and is not wired into startup. Released images are not assumed to contain it. Existing business domains remain unchanged; formal migration requires a verified full-volume snapshot and an explicit deployment scope.
+
+Class definitions specify domain administrators as owner, grant domain administrators/SYSTEM access and also limit implicit WRITE_DAC through OWNER RIGHTS. Live ACL verification is required; SDDL text alone does not establish enforcement. The development `install-mail-directory.py` now prepares fixed OUs and separate roles. It is not deployed; isolated checks do not establish production bindings. The security-descriptor owner governs directory ACL administration; it neither changes personnel ownership through anasMailOwnerAnchor nor grants mail login. Schema alone does not enforce owner foreign keys, one primary box per person, address normalization or lifecycle rules; controlled writers, read-back checks and fail-closed consumption must enforce them.
+
+Shared Go locators in `internal/directorymail/resources.go` fix the Mailboxes/Addresses OUs, derive primary-box locators from personnel anchors and additional-box locators from mailbox UUIDs, and derive one claim DN from the normalized complete address regardless of its type. The locator library performs no LDAP writes or authorization. Candidate portal creation uses these locators; a Python LDAP coordinator now covers system-primary writes; alias/additional-box writers and the mail projection remain unfinished.
+
+Checks are `python3 -m unittest discover -s modules/samba_dc/tests -p 'test_mail_*.py'` and `test-env/scripts/server-mail-directory-schema-e2e.sh`, which requires a dedicated Docker daemon, a new private directory, a fresh test domain and explicit `ANAS_ANCHOR_IMAGE` selecting a cached fixed Anchor Worker image. The root mail plan records actual results; this subset does not accept existing-domain migration, all writer races, address transfers, events or DMS/Roundcube integration.
+
+### Explicit mail OU and ACL preparation
+
+`install-mail-directory.py` reuses Samba's bundled Python/ldb/SamDB without a new dependency or service. It first checks the complete mail schema without changes, then validates the selected domain, its single writable schema-master DC, personnel/service OUs and four existing service roles inside one local transaction. Roles must be distinct enabled ordinary users directly in the Service Accounts OU, with Domain Users as primary group, no additional groups, privileged primary-group ancestry, adminCount or SID history. The tool creates no accounts and changes no passwords, membership, personnel or schema.
+
+Non-secret JSON on stdin (maximum 64 KiB) contains `base_dn`, `people_dn` and `roles` with `reader`, `creator`, `address_writer`, `primary_writer` DNs. For example, use the existing svc_ldap and svc_portal_create, plus a separately prepared svc_portal_mail and the existing svc_anchor, all under the provider's Service Accounts OU. `SAMBA_DC_BASE_DN` must match the current domain. Default/`--check` performs no writes and rejects missing preparation. Explicit `--prepare` creates protected Mail/Mailboxes/Addresses OUs owned by domain administrators; join mode rejects preparation. Existing OUs require exact ownership markers, owner/group and permissions. Drift stops execution without adoption or replacement. OU creation, scoped grants and read-back share one transaction; failures roll everything back and repeated complete preparation makes no changes.
+
+The reader only reads resources. The creator can create the specified resource classes, advance state/version/operation fields and create users under People; it cannot change existing personnel mail/proxies or a mailbox's ID/personnel owner. The address writer can create resources and maintain default address/quota and claim mapping/history; its only personnel write is proxyAddresses under People. It cannot write system mail or login names, or transfer the mailbox itself. The primary writer reuses the Anchor Worker. It can create resources, advance operations/versions, update defaults/address kinds, retain existing personnel anchor/mail rights and write personnel proxyAddresses. It cannot rename people, change mailbox identity/owner, or delete resources. Each role receives current-domain mail/proxyAddresses read and directory listing for legacy collision checks. This does not establish administrator authorization or replace application validation. Unrelated domain/People ACEs are preserved; unexpected explicit grants to these services stop preparation. No delete, ACL-change, ownership or domain-role rights are delegated. AD permits the creator to supply initial Add fields, so subsequent attribute restrictions cannot replace controlled API ownership checks.
+
+The tool is not wired into startup, Hook or existing portal provisioning. It does not create or distribute the example address-writer account. Formal migration still requires a verified full-volume snapshot, existing-address import, all controlled writers and effective namespace visibility for the actual binding. Protected-object ACLs, external grants and later changes need separate checks; inherited read ACEs alone do not prove complete visibility. A portal-only image update is not a completed upgrade.
+
+### Existing-personnel primary import candidate
+
+`migrate-mail-primary.py` reuses the anchor worker's `mail_policy.py`. It writes no personnel, aliases, passwords, groups, schema or existing resources. Compose and the CI image catalog now use the Module root as the DC build context with `samba_dc/Dockerfile`, allowing the same policy source to be copied. A `.dockerignore` allowlist includes only DC root, Dockerfile and that policy, excluding runtime `.env`, tests and other Module files. The anchor image keeps its existing context. An isolated scratch COPY probe checks the actual context; it does not establish a rebuilt Ubuntu/Samba release image.
+
+Stdin uses the preceding preparation JSON plus `mail_domain`. Default/`--check` returns planned/existing primary counts and unmapped SMTP counts without changes; this is not mail readiness. Output `planned` records the preflight addition count for this run, `created` records confirmed additions, and `existing` records reused resources. Personnel must have paired stable anchors, native objectGUID/SID, a normal account type and a primary mail value already converged under current system policy. Missing mail, a pending name/suffix change or malformed identity stops import instead of replacing the primary-address worker. It checks domain-wide mail/SMTP proxies, personnel anchors and managed boxes/claims. Conflicts, missing completed claims, unknown/pending operations, wrong DNs, defaults referenced by another box and deleted/recreated people are rejected. Completed portal-created primaries are reused by anchor/objectGUID rather than profile labels.
+
+Explicit `--execute --snapshot-id ID --evidence-dir PATH` requires root, a stopped DC, a private evidence parent outside Samba data and a new evidence subdirectory. The snapshot ID labels a full snapshot already verified by the caller; the script neither creates nor verifies an ANAS snapshot and cannot prove that all host/external LDAP writers stopped. Business migration still needs those maintenance steps; an arbitrary label is not snapshot acceptance.
+
+Preflight, new primary/claim Adds and read-back share one local SamDB transaction, rolling back on failure. Each box receives an independent random ID and binds the original personnel objectGUID in operation data. Repetition validates rather than recreating or rewriting resources. Evidence intent precedes commit and result follows it. A failed result-file write after commit is unknown: inspect the directory and use a new evidence directory before retrying rather than inferring absence from a lost response.
+
+Only converged personnel primaries are imported. Existing SMTP proxies and non-SMTP values remain intact. Aliases with no explicit box mapping are counted, never merged into the primary or assigned claims automatically. Existing ownership is never transferred. AD active/complete means directory configuration only; DMS, cloud routes, Webmail and local projection still need confirmation. Startup, Hook and ANAS upgrade do not invoke this candidate. The system-primary/suffix coordinator is described below; the business domain remains unchanged.
+
+### System primary addresses and shared claims
+
+The Anchor Worker reuses its verified LDAPS connection and existing python3-ldap dependency. Once the mail schema is present, it requires the marked Mail OU and uses `mail_resources.py` / `mail_resource_ldap.py`. Missing/invisible OUs, insufficient rights and unknown operations fail without falling back to mail-only writes. Domains without that schema retain the existing policy. Enabling this candidate requires schema, four-role ACL preparation and existing-primary import before starting writers; replacing only the Worker image is insufficient. Add `primary_writer` pointing to the existing `svc_anchor` service account in the bootstrap JSON.
+
+The primary locator uses the personnel anchor and binds the original objectGUID. Durable box intent and the deterministic target claim precede the atomic personnel mail/proxy update, followed by claim/box confirmation. Pending work resumes the same operation after failures or lost responses without allocating a second mailbox or releasing claims. Missing completed claims, replaced people, duplicate anchors and foreign mail/proxy/claim ownership fail closed.
+
+Suffix changes retain the mailbox UUID and old address as an active same-box alias, preserving every existing SMTP/non-SMTP proxy. Switching back can reuse one's active suffix alias; retained, disabled or foreign pending claims are not adopted. Username renaming remains disabled. A single strict Modify deletes the old resource version and adds its replacement. Personnel writes use a GUID locator and compare both anchors plus mail/proxy preimages through strict Delete/Add in one Modify. Concurrent unrelated proxy additions survive; inconsistent read-back remains pending. Username and scope are rechecked before/after writing, without an atomic username lock or a rename workflow. RootDSE does not advertise RFC4528, so this uses the same native atomic Modify primitive as the portal. Downstream projection, revocation, DNS and real delivery remain independent checks. The attempted RFC4528 control API is documented in [python-ldap](https://www.python-ldap.org/en/latest/reference/ldap-controls.html) and [RFC 4528](https://datatracker.ietf.org/doc/html/rfc4528); the live Samba test rejected it, so it is not a runtime dependency.
+
+This is development behavior. The root mail plan §4.20 records actual fixed-image and fault-test results; the business service on port 10000 is not upgraded. Earlier three-role candidate OUs are not automatically granted new rights; in-place upgrade remains unfinished and drift still fails.
+
+The portal address candidate stores `anas.mail-management/v1` in the primary mailbox's `anasMailQuotaState`, containing one pending operation and the last receipt. A system suffix change refuses to pass a pending personal operation, then competes on the same primary configuration version. An unchanged-address check may remain a no-op. When a former primary becomes an alias, `system.primary.previous` marks it so a former personal alias cannot accidentally remain removable after serving as a primary. This grants the portal no personnel mail write and does not let the Worker execute personal operations. Native results and limits are in root mail plan §4.21.
 
 ## PEN 66678 schema-migration contract
 
@@ -273,3 +351,11 @@ A mail-suffix change currently uses the native config import → lock → render
 `identity.groups` in `module.yml` declares common group names, directory parents, categories, order, risk and bilingual descriptions, plus SID/RID-located descriptions of AD built-ins. Application groups reuse existing identity declarations; capability names come from their owning Module's declared list. Core compiles one deployment-scoped `shared/identity-groups/catalog.json`. Samba's `identity_groups.py` consumes the read-only catalog to create managed groups and maintain their English AD `description`. It does not modify built-ins, move existing same-name objects, or derive membership/ACL changes from metadata. Native bootstrap membership and rights policy remains explicit.
 
 `SAMBA_DC_APPLICATION_CATALOG_GROUPS` is a CSV projection of managed catalog names rather than a second Hook list. Missing or invalid catalogs and conflicting locators fail initialization without reverting to hardcoded defaults. Primary mail and identity-anchor maintenance retain their existing privilege boundaries.
+
+The audit follower emits only newline-terminated records. It retains the start of an unfinished
+line for the next poll, including a UTF-8 character split across writes. An incomplete tail from
+a rotated file is never concatenated with its replacement.
+
+Candidate formal mail bootstrap is explicitly enabled by mail_directory_enabled and requires the complete mail_management_policy, converged old mail_initial_source_domain and verified full mail_initial_snapshot_id. Two independently generated restricted identities serve portal creation/address maintenance; the existing LDAP reader and Anchor Worker serve reader/primary_writer. Before the Samba daemon starts, the fixed script verifies a single writable schema-master, installs the confirmed two non-login classes, prepares/checks role and OU/ACL scopes, and calls the existing primary import tool. Failures leave no completion marker and retry remains idempotent. Completion pins the initial source domain, snapshot and role SIDs; subsequent boots only check, without reimporting the old domain or adopting replacement roles. ANAS must still stop external writers and verify the full snapshot before import; unit tests cannot prove these prerequisites. Private migration evidence lives under DATA_PATH/samba_dc/mail-bootstrap and belongs in the recovery set. Business bootstrap acceptance remains pending. The Anchor container receives only its required ANCHOR_* bindings and TZ instead of the entire .env with administrator and other writer secrets.
+
+Formal bootstrap stops before primary-import writes when legacy SMTP aliases lack an explicit mapping; it never infers mailbox ownership from old proxy values. server-mail-bootstrap-runtime-e2e.py defines actual isolated bootstrap and two-phase company-directory checks. Until executed it remains pending and establishes neither business-domain nor complete lifecycle acceptance.

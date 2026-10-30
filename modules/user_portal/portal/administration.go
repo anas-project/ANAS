@@ -387,7 +387,7 @@ func (s *Server) accountOperation(w http.ResponseWriter, r *http.Request, self b
 			return OperationResult{Directory: "denied"}
 		}
 		freshActor, err := s.directory.Person(actor.Anchor)
-		if err != nil || freshActor.GUID != actor.GUID || !freshActor.canLogin() {
+		if err != nil || freshActor.GUID != actor.GUID || !freshActor.canAuthenticate(v.Authentication) {
 			return OperationResult{Directory: "denied"}
 		}
 		fresh, freshGroup, needsDomain, errCode := s.operationTarget(freshActor, op, self)

@@ -36,10 +36,12 @@ if [ ! -f /var/lib/samba/registry.tdb ]; then
       --option=\"posix:eadb=/var/lib/samba/eadb.tdb\""
 
   if [ $SAMBA_DC_DOMAIN_ACTION == provision ]; then
+    # Provision the configured DC identity, rather than inheriting the host
+    # namespace's hostname (which may differ from the Hook's canonical DC).
     PROVISION_OPTS="--server-role=dc --use-rfc2307 --domain=$SAMBA_DC_WORKGROUP \
-    --realm=$SAMBA_DC_REALM --adminpass='$SAMBA_DC_ADMINISTRATOR_PASSWORD'"
+    --realm=$SAMBA_DC_REALM --host-name=$SAMBA_DC_DC_NAME --host-ip=$SAMBA_DC_HOST_IP --adminpass='$SAMBA_DC_ADMINISTRATOR_PASSWORD'"
     PROVISION_OPTS_ECHO="--server-role=dc --use-rfc2307 --domain=$SAMBA_DC_WORKGROUP \
-    --realm=$SAMBA_DC_REALM --adminpass='*****'"
+    --realm=$SAMBA_DC_REALM --host-name=$SAMBA_DC_DC_NAME --host-ip=$SAMBA_DC_HOST_IP --adminpass='*****'"
   elif [ $SAMBA_DC_DOMAIN_ACTION == join ]; then
     PROVISION_OPTS="$SAMBA_DC_REALM DC -U$SAMBA_DC_ADMINISTRATOR_NAME --password='$SAMBA_DC_ADMINISTRATOR_PASSWORD'"
     PROVISION_OPTS_ECHO="$SAMBA_DC_REALM DC -U$SAMBA_DC_ADMINISTRATOR_NAME --password='*****'"
@@ -106,6 +108,9 @@ testparm -s /etc/samba/smb.conf >/dev/null
 # Schema changes must be applied while the directory daemon is stopped. Doing
 # this here also makes upgrades of an existing provisioned volume idempotent.
 /usr/local/bin/install-identity-schema.sh
+
+# Explicit mail enablement runs only offline and requires its verified snapshot.
+python3 /usr/local/bin/bootstrap-mail-directory.py
 
 chmod 0755 /usr/local/bin/structure.sh
 chmod +x /usr/local/bin/anas_zone.sh

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"path/filepath"
 	"reflect"
 
 	"github.com/anas-project/ANAS/internal/api/httpapi"
@@ -53,6 +54,8 @@ func configureServiceAPI(ctx context.Context, config consoleconfig.Config, reloa
 	done := make(chan struct{})
 	go func() { defer close(done); _ = manager.Run(runCtx) }()
 	return &httpapi.ServiceAPIOptions{Authenticate: manager.Authenticate, Factory: runner.NewWorkspaceApplicationCredentialService,
+		MailInstall:  newMailInstallHandler(filepath.Join(filepath.Dir(config.ServiceAPI.Directory), "mail-installations"), writer),
+		MailOutbound: newMailOutboundHandler(writer),
 		Audit: func(ctx context.Context, event httpapi.ServiceCredentialAuditEvent) error {
 			if writer == nil {
 				return audit.ErrUnavailable

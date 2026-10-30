@@ -21,7 +21,8 @@ lastUpdated: false
 | [Incus compute provider](/reference/modules/incus/) | `7.3.0-r4` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |
 | [LDAP Account Manager](/reference/modules/lam/) | `9.6.0-r9` | `release` | `identity` | Web UI for LDAP account administration. |
 | [Lego ACME certificates](/reference/modules/lego/) | `5.3.1-r6` | `release` | `certificate` | Issues and stores wildcard certificates used by Traefik and domain services. |
-| [LemonLDAP::NG](/reference/modules/llng/) | `2.23.2-r13` | `developing` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [LemonLDAP::NG](/reference/modules/llng/) | `2.23.4-r13` | `developing` | `identity` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [ANAS Mail](/reference/modules/mail/) | `0.1.0-r1` | `developing` | `app` | Mail management with directory-owned addresses, DMS and Roundcube; phase-one integration remains under validation. |
 | [MariaDB](/reference/modules/mariadb/) | `12.3.2-r5` | `release` | `database` | MariaDB database service with optional Adminer UI. |
 | [MeshCentral](/reference/modules/meshcentral/) | `1.2.4-r9` | `release` | `app` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
 | [NetBird](/reference/modules/netbird/) | `0.76.1-r6` | `developing` | `network` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |

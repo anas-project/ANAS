@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-26
-updated: 2026-10-06
+updated: 2026-10-20
 ---
 
 # Casdoor IAM Provider 集成要求
@@ -68,6 +68,9 @@ Casdoor 必须通过受信任 LDAPS 使用受限 Bind，过滤非用户对象、
 目录事件路径是周期 LDAP 同步的低延迟加速器，不是第二事实来源。同步既有用户时，只允许按本批
 事件刷新 `displayName` 和 `email`；不得覆盖密码、权限或其他人工字段。账号删除、停用、组撤权和
 改名必须通过真实目录与 Casdoor E2E 证明最终收敛，不能以“触发过同步 API”代替结果断言。
+
+周期自动同步与订阅器触发的同步可能同时导入同一新用户。任何并发组合都不得为同一永久锚点创建
+第二个 Casdoor 用户（例如重名回退得到的 `<uid>_`）。
 
 ## 4. OIDC、SAML、授权与身份锚点
 
@@ -157,6 +160,7 @@ stdin 进入 Helper；更新后必须回读 bcrypt 验证，失败必须恢复�
 | `CASDOOR-R-038` | 运维文档必须记录密钥轮换、备份恢复、IAM 故障恢复、Provider 切换、弃用迁移和所有未支持能力 | 审阅 |
 | `CASDOOR-R-039` | 只有所有强制发布验收具有可复现证据后，Module 生命周期才能从 `developing` 改为 `release` | CI |
 | `CASDOOR-R-040` | Module README、技术文档、IAM 支持清单和需求计划必须使用一致的版本、生命周期与能力限制描述 | 审阅 |
+| `CASDOOR-R-041` | 周期自动同步、`sync-ldap-users` API 与管理界面的 LDAP 用户导入必须串行执行；并发触发时同一永久锚点只能对应一个 Casdoor 用户，不得产生 `<uid>_` 重复账号 | 单元 |
 
 
 ## 2026-10-07：r11 候选的 Immich 接入边界

@@ -82,7 +82,7 @@ async function api(path,body,retry=true,active=()=>true) {
     data=await response.json();
   } catch { throw new Error(t('request_failed')); }
   if(!active())throw new Error('');
-  if(response.status===401) { me=null;csrf='';loginPage();notice(t('authentication_required'),true); }
+  if(response.status===401) { me=null;csrf='';loginEntry(); }
   // An expired recent authentication asks for the person's own password in
   // the page, then repeats this request once.
   if(response.status===403&&data.error==='recent_authentication_required'&&retry&&me&&await reauthDialog()){
@@ -298,7 +298,7 @@ async function render() {
     if(current!==revision)return;
     const [section,sub,third]=parts;
     if(!section||section==='apps')return await homePage(current);
-    if(section==='account'&&['profile','security','groups','mail','log',undefined].includes(sub))return await accountPage(sub||'profile',current);
+    if(section==='account'&&['profile','security','groups','log',undefined].includes(sub))return await accountPage(sub||'profile',current);
     if(section==='admin'&&canManage()) {
       if(sub==='themes'&&me.administration){renderShell('admin','themes');document.body.dataset.page='admin-themes';heading(t('iconThemes'),t('themeLibraryHelp'));content.append(iconThemeCard(true));return;}
       if((!sub||sub==='users')&&!third)return await usersPage(current);
@@ -312,7 +312,7 @@ async function render() {
 window.addEventListener('hashchange',()=>{
   if(me)render();
   else if(route()[0]==='recover')recoverPage();
-  else if(document.body.dataset.page==='recover')loginPage();
+  else if(document.body.dataset.page==='recover')loginEntry();
 });
 
 // --- anonymous pages -------------------------------------------------------------
@@ -660,7 +660,7 @@ async function accountPage(section,current) {
   renderShell('work','account');document.body.dataset.page='account-'+section;
   const layout=el('div',null,{class:'settings'}),nav=el('nav',null,{class:'settings-nav','aria-label':t('account')});
   nav.append(el('h1',t('account')));
-  for(const [id,key,name] of [['profile','profileNav','user'],['security','securityNav','lock'],['groups','groupsNav','users'],['mail','mailNav','mail'],['log','audit','clock']])nav.append(navLink('#/account/'+id,t(key),name,section===id));
+  for(const [id,key,name] of [['profile','profileNav','user'],['security','securityNav','lock'],['groups','groupsNav','users'],['log','audit','clock']])nav.append(navLink('#/account/'+id,t(key),name,section===id));
   // The header hides its sign-out button on phones; this one is shown only there.
   const out=withIcon(button(t('logout'),completeNativeLogout,'nav-link mobile-only'),'logout');nav.append(out);
   const body=el('div',null,{class:'settings-body'});layout.append(nav,body);content.append(layout);
@@ -680,13 +680,11 @@ async function accountPage(section,current) {
       const list=el('div',null,{class:'chip-list'});for(const a of apps){const chip=el('span',null,{class:'app-chip'});chip.append(appIcon(a,22),el('span',a.display_name));list.append(chip);}
       if(!apps.length)list.append(el('p',t('empty'),{class:'muted'}));
       card.append(list);content.append(card,el('h2',t('groups'),{class:'section-title'}),groupTable(me.person));
-    } else if(section==='mail') {
-      const card=el('section',null,{class:'card'}),row=el('div',null,{class:'mail-row'});
-      card.append(el('h2',t('email')));row.append(el('span',me.person.email||t('none'),{class:'mono'}));if(me.person.email)row.append(el('span',t('primaryAddress'),{class:'badge accent'}));
-      card.append(row,el('p',t('mailHelp'),{class:'muted'}));content.append(card);
+
     } else await auditTable(current);
   } finally {content=outer;}
 }
+
 async function auditTable(current) {
   if(content.closest?.('.shell-admin'))heading(t('audit'));
   const data=await api('/api/audit');if(current!==revision)return;
@@ -741,10 +739,29 @@ function newUserPage() {
   field(form,'given_name','text',false);field(form,'surname','text',false);field(form,'display_name');
   const force=el('input',null,{type:'checkbox',name:'force_change'}),label=el('label',null,{class:'check'});force.checked=true;label.append(force,el('span',t('force')));form.append(label);
   const submit=el('button',t('createUser'),{type:'submit',class:'primary'});form.append(submit);const slot=resultSlot(form);
+  async function showMailConflict(name) {
+    if(!me.mail_conflict_check)return false;
+    const fact=await api('/api/users/mail-conflict?username='+encodeURIComponent(name));
+    if(!form.isConnected||username.value!==name)return true;
+    if(!fact.occupied)return false;
+    const box=el('div',null,{class:'result error mail-address-conflict',role:'alert'});
+    const kind={primary:'primaryAddress',alias:'mailConflictAlias',additional:'mailIndependent',legacy:'mailConflictLegacy'}[fact.kind];
+    box.append(el('h2',t('mailAddressConflict')),el('p',fact.address,{class:'mono'}),el('p',kind?t(kind):t('unknown')));
+    if(fact.owner)box.append(el('p',t('mailConflictOwner',{name:fact.owner.display_name||fact.owner.username})));
+    box.append(el('p',t('mailConflictReservation')));
+    box.append(button(t('mailChooseUsername'),()=>{username.focus();username.select();},'small'));
+    if(fact.management_url)box.append(safeLink(fact.management_url,t('mailMaintainAddress'),{class:'button small'}));
+    box.append(button(t('mailRecheckAddress'),async()=>{
+      try{if(!await showMailConflict(username.value))slot.replaceChildren(el('p',t('mailConflictRechecked'),{role:'status'}));}
+      catch(error){if(form.isConnected)formError(slot,error);}
+    },'small'));
+    slot.replaceChildren(box);return true;
+  }
   form.addEventListener('submit',async event=>{
     event.preventDefault();submit.disabled=true;
     try {
       const values=Object.fromEntries(new FormData(form)),op={username:values.username,profile:{given_name:values.given_name.trim(),surname:values.surname.trim(),display_name:values.display_name.trim()},force_change:force.checked};
+      if(await showMailConflict(op.username))return;
       if(!await operationDialog(op,false,{person:{username:op.username,...op.profile},action:'user.create'}))return;
       const result=await api('/api/users',op);if(!form.isConnected)return;
       const box=renderResult(result,slot,{username:op.username,display_name:op.profile.display_name,email:op.username.toLowerCase()+'@'+me.mail_domain,force:op.force_change});
@@ -756,7 +773,7 @@ function newUserPage() {
         const details=el('a',t('details'),{href:'/#/admin/users/'+encodeURIComponent(result.target),target:'_blank',rel:'noopener',class:'button small'});
         details.append(icon('external',14),el('span',t('openNewTab'),{class:'sr-only'}));box.append(details);return;
       }
-      if(result.directory==='conflict')box.append(el('p',t('accountConflict')));
+      if(result.directory==='conflict'&&!await showMailConflict(op.username))box.append(el('p',t('accountConflict')));
     }catch(error){if(form.isConnected)formError(slot,error);}finally{if(!form.querySelector('input:disabled'))submit.disabled=false;}
   });content.append(form);
 }
@@ -881,8 +898,27 @@ async function userDetails(anchor,current=revision) {
 
 // --- in-page recent authentication ----------------------------------------------------
 let reauthPending=null,cancelReauth=null;
+function nativeReauthDialog() {
+  reauthPending=new Promise(resolve=>{
+    const dialog=el('dialog',null,{class:'operation-dialog reauth-dialog','aria-labelledby':'reauth-title'});
+    const mode=document.documentElement.dataset.theme;
+    const dark=mode==='dark'||mode==='system'&&matchMedia('(prefers-color-scheme: dark)').matches;
+    const form=el('form',null,{method:'POST',action:'/api/reauth?theme='+(dark?'dark':'default')});
+    form.append(el('h2',t('reauthTitle'),{id:'reauth-title'}),el('p',t('reauthPasskeyIntro'),{class:'muted'}));
+    form.append(el('input',null,{type:'hidden',name:'csrf',value:csrf}));
+    const row=el('div',null,{class:'row dialog-actions'});
+    function cancel(){dialog.close();dialog.remove();reauthPending=null;cancelReauth=null;resolve(false);}
+    row.append(button(t('cancel'),cancel),el('button',t('reauthPasskeyContinue'),{type:'submit',class:'primary'}));
+    form.append(row);dialog.append(form);document.body.append(dialog);
+    cancelReauth=cancel;
+    dialog.addEventListener('cancel',event=>{event.preventDefault();cancel();});
+    dialog.showModal();
+  });
+  return reauthPending;
+}
 function reauthDialog() {
   if(reauthPending)return reauthPending;
+  if(me.passkey_authenticated)return nativeReauthDialog();
   reauthPending=new Promise(resolve=>{
     const dialog=el('dialog',null,{class:'operation-dialog reauth-dialog','aria-labelledby':'reauth-title'}),form=el('form');
     form.append(el('h2',t('reauthTitle'),{id:'reauth-title'}),el('p',t('reauthIntro'),{class:'muted'}));
@@ -1006,7 +1042,7 @@ async function runLogout(data) {
   logoutRunning=true;
   logoutState={results:[{origin:new URL(data.iam_endpoint).host,status:'working'},...(data.targets||[]).map(t=>({origin:new URL(t.origin).host,status:'working'}))]};
   saveLogout();renderLogout();
-  try{
+  if(!data.iam_redirect)try{
     const r=await fetch(data.iam_endpoint,{method:'POST',credentials:'include',headers:{'Accept-Language':'en'},signal:AbortSignal.timeout(15000)}),j=await r.json();
     if(!r.ok||j.status!=='ok'&&!(j.status==='error'&&j.msg==='Please login first'))throw Error();
     const check=await fetch(new URL('/api/get-account',data.iam_endpoint),{credentials:'include',headers:{'Accept-Language':'en'},cache:'no-store',signal:AbortSignal.timeout(15000)}),identity=await check.json();
@@ -1018,6 +1054,11 @@ async function runLogout(data) {
     try{logoutState.results[index+1].status=await logoutBridge(target)?'signed_out':'failed';}catch{logoutState.results[index+1].status='failed';}
     saveLogout();renderLogout();
   }));
+  if(data.iam_redirect){
+    const destination=new URL(data.iam_redirect);
+    if(destination.protocol!=='https:'||destination.origin!==new URL(data.iam_endpoint).origin||destination.username||destination.password)throw Error(t('logoutPartial'));
+    saveLogout();location.assign(destination.href);return;
+  }
   logoutRunning=false;saveLogout();renderLogout();
 }
 async function completeNativeLogout() {
@@ -1047,20 +1088,59 @@ function nativeLogoutPage() {
 }
 function retryLogout(){return completeNativeLogout();}
 
+function checkIAM() {
+  try {
+    sessionStorage.setItem('anas.portal.iam-check','pending');
+    if(location.hash)sessionStorage.setItem('anas.portal.return',location.hash);
+  } catch {}
+  notice(t('iamChecking'));
+  const dark=document.documentElement.dataset.theme==='dark'||document.documentElement.classList.contains('dark');
+  location.replace('/login?check=1&theme='+(dark?'dark':'default'));
+}
+
+function loginEntry() {
+  loginPage();
+  if(location.pathname==='/signed-out'||route()[0]==='recover')return;
+  const result=new URLSearchParams(location.search).get('iam_check');
+  let pending=false;try{pending=sessionStorage.getItem('anas.portal.iam-check')==='pending';}catch{}
+  if(result){
+    try{sessionStorage.removeItem('anas.portal.iam-check');}catch{}
+    const url=new URL(location.href);url.searchParams.delete('iam_check');history.replaceState(null,'',url.pathname+url.search+url.hash);
+  }
+  if(result==='failed'||(!result&&pending)){
+    notice(t('iamCheckFailed'),true);
+    content.append(button(t('iamCheckRetry'),()=>checkIAM(),'secondary'));return;
+  }
+  if(result)return;
+  checkIAM();return;
+}
+
 // --- start ----------------------------------------------------------------------------
 async function start() {
   try {
     const selected=new URLSearchParams(location.search).get('lang')||preference('anas.portal.language')||'';
     const bootstrap=await fetch('/api/bootstrap'+(selected?'?lang='+encodeURIComponent(selected):''),{cache:'no-store'}).then(r=>r.json());
     language=bootstrap.language;csrf=bootstrap.csrf;
+    const oidcLogout=document.querySelector('meta[name=anas-oidc-logout]')?.content;
+    if(oidcLogout){
+      history.replaceState(null,'','/signed-out');
+      try{logoutState=JSON.parse(sessionStorage.getItem('anas.portal.logout'));}catch{}
+      if(!Array.isArray(logoutState?.results)||!logoutState.results.length){nativeLogoutPage();notice(t('logoutPartial'),true);return;}
+      logoutState.results[0].status=oidcLogout==='confirmed'?'signed_out':'failed';
+      logoutRunning=false;saveLogout();renderLogout();return;
+    }
     if(location.pathname==='/signed-out'&&new URLSearchParams(location.search).get('native')==='1'){
       const mode=document.querySelector('meta[name=anas-native-logout]')?.content;
       nativeLogoutPage();if(mode==='automatic')await completeNativeLogout();return;
     }
     if(location.pathname==='/signed-out'&&!bootstrap.authenticated){
-      try{const saved=JSON.parse(sessionStorage.getItem('anas.portal.logout'));if(saved&&Array.isArray(saved.results)&&saved.results.length){logoutState=saved;renderLogout();return;}}catch{}
+      try{const saved=JSON.parse(sessionStorage.getItem('anas.portal.logout'));if(saved&&Array.isArray(saved.results)&&saved.results.length){logoutState=saved;for(const item of logoutState.results)if(item.status==='working')item.status='failed';saveLogout();renderLogout();return;}}catch{}
     }
-    if(!bootstrap.authenticated){if(route()[0]==='recover')recoverPage();else loginPage();return;}
+    if(!bootstrap.authenticated){
+      if(route()[0]==='recover'){recoverPage();return;}
+      loginEntry();return;
+    }
+    try{sessionStorage.removeItem('anas.portal.iam-check');}catch{}
     try{sessionStorage.removeItem('anas.portal.logout');}catch{}
     if(location.pathname==='/signed-out')history.replaceState(null,'','/');
     let resume='';try{resume=sessionStorage.getItem('anas.portal.return')||'';sessionStorage.removeItem('anas.portal.return');}catch{}

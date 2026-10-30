@@ -1003,7 +1003,7 @@ python3 test-env/scripts/test-workspace-temp-storage-extended-e2e.py
 - 级别：`e2e`
 - 覆盖需求：`TEMP-R-029`、`TEMP-R-030`
 - 需求复核摘要：`sha256:f0d5a471485af22b34598c07adb9443bcfaf9094f7db0af3bf9d70b023bda88d`
-- 实现复核摘要：`sha256:2cc5e4a7862260bd817b133cc8012291f5ed0a663fd977f107c2b968cd77d1eb`
+- 实现复核摘要：`sha256:bce28ebd0512a78ccc5febd691baa74f573ef27f011276c2bdd971f586af011e`
 - Fixture：固定Collabora镜像和最小Nextcloud LLNG编辑栈
 - 目标能力：`go`、`linux`、`isolated-docker`、`playwright`、`nextcloud`、`python`
 - Oracle 来源：`runtime`、`filesystem`、`report`、`ui`、`api`

@@ -161,6 +161,9 @@ func runConfig(args []string, jsonMode bool) error {
 			return usageErrorf("%s", err.Error())
 		}
 		policy := policyForTarget(target, reg)
+		if policy.StoreInput {
+			return usageErrorf("%s is stored in Secret Store; use the protected configuration interface or config import, not config set", target.Display)
+		}
 		normalizedValue, err := normalizeConfigInputForPolicy(target, positional[1], policy, reg)
 		if err != nil {
 			return usageErrorf("%s", err.Error())

@@ -23,6 +23,9 @@ func prepareStorage(path string) error {
 		return errors.New("audit mount unavailable")
 	}
 	defer unix.Close(fd)
+	if err := privateStorageRoot(fd); err != nil {
+		return err
+	}
 	for _, name := range []string{"audit", "preferences", "themes"} {
 		if err := privateDirectory(fd, name); err != nil {
 			return err
@@ -38,6 +41,32 @@ func prepareStorage(path string) error {
 		return err
 	}
 	return unix.Setuid(65532)
+}
+
+// Core creates the data mount as root:0700. Its owner must advance together
+// with the child stores before dropping privileges; otherwise the portal
+// cannot traverse the mount to reach its correctly owned audit directory.
+func privateStorageRoot(fd int) error {
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return err
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return errors.New("portal data mount is not a directory")
+	}
+	if stat.Uid == 0 {
+		if stat.Mode&0022 != 0 {
+			return errors.New("portal data mount is writable by another user")
+		}
+		if err := unix.Fchmod(fd, 0700); err != nil {
+			return err
+		}
+		return unix.Fchown(fd, 65532, 65532)
+	}
+	if stat.Uid != 65532 || stat.Mode&0777 != 0700 {
+		return errors.New("unsafe portal data mount owner or mode")
+	}
+	return nil
 }
 
 // privateDirectory creates or verifies one 0700 directory owned by the

@@ -425,31 +425,69 @@ func runConfiguredWithServiceReload(ctx context.Context, config consoleconfig.Co
 	if enrollmentOriginErr == nil {
 		go monitorEnrollmentCertificate(ctx, stateStore, authStore, currentEnrollmentTarget, logger)
 	}
-	if config.TrustedProxy == nil {
-		return serveConsolePort(ctx, listeners, handler, tlsConfig, logger)
+	serveManagement := func(ctx context.Context) error {
+		if config.TrustedProxy == nil {
+			return serveConsolePort(ctx, listeners, handler, tlsConfig, logger)
+		}
+		proxyNetwork := "tcp6"
+		if net.ParseIP(config.TrustedProxy.BindAddress).To4() != nil {
+			proxyNetwork = "tcp4"
+		}
+		proxyListeners, err := consolelistener.ListenAll(ctx, []consolelistener.Spec{{
+			Network: proxyNetwork, Address: net.JoinHostPort(config.TrustedProxy.BindAddress, strconv.Itoa(config.TrustedProxy.Port)),
+		}}, listen)
+		if err != nil {
+			closeRootListeners(listeners)
+			return err
+		}
+		proxyListener := proxyListeners[0]
+		if logger != nil {
+			logger.Printf("trusted proxy management listener %s (TLS-only mTLS)", proxyListener.Addr())
+		}
+		serviceContext, cancelServices := context.WithCancel(ctx)
+		defer cancelServices()
+		results := make(chan error, 2)
+		go func() { results <- serveConsolePort(serviceContext, listeners, handler, tlsConfig, logger) }()
+		go func() {
+			results <- serveTrustedProxyTLS(serviceContext, proxyListener, proxyHandler, proxyTLSConfig, config.TrustedProxy.AllowedSourceIPs, logger)
+		}()
+		first := <-results
+		cancelServices()
+		second := <-results
+		if first != nil {
+			return first
+		}
+		return second
 	}
-	proxyNetwork := "tcp6"
-	if net.ParseIP(config.TrustedProxy.BindAddress).To4() != nil {
-		proxyNetwork = "tcp4"
+	if config.MailInstallSocket == nil {
+		return serveManagement(ctx)
 	}
-	proxyListeners, err := consolelistener.ListenAll(ctx, []consolelistener.Spec{{
-		Network: proxyNetwork, Address: net.JoinHostPort(config.TrustedProxy.BindAddress, strconv.Itoa(config.TrustedProxy.Port)),
-	}}, listen)
+	if serviceAPI == nil {
+		closeRootListeners(listeners)
+		return errors.New("mail install socket requires the service API")
+	}
+	socketOptions := directOptions
+	socketOptions.Security.HostAllowed = (httpapi.MailInstallSocketHostPolicy{Port: config.Port, AllowedDNSHosts: config.AllowedDNSHosts}).Allowed
+	socketHandler, err := httpapi.New(socketOptions)
 	if err != nil {
 		closeRootListeners(listeners)
-		return err
+		return fmt.Errorf("configure mail install socket routes: %w", err)
 	}
-	proxyListener := proxyListeners[0]
-	if logger != nil {
-		logger.Printf("trusted proxy management listener %s (TLS-only mTLS)", proxyListener.Addr())
+	mailListener, err := listenMailInstallSocket(config.MailInstallSocket.Directory, uint32(config.MailInstallSocket.GroupID))
+	if err != nil {
+		closeRootListeners(listeners)
+		return fmt.Errorf("configure mail install socket: %w", err)
 	}
+	defer func() {
+		if err := mailListener.Close(); err != nil {
+			result = errors.Join(result, err)
+		}
+	}()
 	serviceContext, cancelServices := context.WithCancel(ctx)
 	defer cancelServices()
 	results := make(chan error, 2)
-	go func() { results <- serveConsolePort(serviceContext, listeners, handler, tlsConfig, logger) }()
-	go func() {
-		results <- serveTrustedProxyTLS(serviceContext, proxyListener, proxyHandler, proxyTLSConfig, config.TrustedProxy.AllowedSourceIPs, logger)
-	}()
+	go func() { results <- serveManagement(serviceContext) }()
+	go func() { results <- serveMailInstallSocket(serviceContext, mailListener, socketHandler, tlsConfig) }()
 	first := <-results
 	cancelServices()
 	second := <-results

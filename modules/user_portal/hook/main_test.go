@@ -29,6 +29,9 @@ func TestPublicPKCERegistrationAndDefaultPortOrigin(t *testing.T) {
 	if out.Env[p+"OIDC_LOGOUT_URI"] != "https://portal.example.net/oidc/backchannel-logout" {
 		t.Fatal("receiver missing")
 	}
+	if out.Env[p+"POST_LOGOUT_REDIRECT_URIS"] != "https://portal.example.net/oidc/logout-callback" {
+		t.Fatal("exact standard logout callback missing")
+	}
 }
 
 func TestLanguageInheritanceAndUnsupportedFallback(t *testing.T) {
@@ -38,6 +41,15 @@ func TestLanguageInheritanceAndUnsupportedFallback(t *testing.T) {
 		if err != nil || out.Env["USER_PORTAL_LANGUAGE"] != tc.want {
 			t.Fatal(tc, out.Env["USER_PORTAL_LANGUAGE"], err)
 		}
+	}
+}
+
+func TestIssuerRetainsExactTrailingSlash(t *testing.T) {
+	const issuer = "https://iam.example.net/"
+	r := request{Phase: "calculate", Env: map[string]string{"ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA": "casdoor-account/v1", "USER_PORTAL_DOMAIN_PREFIX": "portal", "BASE_DOMAIN": "example.net", "TRAEFIK_BASE_PORT": "443", "ANAS_IAM_BINDING__USER_PORTAL__INTERFACE": "oidc", "ANAS_IAM_BINDING__USER_PORTAL__OIDC_ISSUER_URL": issuer}}
+	out, err := handle(r)
+	if err != nil || out.Env["USER_PORTAL_ISSUER"] != issuer {
+		t.Fatalf("issuer identity changed: %q, %v", out.Env["USER_PORTAL_ISSUER"], err)
 	}
 }
 

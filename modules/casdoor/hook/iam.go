@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
 )
@@ -61,6 +62,11 @@ func publishIAMEndpoints(e map[string]string) error {
 }
 
 func renderInitData(e map[string]string) (string, error) {
+	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
+		if _, err := iamClaimGroups(e, iamClientPrefix+envName(app)+"__"); err != nil {
+			return "", err
+		}
+	}
 	catalog, err := appcatalog.FromEnvironment(e)
 	if err != nil {
 		return "", err
@@ -102,7 +108,6 @@ func renderInitData(e map[string]string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			application["enableAutoSignin"] = true
 			applications = append(applications, reauthentication)
 		}
 	}
@@ -202,6 +207,9 @@ func oidcApplication(e map[string]string, app string) (map[string]any, error) {
 	}
 	result := baseApplication(e, app)
 	result["type"] = "OIDC"
+	// Reuse an existing IAM session for every ordinary OIDC consumer. A
+	// separate recent-authentication application disables this explicitly.
+	result["enableAutoSignin"] = true
 	result["clientId"] = e[prefix+"CLIENT_ID"]
 	result["clientSecret"] = e[prefix+"CLIENT_SECRET"]
 	result["redirectUris"] = append(splitCSV(e[prefix+"REDIRECT_URIS"]), splitCSV(e[prefix+"POST_LOGOUT_REDIRECT_URIS"])...)
@@ -390,12 +398,35 @@ func ldapCustomAttributes(e map[string]string) map[string]string {
 	return result
 }
 
+// Claim-only groups create trusted directory membership projections, without
+// adding them to any application's admission permission. The directory groups
+// themselves must already exist. Casdoor IDs and the existing watcher CSV do
+// not represent slash/comma names, so reject them rather than misproject them.
+func iamClaimGroups(e map[string]string, prefix string) ([]string, error) {
+	raw := strings.TrimSpace(e[prefix+"CLAIM_GROUPS"])
+	if raw == "" {
+		return nil, nil
+	}
+	var groups []string
+	if len(raw) > 65536 || json.Unmarshal([]byte(raw), &groups) != nil || groups == nil {
+		return nil, fmt.Errorf("%sCLAIM_GROUPS must be a JSON array of directory group names", prefix)
+	}
+	for _, name := range groups {
+		if name == "" || len(name) > 255 || strings.TrimSpace(name) != name || strings.ContainsAny(name, ",/") || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+			return nil, fmt.Errorf("%sCLAIM_GROUPS contains a group name Casdoor cannot represent", prefix)
+		}
+	}
+	return groups, nil
+}
+
 func managedIAMGroups(e map[string]string) []string {
 	seen := map[string]bool{}
 	result := []string{}
 	for _, app := range append(splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]), splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"])...) {
 		prefix := iamClientPrefix + envName(app) + "__"
 		groups := splitCSV(e[prefix+"ALLOW_GROUPS"])
+		claimGroups, _ := iamClaimGroups(e, prefix) // renderInitData validates before any files are emitted.
+		groups = append(groups, claimGroups...)
 		for _, attribute := range parseIAMAttributes(e[prefix+"ATTRIBUTES"]) {
 			if strings.EqualFold(attribute.source, "anasRole") {
 				groups = append(groups, defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins"))

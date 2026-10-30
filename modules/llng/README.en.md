@@ -8,7 +8,7 @@ SSO portal, application launcher, and OIDC/SAML identity provider.
 | Item | Value |
 | --- | --- |
 | Module | `llng` |
-| Version / revision | `2.23.2-r13` |
+| Version / revision | `2.23.4-r13` |
 | Status | `developing` |
 | Category | `identity` |
 | Runtime | `compose` |
@@ -34,7 +34,7 @@ modules:
 
 Samba AD supplies users and groups. The Portal authenticates against the directory, and IAM publishes OIDC/SAML endpoints and group attributes to consumers. `Admins` may enter the Manager.
 
-Pinned LLNG `2.23.2` configures back-channel logout and session-required when an OIDC RP declares a standard endpoint; Portal logout can revoke application sessions whose E2E has passed. SAML imports the SLS from SP metadata and signs SLO messages; Redirect and POST both require a browser. Every apply first removes old `LogoutUrl`, OIDC RP, and SAML SLS/SP metadata, then rebuilds the current protocol, covering declaration removal, domain changes, protocol switches, and repeated apply.
+Pinned LLNG `2.23.4` configures back-channel logout and session-required when an OIDC RP declares a standard endpoint; Portal logout can revoke application sessions whose E2E has passed. SAML imports the SLS from SP metadata and signs SLO messages; Redirect and POST both require a browser. Every apply first removes old `LogoutUrl`, OIDC RP, and SAML SLS/SP metadata, then rebuilds the current protocol, covering declaration removal, domain changes, protocol switches, and repeated apply.
 
 | Capability | Current declaration |
 | --- | --- |
@@ -51,9 +51,9 @@ There is currently no generic `anas user/group/password` command. Directory-back
 `oidcRPMetaDataOptionsUserIDAttr=anasIdentityAnchor` for every RP. ID Tokens, UserInfo,
 refreshed ID Tokens and Logout Tokens use the same source. Each RP rule requires a non-empty
 session anchor together with its application-group rule, without a username fallback.
-Portal login still uses `sAMAccountName`; `whatToTrace` remains a lower-case login label for
-logs and session searches. LLNG keeps no user replica. Session IDs are table primary keys;
-`_whatToTrace` is an indexed field.
+Password login still uses `sAMAccountName`; Passkeys look up the immutable anchor.
+`whatToTrace=anasIdentityAnchor` keeps persistent credentials valid across renames. LLNG keeps no
+user replica. Ordinary sessions use session IDs; persistent sessions are located by the anchor.
 
 Netbird exposes `sub` in ordinary users' API URLs without an approved anchor-projection
 exception. Both calculate and render_env reject the LLNG + Netbird OIDC combination
@@ -62,7 +62,7 @@ anchor UIDs and technical paths; human names still come from directory attribute
 
 | Directory change | LLNG behavior | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` renamed | Fresh authentication reads the new label while OIDC `sub` stays unchanged. Anchor consumers reuse their account. Stable SAML NameID remains pending | `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
+| `sAMAccountName` renamed | Fresh authentication reads the new label while OIDC `sub` stays unchanged. Anchor consumers reuse their account. SAML anchor mapping is configured; real SP acceptance is pending | OIDC `verified`; see [host acceptance](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 | `mail` / UPN changed | Fresh directory authentication reads new attributes without changing OIDC `sub` | `inferred`; no dedicated change probe this round |
 | `displayName` / other profile fields changed | Fresh authentication reads directory values; existing sessions can retain older values | Read path `verified`; change-specific behavior `inferred` |
 | Direct / recursive groups changed | Fresh authentication recomputes membership; directory-event revocation of existing sessions is not implemented | Historical admission matrix `verified`; live revocation pending |
@@ -111,6 +111,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 
 | Path | Type | Constraints | Default | Default source | Environment | Input required | Must resolve | Sensitive | Editability | Effect | Purpose |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `llng.background_logout_exceptions` | string | — | `""` | `static` | `LLNG_BACKGROUND_LOGOUT_EXCEPTIONS` | no | no | no | yes | `container_recreate` | Explicitly accepted OIDC client IDs without background logout, comma-separated; existing application sessions may remain valid. |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | no | no | no | no: `migrate-llng-database` | `data_migrate` | Existing LLNG data must be migrated explicitly. |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | no | no | no | yes | `reconcile` | SAML/OIDC metadata, clients, and proxy routes must change together. |
@@ -118,6 +119,7 @@ This inventory comes from the current `module.yml` and `anas config list`. The e
 | `llng.log_level` | string | — | `warn` | `static` | `LLNG_LOG_LEVEL` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.manager_domain_prefix` | string | — | `auth-manager` | `static` | `LLNG_MANAGER_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 | `llng.test_domain_prefix` | string | — | `auth-test` | `static` | `LLNG_TEST_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
+| `llng.workers` | int | — | `2` | `static` | `LLNG_WORKERS` | no | no | no | yes | `container_recreate` | No specialized reconciler is declared; recreate the affected container to apply rendered configuration. |
 
 ### Query and modify
 
@@ -147,6 +149,27 @@ anas plan -c /srv/anas/config.yml
 anas config list llng -w /srv/anas
 anas status -w /srv/anas
 ```
+
+## Samba password changes
+
+The Module enables `ldapChangePasswordAsUser=1` and `ldapAllowResetExpiredPassword=1`
+in both its initial configuration and startup reconciliation of persisted configurations.
+LLNG uses its native AD backend over certificate-verified LDAPS; no upstream patch is needed.
+A correct current password opens the mandatory-change form for `pwdLastSet=0`, or the
+expired-password form for genuine expiry. After a successful change, users must sign in
+again with the new password; changing it does not create an SSO session. See the
+[acceptance plan](dev-docs/plans/llng-password-change.md) for actual OIDC callback evidence.
+
+The AD writeback deletes the old `unicodePwd` and adds the new value in one LDAP Modify.
+Samba validates the old password and domain policy even though the search connection
+performs the operation. This is distinct from an administrative password replacement.
+LLNG preflights minimum length and confirmation; LDAP 19/53 cannot reliably identify
+which complexity, name, history or minimum-age rule failed. The full history/minimum-age
+matrix was not accepted in this change. Run ANAS apply/reconcile after changing Samba
+policy to refresh LLNG guidance. Samba's old-password grace period is left unchanged.
+
+Regression entry points are `server-llng-password-policy-e2e.sh`,
+`server-llng-password-config-e2e.sh`, and `llng-password-oidc.spec.mjs` under `test-env/`.
 
 ## Current limitations
 

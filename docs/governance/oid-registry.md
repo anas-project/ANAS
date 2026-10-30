@@ -12,8 +12,25 @@
 | `1.3.6.1.4.1.66678.1.1` | `schemaClasses` | schema class 分配分支 | namespace |
 | `1.3.6.1.4.1.66678.1.2` | `schemaAttributes` | schema attribute 分配分支 | namespace |
 | `1.3.6.1.4.1.66678.1.2.1` | `anasIdentityAnchor` | 文本身份锚点 AD schema attribute | active |
+| `1.3.6.1.4.1.66678.1.1.1` | `anasMailbox` | Non-login mailbox resource owned by an existing personnel anchor | allocated |
+| `1.3.6.1.4.1.66678.1.1.2` | `anasMailAddressClaim` | Unique managed SMTP address claim referring to one mailbox | allocated |
+| `1.3.6.1.4.1.66678.1.2.2` | `anasMailboxID` | Stable mailbox UUID, separate from personnel identity | allocated |
+| `1.3.6.1.4.1.66678.1.2.3` | `anasMailOwnerAnchor` | Reference to the owning personnel anasIdentityAnchor | allocated |
+| `1.3.6.1.4.1.66678.1.2.4` | `anasMailboxKind` | Mailbox resource kind: primary or additional | allocated |
+| `1.3.6.1.4.1.66678.1.2.5` | `anasMailDefaultAddress` | Normalized default SMTP address of one mailbox | allocated |
+| `1.3.6.1.4.1.66678.1.2.6` | `anasMailAddress` | Normalized complete SMTP address held by one claim | allocated |
+| `1.3.6.1.4.1.66678.1.2.7` | `anasMailAddressKind` | Claim kind: primary, additional default or alias | allocated |
+| `1.3.6.1.4.1.66678.1.2.8` | `anasMailState` | Mail resource or address lifecycle state | allocated |
+| `1.3.6.1.4.1.66678.1.2.9` | `anasMailConfigVersion` | Opaque UUID changed by each conditional configuration update | allocated |
+| `1.3.6.1.4.1.66678.1.2.10` | `anasMailOperationID` | Stable UUID of the current resumable mail operation | allocated |
+| `1.3.6.1.4.1.66678.1.2.11` | `anasMailOperationState` | Durable progress of the current mail operation | allocated |
+| `1.3.6.1.4.1.66678.1.2.12` | `anasMailOperationData` | Non-secret JSON intent for the current mail operation | allocated |
+| `1.3.6.1.4.1.66678.1.2.13` | `anasMailOwnershipHistory` | Non-secret ownership transition records keyed by operation UUID | allocated |
+| `1.3.6.1.4.1.66678.1.2.14` | `anasMailQuotaState` | Primary mailbox JSON quota configuration and pending reservations | allocated |
 | `1.3.6.1.4.1.66678.2` | `managementAndTelemetry` | 管理与遥测对象分配分支 | reserved namespace |
 | `1.3.6.1.4.1.66678.3` | `protocolIdentifiers` | 协议标识分配分支 | reserved namespace |
+
+邮件目录分配对应 `modules/samba_dc/samba_dc/root/usr/local/share/anas/mail-schema.json`。`allocated` 表示已永久分配并进入实现，不表示现有业务域已安装；既有人员 `anasIdentityAnchor` 不复制为邮箱资源身份。固定 schema GUID 同时记录在该定义文件中。
 
 ## 历史分配
 

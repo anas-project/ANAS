@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -147,7 +148,15 @@ func renderEnv(module string, env map[string]string, workdir string, secrets *se
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"conf/application-list.json": document}, nil
+	policies, err := renderAccountPolicies(catalog, env)
+	if err != nil {
+		return nil, err
+	}
+	palette, err := renderPortalTheme(catalog, env)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{"conf/application-list.json": document, "conf/account-policies.json": policies, "conf/portal-palette.css": palette}, nil
 }
 func disabledServices(module string, env map[string]string) []string {
 	return nil
@@ -172,6 +181,13 @@ func changed(old, cur map[string]string) map[string]string {
 	return out
 }
 func calcLLNG(e map[string]string, _ string, secrets *secretStore) error {
+	workers, err := strconv.Atoi(defaultValue(e["LLNG_WORKERS"], "2"))
+	if err != nil || workers < 1 || workers > 32 {
+		return fmt.Errorf("LLNG_WORKERS must be an integer between 1 and 32")
+	}
+	e["LLNG_WORKERS"] = strconv.Itoa(workers)
+	e["LLNG_DIRWATCH_EVENTS_DIR"] = defaultValue(e["ANAS_DIRECTORY_EVENTS_DIR"], filepath.Join(e["DATA_PATH"], "samba_dc", "events"))
+	e["LLNG_DIRWATCH_EVENT_FILE"] = "/var/lib/anas-directory-events/" + defaultValue(e["ANAS_DIRECTORY_EVENTS_FILE_NAME"], "events.jsonl")
 	return identityCalc("LLNG")(e, secrets)
 }
 func identityCalc(prefix string) func(map[string]string, *secretStore) error {

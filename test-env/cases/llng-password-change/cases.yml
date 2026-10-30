@@ -1,0 +1,82 @@
+api_version: anas.test-cases/v2
+topic: llng-password-change
+title: LLNG Samba 强制改密与 OIDC 回跳
+requirement_document: modules/llng/dev-docs/requirements/llng-password-change.md
+plan_document: modules/llng/dev-docs/plans/llng-password-change.md
+requirement_scope: [LLNG-PWD-R-001, LLNG-PWD-R-002, LLNG-PWD-R-003, LLNG-PWD-R-004, LLNG-PWD-R-005]
+cases:
+  - id: LLNG-PWD-T-001
+    title: 新安装与已有持久配置收敛
+    status: active
+    level: e2e
+    requirements: [LLNG-PWD-R-001, LLNG-PWD-R-002]
+    requirement_digest: sha256:4aea6b35581c69ddcb2cc7a4d6a1274a196a6d72a4e37c01ca93a0da0eff9346
+    implementation_digest: sha256:3ca6cd12f47624f14ffd518c3f4091ea3b55e551093d5ac621821dcd5b61b24a
+    fixture: 独立 Docker 中从当前 Module 源码构建的 LLNG，使用真实 PostgreSQL 和 Samba LDAPS
+    capabilities: [docker, ssh, samba, llng]
+    preconditions: [显式 test socket 和独立 data-root 已通过 guard, 新安装的测试 LLNG 已完成启动]
+    steps: [读取两个运行时开关, 将持久值设为 0, 重启同一个 LLNG 容器, 等待 Module 完成启动后再次读取]
+    implementation:
+      files: [test-env/scripts/server-llng-password-config-e2e.sh]
+      commands: [bash test-env/scripts/server-llng-password-config-e2e.sh]
+    assertions: [新安装的两个开关都是 1, 不清空持久配置也能将两个旧值收敛回 1]
+    oracle:
+      sources: [return-value, filesystem]
+    negative_cases: [向持久配置写入两个禁用值，要求重启纠正]
+    validity:
+      method: counterexample
+      commands: [bash test-env/scripts/server-llng-password-config-e2e.sh]
+      evidence: 对真实持久配置注入禁用值，保留配置卷重启
+    cleanup: [测试结束删除本次专用 Docker 容器与域数据，保留脱敏日志]
+    timeout: 5m
+    sensitive_data: 不输出完整 LLNG 配置、目录密码或 OIDC secret
+  - id: LLNG-PWD-T-002
+    title: 强制改密后的原始 OIDC 回跳
+    status: active
+    level: e2e
+    requirements: [LLNG-PWD-R-003, LLNG-PWD-R-005]
+    requirement_digest: sha256:8cfdbe57a381d74713e3fe3d243ab5861db25cd9a2f074c5fb8b6e2383700132
+    implementation_digest: sha256:e0cb72c777fe93897c81553eb253b8b1727c72ba44f53e728bca62018f1512fa
+    fixture: 独立 Samba pwdLastSet=0 用户，真实 LLNG Module 与 Vikunja 2.4.0、TLS 代理
+    capabilities: [docker, ssh, samba, browser]
+    preconditions: [只使用一次性测试域账号, 浏览器凭据 JSON 文件权限为 0600, ANAS_TEST_PASSWORD_FLOW=reset]
+    steps: [从 Vikunja 发起 OIDC, 提交错误旧密码, 提交正确旧密码并修改密码, 从成功后的登录表单用新密码登录]
+    implementation:
+      files: [test-env/playwright/llng-password-oidc.spec.mjs, test-env/playwright/llng-password-oidc.config.mjs]
+      commands: [npm run e2e:llng-password-oidc]
+    assertions: [错误密码不产生改密表单或会话, 正确旧密码显示 PE25, 改密成功显示 PE35 且尚无 SSO, 回跳 state 与原请求一致且只有一次回调, Vikunja 用户 API 返回 200 和正确用户名]
+    oracle:
+      sources: [api, ui]
+    negative_cases: [错误旧密码, 不允许重新发起应用 OIDC 请求掩盖 state 丢失]
+    validity:
+      method: counterexample
+      commands: [npm run e2e:llng-password-oidc]
+      evidence: 同一浏览器事务先提交错误密码，再完成改密与应用用户 API 验证
+    cleanup: [关闭浏览器上下文, 删除临时凭据, 清理专用测试栈]
+    timeout: 3m
+    sensitive_data: 关闭 trace、截图、视频；报告不保存密码、token、授权码或 state 值
+  - id: LLNG-PWD-T-003
+    title: 自然到期后的原始 OIDC 回跳
+    status: active
+    level: e2e
+    requirements: [LLNG-PWD-R-004, LLNG-PWD-R-005]
+    requirement_digest: sha256:d70aad83ad51ee5cf11ecf6e5a3fccf6bd7cc89571c81fba7a7637ef33290f20
+    implementation_digest: sha256:e0cb72c777fe93897c81553eb253b8b1727c72ba44f53e728bca62018f1512fa
+    fixture: 独立 Samba 域缩短 maxPwdAge 后真正到期的用户及同一 LLNG/Vikunja 栈
+    capabilities: [docker, ssh, samba, browser]
+    preconditions: [pwdLastSet 非零且计算属性带 0x800000, 查询账号密码不参与到期, ANAS_TEST_PASSWORD_FLOW=expired]
+    steps: [确认目录到期标志, 从 Vikunja 发起 OIDC 并先尝试错误密码, 使用原密码进入 PE22 表单, 改密后重新登录并核对原请求回跳]
+    implementation:
+      files: [test-env/playwright/llng-password-oidc.spec.mjs, test-env/playwright/llng-password-oidc.config.mjs]
+      commands: [npm run e2e:llng-password-oidc]
+    assertions: [错误密码不产生改密表单或会话, 正确旧密码显示 PE22, 改密显示 PE35 后再次认证, 回跳 state 保持且 Vikunja 用户 API 返回 200]
+    oracle:
+      sources: [api, ui, return-value]
+    negative_cases: [错误旧密码, 不得以 pwdLastSet=0 替代自然过期]
+    validity:
+      method: counterexample
+      commands: [npm run e2e:llng-password-oidc]
+      evidence: 目录计算属性确认真正到期，错误密码反例与实际应用会话正例在同一事务执行
+    cleanup: [恢复测试域 maxPwdAge, 关闭浏览器和删除临时凭据, 清理专用测试栈]
+    timeout: 3m
+    sensitive_data: 不输出凭据或协议 token；原始执行 JSON 进入 Git 忽略目录

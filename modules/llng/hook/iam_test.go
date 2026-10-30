@@ -9,6 +9,41 @@ import (
 	"testing"
 )
 
+func TestTraefikAddressLookupWaitsForPingOutput(t *testing.T) {
+	script, err := os.ReadFile("../llng/root/root/llng-config.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lookup string
+	for _, line := range strings.Split(string(script), "\n") {
+		if strings.HasPrefix(line, "traefik_ip=$(") {
+			lookup = line
+		}
+	}
+	if lookup == "" {
+		t.Fatal("missing Traefik address lookup")
+	}
+	// A reply can arrive after the header has already reached sed. The old
+	// early quit closed the pipe and intermittently killed the producer.
+	setup := `set -eo pipefail
+TRAEFIK_HOSTNAME=proxy.test
+ping() {
+  printf 'PING proxy.test (192.0.2.17): 56 data bytes\n'
+  sleep 0.1
+  printf '64 bytes from 192.0.2.17: icmp_seq=0\n'
+}
+`
+	cmd := exec.Command("bash", "-c", setup+lookup+"\nprintf '%s' \"$traefik_ip\"")
+	output, err := cmd.CombinedOutput()
+	if err != nil || string(output) != "192.0.2.17" {
+		t.Fatalf("delayed ping aborted lookup: %v, output=%q", err, output)
+	}
+	cmd = exec.Command("bash", "-c", "set -eo pipefail\nTRAEFIK_HOSTNAME=proxy.test\nping() { return 2; }\n"+lookup)
+	if err := cmd.Run(); err == nil {
+		t.Fatal("failed address lookup must still stop configuration")
+	}
+}
+
 func TestTrustedOIDCRoleUsesGroupMacro(t *testing.T) {
 	body, err := os.ReadFile("../llng/root/root/llng-config.sh")
 	if err != nil {
@@ -173,7 +208,7 @@ func TestManifestClaimsCrossModuleVariablesUsedAtRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{
-		"ANAS_TLS_CERTS_DIR", "ANAS_TLS_INTERNAL_CA_NAME",
+		"ANAS_TLS_CERTS_DIR", "ANAS_TLS_INTERNAL_CA_NAME", "ANAS_TLS_TRUST_BUNDLE_NAME",
 		"SAMBA_DC_ADMIN_GROUP_NAME", "SAMBA_DC_BASE_GROUPS_DN", "SAMBA_DC_BASE_GROUPS_ROLE_DN",
 		"SAMBA_DC_BASE_USERS_DN", "SAMBA_DC_LDAPS_PORT", "SAMBA_DC_LDAPS_SERVER_URL",
 		"SAMBA_DC_PASSWORD_BIND_DN", "SAMBA_DC_PASSWORD_BIND_PASSWORD", "SAMBA_DC_USER_CLASS_FILTER",

@@ -1,13 +1,15 @@
 ---
 doc_type: research
 created: 2026-10-16
-updated: 2026-10-16
+updated: 2026-10-23
 evidence_as_of: 2026-10-16
 ---
 
 # 邮件服务器对个人多地址邮箱及 ANAS 的适配研究
 
 本报告研究已确认的“一个主邮箱、多个个人别名、共用收件箱”，以及用户自助增删别名如何接入 ANAS。事实来自官方文档、固定版本源码和同日仓库 API；本轮没有启动邮件服务器、测量资源或在 finance 修改服务。产品设计见[门户用户管理、邮箱归属与域级管理方案](../architecture/portal-account-mail-administration.md)。
+
+2026-10-23 补充入口：本文产品排名与事实截点仍为 2026-10-16。当前实施顺序及新增的 DATA_PATH、托管收发、AD 别名和外部 Module 读取问题见[专项研究](mail-routing-alias-and-module-access.md)；其中纳入后续固定源码核验的 Stalwart 身份/别名删除缺口，以及 DMS + Roundcube 的真实登录/恢复结果和两项失败（主地址变化后的 Webmail 身份、可见 From 授权）；不能仅据本文早期 A 级排序直接上线。
 
 ## 1. 结论
 

@@ -2,7 +2,8 @@ services:
   anas_samba_dc:
     container_name: ${CONTAINER_PREFIX}${MODULE_NAME}
     build: 
-      context: ./${MODULE_NAME}
+      context: .
+      dockerfile: samba_dc/Dockerfile
       network: ${DOCKER_BUILD_NETWORK:-default}
       args:
         - CHINESE_BUILD_SPEEDUP
@@ -16,13 +17,14 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "test -f /run/anas-identity-schema.ready && test -f /run/anas-zone.ready && test -f /run/anas-structure.ready && pgrep -x named >/dev/null && samba-tool domain level show >/dev/null && samba-tool user show \"$$SAMBA_DC_ADMIN_NAME\" >/dev/null && nc -z 127.0.0.1 53 && nc -z 127.0.0.1 88 && nc -z 127.0.0.1 389 && nc -z 127.0.0.1 636 && host \"$$SAMBA_DC_DC_DOMAIN\" 127.0.0.1 >/dev/null"]
       interval: 30s
-      timeout: 10s
+      timeout: 30s
       retries: 6
-      start_period: 90s
+      start_period: 180s
     volumes:
       - "${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro"
       - "${LEGO_CERTS_PATH}:/certs:ro"
       - "${DATA_PATH}/samba_dc/var:/var/lib/samba"
+      - "${DATA_PATH}/samba_dc/mail-bootstrap:/var/lib/anas-mail-bootstrap"
       - "${SAMBA_DC_AUDIT_PATH}:/var/log/samba-audit"
 
   # Docker creates a bind-mount source as root, and the anchor worker runs
@@ -52,8 +54,6 @@ services:
         - DOCKER_HUB_REGISTRY
     image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-samba-dc-anchor:4.23.6-r13
     restart: unless-stopped
-    env_file:
-      - .env
     depends_on:
       anas_samba_dc:
         condition: service_healthy
@@ -62,6 +62,7 @@ services:
     dns:
       - ${LOCAL_DNS_SERVER}
     environment:
+      TZ: ${TZ}
       ANCHOR_LDAP_URL: ${SAMBA_DC_LDAPS_SERVER_URL_PORT}
       ANCHOR_BIND_DN: ${SAMBA_DC_ANCHOR_BIND_DN}
       ANCHOR_BIND_PASSWORD: ${SAMBA_DC_ANCHOR_BIND_PASSWORD}

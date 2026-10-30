@@ -71,6 +71,7 @@ type Module struct {
 	Commands               []ModuleCommand
 	UseHostLAN             string
 	PublishesDomain        bool
+	AdditionalDomains      []string
 	Hook                   HookConfig
 	RuntimeType            string
 	ComposeFile            string

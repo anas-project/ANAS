@@ -189,6 +189,10 @@ config:
     - ANAS_IDENTITY_APP_CLIENTS
     - ANAS_IDENTITY_CAPABILITY_GROUPS
   defaults:
+    mail_directory_enabled: false
+    mail_management_policy: ""
+    mail_initial_source_domain: ""
+    mail_initial_snapshot_id: ""
     application_dns_mode: auto
     app_filter: "true"
     create_structure: "true"
@@ -233,6 +237,16 @@ config:
     # on to keep all of its processes writing to the current file.
     max_log_size: "2048"
   types:
+    mail_directory_enabled: bool
+    mail_management_policy: string
+    mail_initial_source_domain: string
+    mail_initial_snapshot_id: string
+    mail_creator_bind_password:
+      kind: string
+      default_source: generated
+    mail_address_bind_password:
+      kind: string
+      default_source: generated
     domain:
       kind: string
       constraints:
@@ -305,6 +319,28 @@ config:
       kind: string
       default_source: generated
   changes:
+    mail_initial_source_domain:
+      effect: data_migrate
+      apply: bootstrap-mail-directory
+      description: Initial converged source domain; pinned by the completion marker and never repointed by normal restart.
+    mail_initial_snapshot_id:
+      effect: data_migrate
+      apply: bootstrap-mail-directory
+      description: Verified initial full snapshot reference; pinned after successful import.
+    mail_directory_enabled:
+      effect: data_migrate
+      apply: bootstrap-mail-directory
+      description: Enable only after a verified full snapshot and stopped external writers; installs non-login resources and imports converged primary addresses offline.
+    mail_management_policy:
+      effect: container_recreate
+    mail_creator_bind_password:
+      effect: credential_rotate
+      apply: rotate-mail-creator-bind-password
+      sensitive: true
+    mail_address_bind_password:
+      effect: credential_rotate
+      apply: rotate-mail-address-bind-password
+      sensitive: true
     mail_domain:
       effect: data_migrate
       apply: migrate-default-mail-addresses

@@ -114,6 +114,9 @@ func handle(req hookRequest) (hookResponse, error) {
 		if _, _, err := mailDefaults(env, plan.SambaDomain); err != nil {
 			return hookResponse{}, err
 		}
+		if err := validateMailDirectory(env); err != nil {
+			return hookResponse{}, err
+		}
 		return hookResponse{Plan: map[string]string{
 			"requested_mode": plan.RequestedMode,
 			"resolved_mode":  plan.ResolvedMode,
@@ -285,6 +288,9 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 		return err
 	}
 	e["SAMBA_DC_ANCHOR_BIND_PASSWORD"] = anchorBindPassword
+	if err := calculateMailDirectory(e, secrets); err != nil {
+		return err
+	}
 	e["SAMBA_DC_ANCHOR_USER_BASES"] = defaultValue(e["SAMBA_DC_ANCHOR_USER_BASES"], e["SAMBA_DC_BASE_USERS_DN"])
 	e["SAMBA_DC_ANCHOR_GROUP_BASES"] = defaultValue(e["SAMBA_DC_ANCHOR_GROUP_BASES"], e["SAMBA_DC_BASE_GROUPS_DN"])
 	e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"] = defaultValue(e["SAMBA_DC_ANCHOR_SCAN_INTERVAL"], "300")
@@ -304,9 +310,20 @@ func calcSambaDC(e map[string]string, _ string, secrets *secretStore) error {
 	e["SAMBA_DC_ANCHOR_EVENT_FILE"] = "/var/lib/anas-directory-events/events.jsonl"
 	e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"] = defaultValue(
 		e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"],
-		"member,memberOf,userAccountControl,sAMAccountName,userPrincipalName,displayName,mail,"+
+		"member,memberOf,userAccountControl,lockoutTime,accountExpires,sAMAccountName,userPrincipalName,displayName,mail,"+
 			e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
 	)
+	// Retain configured extra filters while adding the attributes consumed by
+	// mail. Previously persisted defaults must acquire these fields on upgrade.
+	for _, attribute := range strings.Split("primaryGroupID,proxyAddresses,pwdLastSet,telephoneNumber,mobile,department,title,givenName,sn,description,anasMailboxID,anasMailOwnerAnchor,anasMailboxKind,anasMailDefaultAddress,anasMailAddress,anasMailAddressKind,anasMailState,anasMailConfigVersion,anasMailOperationID,anasMailOperationState,anasMailOperationData,anasMailQuotaState,anasMailOwnershipHistory", ",") {
+		found := false
+		for _, configured := range strings.Split(e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"], ",") {
+			found = found || strings.EqualFold(strings.TrimSpace(configured), attribute)
+		}
+		if !found {
+			e["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"] += "," + attribute
+		}
+	}
 	e["SAMBA_DC_GROUP_CLASS_NAME"] = "group"
 	e["SAMBA_DC_GROUP_CLASS_FILTER"] = "(&(objectClass=group)(" + e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"] + "=*))"
 	e["SAMBA_DC_USER_CLASS_NAME"] = "user"

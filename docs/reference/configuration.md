@@ -6,11 +6,11 @@
 ## 结论
 
 <!-- generated:configuration-summary:start -->
-- 内置 Module：`25`
-- 已声明参数：共 `218` 个（全局 `18` 个、Module 所有 `200` 个；结构化 Module 参数 `196` 个、裸 `env.*` 参数 `4` 个）
-- 解析阶段：`input_required` `2` 个、`must_resolve` `35` 个、未知类型 `0` 个
-- 类型分布：`bool` `28`、`enum` `29`、`int` `34`、`string` `127`
-- 默认值来源分布：`generated` `10`、`host` `8`、`inherited` `10`、`none` `9`、`runtime` `5`、`static` `176`
+- 内置 Module：`26`
+- 已声明参数：共 `240` 个（全局 `18` 个、Module 所有 `222` 个；结构化 Module 参数 `218` 个、裸 `env.*` 参数 `4` 个）
+- 解析阶段：`input_required` `2` 个、`must_resolve` `36` 个、未知类型 `0` 个
+- 类型分布：`bool` `29`、`enum` `31`、`int` `36`、`string` `144`
+- 默认值来源分布：`generated` `12`、`host` `8`、`inherited` `11`、`none` `9`、`runtime` `5`、`static` `195`
 <!-- generated:configuration-summary:end -->
 - `modules`、`administration`、`identity`、`dynamic_dns`、`rollback` 的控制字段
   和 `secrets` 也有结构化 schema，但它们不是“参数到环境变量”的映射，因此不计入
@@ -179,7 +179,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 `must_resolve: true`、`default_source: none`；只有 resolver 未能注入时才需要 Module 侧输入。
 
 <!-- generated:configuration-constraints:start -->
-当前显式可移植约束：`40` 项。
+当前显式可移植约束：`41` 项。
 
 | 参数路径 | 可移植约束 |
 | --- | --- |
@@ -210,6 +210,7 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `incus.endpoint` | <code>pattern=&#34;^https://[A-Za-z0-9.:_-]+$&#34;</code> |
 | `incus.lan_extra_subnets` | <code>pattern=&#34;^[0-9A-Fa-f:./, ]*$&#34;</code> |
 | `incus.storage_pool` | <code>pattern=&#34;^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$&#34;</code> |
+| `mail.ingress_capacity_bytes` | <code>minimum=0; maximum=9007199254740991</code> |
 | `meshcentral.mps_port` | <code>minimum=1; maximum=65535</code> |
 | `oauth2_proxy.console_proxy_port` | <code>minimum=1; maximum=65535</code> |
 | `samba_dc.domain` | <code>format=&#34;dns_name&#34;</code> |
@@ -240,14 +241,15 @@ JSON 清单中的 `type` 取 `string`、`bool`、`int` 或 `enum`；`enum` 同�
 | `incus` | 7 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.lan_extra_subnets`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
 | `lego` | 2 | `lego.dns_provider`<br>`lego.dns_server` |
-| `llng` | 7 | `llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix` |
+| `llng` | 9 | `llng.background_logout_exceptions`<br>`llng.db_name`<br>`llng.db_type`<br>`llng.domain_prefix`<br>`llng.enable_test`<br>`llng.log_level`<br>`llng.manager_domain_prefix`<br>`llng.test_domain_prefix`<br>`llng.workers` |
+| `mail` | 14 | `mail.db_type`<br>`mail.domain_prefix`<br>`mail.iam_protocol`<br>`mail.ingress_capacity_bytes`<br>`mail.ingress_credentials`<br>`mail.ingress_sources`<br>`mail.language`<br>`mail.outbound_passwords`<br>`mail.outbound_routing`<br>`mail.service_api_credentials_dir`<br>`mail.service_api_socket_dir`<br>`mail.service_api_url`<br>`mail.service_api_workspace`<br>`mail.webmail_domain_prefix` |
 | `mariadb` | 3 | `mariadb.adminer_enabled`<br>`mariadb.forward_auth_interface`<br>`mariadb.root_password` |
 | `meshcentral` | 5 | `meshcentral.db_name`<br>`meshcentral.db_type`<br>`meshcentral.domain_prefix`<br>`meshcentral.iam_protocol`<br>`meshcentral.mps_port` |
 | `netbird` | 2 | `netbird.domain_prefix`<br>`netbird.iam_protocol` |
 | `nextcloud` | 16 | `nextcloud.browser_logout_return_url`<br>`nextcloud.db_name`<br>`nextcloud.db_type`<br>`nextcloud.domain_prefix`<br>`nextcloud.files_trash_delete`<br>`nextcloud.iam_protocol`<br>`nextcloud.language`<br>`nextcloud.locale`<br>`nextcloud.log_level`<br>`nextcloud.memories_enabled`<br>`nextcloud.memory_limit`<br>`nextcloud.phone_region`<br>`nextcloud.rm_skeleton_files`<br>`nextcloud.talk_enabled`<br>`nextcloud.trashbin_retention_obligation`<br>`nextcloud.upload_max_size` |
 | `oauth2_proxy` | 4 | `oauth2_proxy.console_proxy_enabled`<br>`oauth2_proxy.console_proxy_port`<br>`oauth2_proxy.domain_prefix`<br>`oauth2_proxy.iam_protocol` |
 | `postgres` | 4 | `postgres.adminer_enabled`<br>`postgres.forward_auth_interface`<br>`postgres.password`<br>`postgres.username` |
-| `samba_dc` | 41 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.mail_domain`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
+| `samba_dc` | 47 | `samba_dc.admin_complex_pass`<br>`samba_dc.admin_lockout_duration`<br>`samba_dc.admin_lockout_reset_after`<br>`samba_dc.admin_lockout_threshold`<br>`samba_dc.admin_max_pass_age`<br>`samba_dc.admin_min_pass_age`<br>`samba_dc.admin_min_pass_length`<br>`samba_dc.admin_name`<br>`samba_dc.admin_password`<br>`samba_dc.admin_password_history`<br>`samba_dc.administrator_password`<br>`samba_dc.anchor_bind_name`<br>`samba_dc.anchor_bind_password`<br>`samba_dc.anchor_scan_interval`<br>`samba_dc.app_filter`<br>`samba_dc.application_dns_mode`<br>`samba_dc.create_structure`<br>`samba_dc.dns_allowed_networks`<br>`samba_dc.dns_cache_size`<br>`samba_dc.dns_debug`<br>`samba_dc.dns_forwarders`<br>`samba_dc.domain`<br>`samba_dc.ldap_bind_name`<br>`samba_dc.ldap_bind_password`<br>`samba_dc.log_level`<br>`samba_dc.mail_address_bind_password`<br>`samba_dc.mail_creator_bind_password`<br>`samba_dc.mail_directory_enabled`<br>`samba_dc.mail_domain`<br>`samba_dc.mail_initial_snapshot_id`<br>`samba_dc.mail_initial_source_domain`<br>`samba_dc.mail_management_policy`<br>`samba_dc.max_log_size`<br>`samba_dc.netbios_name`<br>`samba_dc.password_bind_name`<br>`samba_dc.password_bind_password`<br>`samba_dc.realm`<br>`samba_dc.template_homedir`<br>`samba_dc.template_shell`<br>`samba_dc.user_complex_pass`<br>`samba_dc.user_lockout_duration`<br>`samba_dc.user_lockout_reset_after`<br>`samba_dc.user_lockout_threshold`<br>`samba_dc.user_max_pass_age`<br>`samba_dc.user_min_pass_age`<br>`samba_dc.user_min_pass_length`<br>`samba_dc.user_password_history` |
 | `samba_fs` | 7 | `env.SHARE_ACCESS_MODE`<br>`env.SHARE_DIR_NAME`<br>`env.SHARE_GUEST_READ_ONLY`<br>`env.USE_DEFAULT_DOMAIN`<br>`samba_fs.hostname`<br>`samba_fs.log_level`<br>`samba_fs.wsdd_log_level` |
 | `traefik` | 3 | `traefik.base_port`<br>`traefik.domain_prefix`<br>`traefik.forwarded_headers_trusted_ips` |
 | `user_portal` | 21 | `user_portal.administration_enabled`<br>`user_portal.audit_capacity_mb`<br>`user_portal.create_bind_dn`<br>`user_portal.create_bind_password`<br>`user_portal.delegation_rules`<br>`user_portal.domain_administration_enabled`<br>`user_portal.domain_prefix`<br>`user_portal.group_bind_dn`<br>`user_portal.group_bind_password`<br>`user_portal.iam_protocol`<br>`user_portal.language`<br>`user_portal.password_bind_dn`<br>`user_portal.password_bind_password`<br>`user_portal.profile_bind_dn`<br>`user_portal.profile_bind_password`<br>`user_portal.protected_groups`<br>`user_portal.protected_users`<br>`user_portal.recent_window_seconds`<br>`user_portal.service_api_credentials_dir`<br>`user_portal.service_api_url`<br>`user_portal.service_api_workspace` |
@@ -284,9 +286,9 @@ Nextcloud 管理员密码不属于配置参数，必须通过托管 `break_glass
 <!-- generated:configuration-effects:start -->
 | Module 参数 effect | 参数数 | 修改结果 |
 | --- | ---: | --- |
-| `container_recreate` | 133 | 重新渲染，并重建受影响容器或 Compose project |
-| `credential_rotate` | 9 | 通过凭据轮换事务同步应用状态与 Secret Store |
-| `data_migrate` | 19 | 激活前迁移持久数据、数据库或成员身份 |
+| `container_recreate` | 150 | 重新渲染，并重建受影响容器或 Compose project |
+| `credential_rotate` | 11 | 通过凭据轮换事务同步应用状态与 Secret Store |
+| `data_migrate` | 22 | 激活前迁移持久数据、数据库或成员身份 |
 | `hot_reload` | 16 | 通过声明的管理命令应用；当前执行器可能保守地重建容器 |
 | `immutable` | 3 | 使用替换或专用迁移流程 |
 | `reconcile` | 20 | 通过 Module 生命周期调和应用、API 或文件状态 |

@@ -54,13 +54,15 @@ func TestOpenAPITracksImplementedSurface(t *testing.T) {
 		t.Fatalf("OpenAPI routes = %v, handler routes = %v", gotRoutes, wantRoutes)
 	}
 	wantResponses := map[string][]string{
-		"POST /api/v1/service/workspaces/{ws}/applications/{application}/credentials": {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "428", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/incus.status":                      {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan":                {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan":            {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/confirm":                           {"201", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply":               {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
-		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply":           {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/service/workspaces/{ws}/applications/{application}/mail-outbound-configure": {"200", "400", "401", "403", "404", "405", "408", "409", "413", "415", "500", "503", "504"},
+		"POST /api/v1/service/workspaces/{ws}/applications/{application}/mail-ingress-install":    {"200", "400", "401", "403", "404", "405", "408", "409", "413", "415", "500", "503", "504"},
+		"POST /api/v1/service/workspaces/{ws}/applications/{application}/credentials":             {"200", "400", "401", "403", "404", "405", "408", "412", "413", "415", "428", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus.status":                                  {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/plan":                            {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/plan":                        {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/confirm":                                       {"201", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/{phase}/apply":                           {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
+		"POST /api/v1/workspaces/{ws}/host/actions/incus/image-prune/apply":                       {"202", "400", "401", "403", "404", "405", "408", "409", "413", "415", "429", "500", "503", "504"},
 		"GET /":                                                           {"200", "308", "400", "404", "405", "500"},
 		"GET /assets/emergency.css":                                       {"200", "400", "404", "405", "500"},
 		"GET /assets/emergency.js":                                        {"200", "400", "404", "405", "500"},

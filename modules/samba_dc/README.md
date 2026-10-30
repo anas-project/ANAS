@@ -145,7 +145,13 @@ modules:
 | `samba_dc.ldap_bind_name` | string | — | `svc_ldap` | `static` | `SAMBA_DC_LDAP_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 只读 LDAP 服务账号名 |
 | `samba_dc.ldap_bind_password` | string | — | — | `generated` | `SAMBA_DC_LDAP_BIND_PASSWORD` | 否 | 是 | 是 | 否：`rotate-ldap-bind-password` | `credential_rotate` | 只读 LDAP 服务账号密码 |
 | `samba_dc.log_level` | string | — | `1` | `static` | `SAMBA_DC_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
+| `samba_dc.mail_address_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_ADDRESS_BIND_PASSWORD` | 否 | 否 | 是 | 否：`rotate-mail-address-bind-password` | `credential_rotate` | 门户受限地址维护服务身份独立生成密码，不授予邮件只读服务 |
+| `samba_dc.mail_creator_bind_password` | string | — | — | `generated` | `SAMBA_DC_MAIL_CREATOR_BIND_PASSWORD` | 否 | 否 | 是 | 否：`rotate-mail-creator-bind-password` | `credential_rotate` | 门户受限建号服务身份独立生成密码，不复用地址维护或人员密码 |
+| `samba_dc.mail_directory_enabled` | bool | — | `false` | `static` | `SAMBA_DC_MAIL_DIRECTORY_ENABLED` | 否 | 否 | 否 | 否：`bootstrap-mail-directory` | `data_migrate` | 显式启用已确认的非登录邮箱资源引导；必须先验证全量快照并停止外部写入 |
 | `samba_dc.mail_domain` | string | `format: dns_name` | — | `inherited` | `SAMBA_DC_MAIL_DOMAIN` | 否 | 是 | 否 | 否：`migrate-default-mail-addresses` | `data_migrate` | 主邮箱后缀；缺省继承 AD 域，变更后维护指定人员 OU 的主地址，不重命名目录身份 |
+| `samba_dc.mail_initial_snapshot_id` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SNAPSHOT_ID` | 否 | 否 | 否 | 否：`bootstrap-mail-directory` | `data_migrate` | 首次邮箱资源导入的已验证完整快照引用；容器不能自行证明全主机停写 |
+| `samba_dc.mail_initial_source_domain` | string | — | `""` | `static` | `SAMBA_DC_MAIL_INITIAL_SOURCE_DOMAIN` | 否 | 否 | 否 | 否：`bootstrap-mail-directory` | `data_migrate` | 首次导入时已收敛的旧主邮件域；完成后固定，不作为后续目标域 |
+| `samba_dc.mail_management_policy` | string | — | `""` | `static` | `SAMBA_DC_MAIL_MANAGEMENT_POLICY` | 否 | 否 | 否 | 是 | `container_recreate` | 完整受管域、保护地址与管理员显式邮箱/别名/容量/限速政策 JSON |
 | `samba_dc.max_log_size` | int | `>= 1` | `2048` | `static` | `SAMBA_DC_MAX_LOG_SIZE` | 否 | 否 | 否 | 是 | `container_recreate` | 单个日志文件上限 |
 | `samba_dc.netbios_name` | string | — | — | `runtime` | `SAMBA_DC_NETBIOS_NAME` | 否 | 是 | 否 | 否：`replace-domain-controller` | `immutable` | 域控制器 NetBIOS 名称 |
 | `samba_dc.password_bind_name` | string | — | `svc_password` | `static` | `SAMBA_DC_PASSWORD_BIND_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 密码回写服务账号名 |
@@ -201,6 +207,8 @@ anas plan -c /srv/anas/config.yml
 anas config list samba_dc -w /srv/anas
 anas status -w /srv/anas
 ```
+
+已确认的邮件资源/地址占用 schema 正在开发，新增定义和显式安装器先做隔离验证；不会随当前启动自动安装到业务域。人员身份锚点保持现有机制，邮件目录的权限、迁移和写入口协调仍待完成，见技术文档。
 
 ## 当前限制
 

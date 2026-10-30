@@ -62,6 +62,8 @@ type Flow struct {
 	State, Nonce, Verifier, Cookie, Session, Subject string
 	Theme                                            string
 	Reauth                                           bool
+	Silent                                           bool
+	Logout                                           bool
 	Expires                                          time.Time
 }
 
@@ -76,6 +78,9 @@ func (o *OIDC) authorizeURL(f Flow) string {
 	for k, v := range map[string]string{"client_id": client, "redirect_uri": callback, "response_type": "code", "scope": "openid profile email", "state": f.State, "nonce": f.Nonce, "code_challenge_method": "S256", "code_challenge": base64.RawURLEncoding.EncodeToString(h[:])} {
 		q.Set(k, v)
 	}
+	if f.Silent && !f.Reauth {
+		q.Set("prompt", "none")
+	}
 	if f.Reauth {
 		q.Set("max_age", "0")
 		q.Set("prompt", "login")
@@ -88,8 +93,10 @@ func (o *OIDC) authorizeURL(f Flow) string {
 }
 
 type Authentication struct {
-	Subject, SID, AccessToken string
-	AuthTime, Expires         time.Time
+	Subject, SID, AccessToken, IDToken string
+	AuthTime, Expires                  time.Time
+	// Passkey comes only from the verified LLNG ID token's AMR claim.
+	Passkey bool
 }
 
 func (o *OIDC) exchange(ctx context.Context, f Flow, code string) (Authentication, error) {
@@ -122,14 +129,16 @@ func (o *OIDC) exchange(ctx context.Context, f Flow, code string) (Authenticatio
 		return a, errDenied
 	}
 	var claims struct {
-		AuthTime int64  `json:"auth_time"`
-		SID      string `json:"sid"`
-		AZP      string `json:"azp"`
+		AuthTime int64    `json:"auth_time"`
+		SID      string   `json:"sid"`
+		AZP      string   `json:"azp"`
+		AMR      []string `json:"amr"`
 	}
 	if t.Claims(&claims) != nil || (len(t.Audience) > 1 && claims.AZP != client) || (claims.AZP != "" && claims.AZP != client) {
 		return a, errDenied
 	}
-	a = Authentication{Subject: t.Subject, SID: claims.SID, AccessToken: tokens.AccessToken, AuthTime: time.Unix(claims.AuthTime, 0), Expires: t.Expiry}
+	a = Authentication{Subject: t.Subject, SID: claims.SID, AccessToken: tokens.AccessToken, IDToken: tokens.IDToken, AuthTime: time.Unix(claims.AuthTime, 0), Expires: t.Expiry}
+	a.Passkey = o.config.AccountSchema == "llng-account/v1" && has(claims.AMR, "webauthn") && !has(claims.AMR, "pwd")
 	if claims.AuthTime <= 0 || t.IssuedAt.IsZero() || t.IssuedAt.After(time.Now().Add(30*time.Second)) || a.AuthTime.After(t.IssuedAt.Add(30*time.Second)) || !t.Expiry.After(t.IssuedAt) {
 		return Authentication{}, errDenied
 	}
@@ -149,14 +158,22 @@ type Permission struct {
 	IsEnabled                                                            bool
 }
 type IAMAccount struct {
+	Schema                  string
+	Applications            []IAMApplicationPolicy
 	Owner, Name, ExternalId string
 	IsForbidden, IsDeleted  *bool
 	Groups                  []string
 	Permissions             []Permission
 }
 
+type IAMApplicationPolicy struct {
+	Name    string   `json:"name"`
+	Groups  []string `json:"groups"`
+	Allowed *bool    `json:"allowed"`
+}
+
 func (o *OIDC) get(ctx context.Context, path, token string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", o.config.Issuer+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(o.config.Issuer, "/")+path, nil)
 	if err != nil {
 		return err
 	}
@@ -176,6 +193,9 @@ func (o *OIDC) get(ctx context.Context, path, token string, out any) error {
 }
 
 func (o *OIDC) account(ctx context.Context, a Authentication) (IAMAccount, error) {
+	if o.config.AccountSchema == "llng-account/v1" {
+		return o.llngAccount(ctx, a)
+	}
 	var info struct {
 		Sub    string
 		Groups []string
@@ -198,6 +218,36 @@ func (o *OIDC) account(ctx context.Context, a Authentication) (IAMAccount, error
 		return IAMAccount{}, errDenied
 	}
 	// Ignore any extra accessToken minted by get-account; it never leaves this backend.
+	return u, nil
+}
+
+func (o *OIDC) llngAccount(ctx context.Context, a Authentication) (IAMAccount, error) {
+	var info struct{ Sub string }
+	if err := o.get(ctx, "/oauth2/userinfo", a.AccessToken, &info); err != nil {
+		return IAMAccount{}, err
+	}
+	var response struct {
+		Schema, Subject, Name string
+		Enabled               *bool
+		Groups                []string
+		Applications          []IAMApplicationPolicy
+	}
+	if err := o.get(ctx, "/anas-account", a.AccessToken, &response); err != nil {
+		return IAMAccount{}, err
+	}
+	if response.Schema != "llng-account/v1" || info.Sub != a.Subject || response.Subject != a.Subject || response.Name == "" || response.Enabled == nil || !*response.Enabled || !sameSet(response.Groups, response.Groups) {
+		return IAMAccount{}, errDenied
+	}
+	// LLNG checks its current native rules against a fresh AD read. The portal
+	// additionally intersects these facts with its own directory and catalog.
+	no := false
+	u := IAMAccount{Schema: response.Schema, Owner: "anas", Name: response.Name, ExternalId: a.Subject, IsForbidden: &no, IsDeleted: &no, Applications: response.Applications}
+	for _, name := range response.Groups {
+		if name == "" {
+			return IAMAccount{}, errDenied
+		}
+		u.Groups = append(u.Groups, "anas/"+name)
+	}
 	return u, nil
 }
 
@@ -225,6 +275,18 @@ func applicationAllowed(c appcatalog.Catalog, app appcatalog.Application, u IAMA
 	if !app.Enabled || app.Hidden || len(app.Groups) == 0 {
 		return false
 	}
+	if u.Schema == "llng-account/v1" {
+		var policy *IAMApplicationPolicy
+		for i := range u.Applications {
+			if u.Applications[i].Name == app.Name {
+				if policy != nil {
+					return false
+				}
+				policy = &u.Applications[i]
+			}
+		}
+		return policy != nil && policy.Allowed != nil && *policy.Allowed && sameSet(policy.Groups, app.Groups) && currentApplicationGroup(app, u, person)
+	}
 	resource := "app-anas-catalog-" + app.Name
 	if primary, ok := c.IAMApplication(app.Access.Client); app.Access.Mode == "iam" && ok && primary.Name == app.Name {
 		resource = "app-anas-" + strings.ToLower(strings.ReplaceAll(app.Access.Client, "_", "-"))
@@ -250,6 +312,10 @@ func applicationAllowed(c appcatalog.Catalog, app appcatalog.Application, u IAMA
 	if !p.IsEnabled || p.State != "Approved" || p.Effect != "Allow" || p.ResourceType != "Application" || p.Model != "built-in/user-model-built-in" || p.Adapter != "" || p.ExpireTime != "" || len(p.Roles) > 0 || len(p.Users) > 0 || len(p.Domains) > 0 || !sameSet(p.Resources, []string{resource}) || !sameSet(p.Actions, []string{"Read"}) || !sameSet(p.Groups, expected) {
 		return false
 	}
+	return currentApplicationGroup(app, u, person)
+}
+
+func currentApplicationGroup(app appcatalog.Application, u IAMAccount, person Person) bool {
 	for _, name := range app.Groups {
 		if person.KnownGroups[name] == "" {
 			return false

@@ -391,6 +391,16 @@ func (h *handler) routeSpecs() []routeSpec {
 				Access: map[ConsoleState]RouteAccess{StateFull: {Authentication: AuthenticationService, Transports: []RequestTransport{TransportTLS}}}},
 			handler: h.readServiceApplicationCredential,
 		})
+		routes = append(routes, routeSpec{
+			policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/service/workspaces/{ws}/applications/{application}/mail-ingress-install", Permission: PermissionMailIngressInstall, Scope: ScopeWorkspace, Listeners: directOnly,
+				Access: map[ConsoleState]RouteAccess{StateFull: {Authentication: AuthenticationService, Transports: []RequestTransport{TransportTLS}}}},
+			handler: h.invokeServiceMailInstall,
+		})
+		routes = append(routes, routeSpec{
+			policy: RoutePolicy{Method: http.MethodPost, Pattern: "/api/v1/service/workspaces/{ws}/applications/{application}/mail-outbound-configure", Permission: PermissionMailOutboundConfigure, Scope: ScopeWorkspace, Listeners: directOnly,
+				Access: map[ConsoleState]RouteAccess{StateFull: {Authentication: AuthenticationService, Transports: []RequestTransport{TransportTLS}}}},
+			handler: h.invokeServiceMailOutbound,
+		})
 	}
 	return routes
 }

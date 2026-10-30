@@ -1,7 +1,7 @@
 services:
   anas_llng:
     container_name: ${CONTAINER_PREFIX}llng
-    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.2-r13
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.4-r13
     build:
       context: ./llng
       network: ${DOCKER_BUILD_NETWORK:-default}
@@ -12,10 +12,13 @@ services:
     restart: unless-stopped
     volumes:
       - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf/"
+      - "${DATA_PATH}/llng/dirwatch:/var/lib/anas-dirwatch"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
       - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
       - "${ANAS_APP_CATALOG_DIR}/assets:/usr/share/lemonldap-ng/portal/htdocs/static/common/apps/anas-catalog:ro"
       - "./conf/application-list.json:/opt/anas/application-list.json:ro"
+      - "./conf/account-policies.json:/opt/anas/account-policies.json:ro"
+      - "./conf/portal-palette.css:/usr/share/lemonldap-ng/portal/htdocs/static/anas/palette.css:ro"
     tmpfs:
       # Explicitly cover the remaining inherited VOLUME declarations. These
       # contain generated runtime configuration/locks, not authoritative data.
@@ -50,6 +53,47 @@ services:
       - "traefik.http.routers.llng.rule=Host(`${LLNG_DOMAIN}`) || Host(`${LLNG_MANAGER_DOMAIN}`) || Host(`${LLNG_TEST_DOMAIN}`)"
       - "traefik.http.routers.llng.tls=true"
       - "traefik.http.services.llng.loadbalancer.server.port=80"
+    networks:
+      - traefik
+      - db
+
+  anas_llng_dirwatch:
+    container_name: ${CONTAINER_PREFIX}llng_dirwatch
+    image: ${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-llng:2.23.4-r13
+    restart: unless-stopped
+    user: "33:33"
+    entrypoint: ["/opt/anas/directory-watch.pl"]
+    depends_on:
+      anas_llng:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=8m
+      - /etc/lemonldap-ng:mode=0755,size=1m
+      - /etc/nginx/sites-enabled:mode=0755,size=1m
+      - /var/lib/lemonldap-ng/psessions:mode=0770,uid=33,gid=33,size=1m
+      - /var/lib/lemonldap-ng/sessions:mode=0770,uid=33,gid=33,size=1m
+    volumes:
+      - "${DATA_PATH}/llng/conf:/var/lib/lemonldap-ng/conf:ro"
+      - "${DATA_PATH}/llng/dirwatch:/var/lib/anas-dirwatch"
+      - "${LLNG_DIRWATCH_EVENTS_DIR}:/var/lib/anas-directory-events:ro"
+      - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
+      - "./conf/account-policies.json:/opt/anas/account-policies.json:ro"
+    env_file:
+      - .env
+    environment:
+      PERL_LWP_SSL_CA_FILE: /certs/${ANAS_TLS_TRUST_BUNDLE_NAME}
+    dns:
+      - ${LOCAL_DNS_SERVER}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/opt/anas/directory-watch.pl", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - traefik
       - db

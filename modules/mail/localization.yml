@@ -1,0 +1,22 @@
+api_version: anas.module-localization/v1
+module: mail
+module_version: 0.1.0
+module_revision: 1
+reviewed_at: 2026-10-26
+timezone:
+  status: configured
+  mechanism: The foundation inherits TZ; database timestamps are stored as timestamptz and diagnostics use RFC 3339 UTC.
+language:
+  status: supported
+  scope: Optional candidate Go mail home and handoff/logout pages; formal module UI deployment remains pending.
+  selection: application
+  global_default: applied
+  global_locale: not_consumed
+  upstream_format: BCP 47
+  fallback: Unconfigured language uses English; all eight Go UI dictionaries are complete. Roundcube locale mapping is wired but native eight-language acceptance remains pending.
+  supported: [en, zh-CN, zh-TW, de, es, fr, ja, ko]
+  evidence:
+    - version: 0.1.0
+      url: https://github.com/anas-project/ANAS/blob/master/modules/mail/service/ui/mail.js
+      path: modules/mail/service/ui/mail.js
+  notes: Candidate UI tests are separate from actual Roundcube and formal module acceptance; no shared theme integration is claimed yet.

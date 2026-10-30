@@ -1,0 +1,44 @@
+@import url('palette.css');
+
+html, body { min-height: 100%; background: var(--anas-bg); color: var(--anas-text); }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif; }
+#wrap { background: transparent; }
+#header { position: relative; padding: 24px 16px 12px; }
+#header img { width: 72px; height: 72px; object-fit: contain; background: transparent; border: 0; }
+.anas-brand-name { text-align: center; margin-top: 10px; font-size: 20px; font-weight: 650; letter-spacing: .04em; }
+.anas-theme-toggle { display: block; margin: 12px auto 0; min-height: 44px; padding: 6px 14px; background: var(--anas-surface); color: var(--anas-text-2); border: 1px solid var(--anas-text-3); border-radius: 10px; }
+#content, #logincontent, .card, .panel, .modal-content, .list-group-item { color: var(--anas-text); background-color: var(--anas-surface); }
+#logincontent { max-width: 500px; background: transparent; padding-bottom: 20px; }
+#authMenu .navbar { background: var(--anas-surface-2) !important; border-radius: 14px 14px 0 0; }
+#authMenu .navbar-brand, #authMenu .navbar-light .navbar-nav .nav-link { color: var(--anas-text-2); }
+#authMenu .navbar-light .navbar-nav .nav-link:hover { color: var(--anas-accent-text); }
+#authMenu .navbar-nav .ui-tabs-active, #authMenu .navbar-nav .ui-tabs-active > .nav-link { color: var(--anas-accent-text); background: var(--anas-accent-soft); border-radius: 6px; }
+#authMenu .navbar-toggler { display: none; }
+#authMenu .navbar-collapse { display: flex !important; }
+#authMenu .navbar-nav { flex-direction: row; gap: 16px; }
+.card, .panel, .modal-content { border-color: var(--anas-text-3); border-radius: 14px; }
+.card-header, .panel-heading, .modal-header, .modal-footer, .card-footer { color: var(--anas-text); background-color: var(--anas-surface-2); border-color: var(--anas-text-3); }
+.form-control, .form-select, .input-group-text { color: var(--anas-text); background-color: var(--anas-surface-2); border-color: var(--anas-text-3); }
+.form-control:focus, .form-select:focus { color: var(--anas-text); background-color: var(--anas-surface); border-color: var(--anas-primary); box-shadow: 0 0 0 3px var(--anas-accent-soft); }
+.form-control::placeholder, .text-muted, small { color: var(--anas-text-3) !important; }
+a { color: var(--anas-accent-text); }
+.btn-primary, .btn-success { color: var(--anas-on-primary); background: var(--anas-primary); border-color: var(--anas-primary); }
+.btn-primary:hover, .btn-success:hover { color: var(--anas-on-primary); background: var(--anas-primary); filter: brightness(.94); border-color: var(--anas-primary); }
+.btn-secondary, .btn-default, .btn-light { color: var(--anas-text); background: var(--anas-surface-2); border-color: var(--anas-text-3); }
+.nav-tabs .nav-link { color: var(--anas-text-2); }
+.nav-tabs .nav-link.active, .nav-pills .nav-link.active { color: var(--anas-accent-text); background: var(--anas-accent-soft); border-color: var(--anas-text-3); }
+.alert-info, .alert-success { color: var(--anas-ok); background: var(--anas-ok-bg); border-color: var(--anas-ok); }
+.alert-warning { color: var(--anas-warn); background: var(--anas-warn-bg); border-color: var(--anas-warn); }
+.alert-danger { color: var(--anas-danger); background: var(--anas-danger-bg); border-color: var(--anas-danger); }
+#footer { color: var(--anas-text-3); background: transparent; }
+button, input, select { min-height: 40px; }
+input[type=checkbox], input[type=radio] { min-height: auto; }
+:focus-visible { outline: 3px solid var(--anas-primary); outline-offset: 3px; }
+@media (max-width: 540px) {
+  #header { padding-top: 16px; }
+  #header img { width: 56px; height: 56px; }
+  #content, #logincontent { max-width: 100%; margin-left: auto; margin-right: auto; }
+  .container { padding-left: 12px; padding-right: 12px; }
+  .btn, .form-control { min-height: 44px; }
+  .input-group { flex-wrap: wrap; }
+}

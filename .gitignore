@@ -15,6 +15,7 @@ secrets.yml
 config.lnnj.com.cn.yml
 test-env/reports/*
 !test-env/reports/.gitkeep
+!test-env/reports/go.mod
 # Per-machine remote-test targets and generated source bundles never enter Git.
 test-env/remote/*.local.yml
 test-env/.remote-test/

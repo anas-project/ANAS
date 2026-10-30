@@ -22,7 +22,7 @@
 - 级别：`unit`
 - 覆盖需求：`PORTALUX-R-001`、`PORTALUX-R-002`
 - 需求复核摘要：`sha256:0ed6fe37bb039a35de2b3bdad27943d183c6e731cab623580aa185c61756cc93`
-- 实现复核摘要：`sha256:11c0fb9afaeedebfe977c78c80b00a63b74f7f57a67327d577b842ad037357a2`
+- 实现复核摘要：`sha256:2930f93d915002185eb88c93a4da77a5d92b5397db229491f7e6240756cc4a19`
 - Fixture：Go 语言匹配表与生产语言包、前端源码；无网络
 - 目标能力：`go`、`node`
 - Oracle 来源：`return-value`
@@ -117,7 +117,7 @@ go test -race ./modules/user_portal/portal -run Preference
 - 级别：`unit`
 - 覆盖需求：`PORTALUX-R-003`、`PORTALUX-R-004`、`PORTALUX-R-005`、`PORTALUX-R-011`、`PORTALUX-R-012`、`PORTALUX-R-014`、`PORTALUX-R-015`、`PORTALUX-R-016`、`PORTALUX-R-018`、`PORTALUX-R-020`、`PORTALUX-R-021`、`PORTALUX-R-023`、`PORTALUX-R-024`、`PORTALUX-R-025`、`PORTALUX-R-028`、`PORTALUX-R-029`、`PORTALUX-R-030`、`PORTALUX-R-032`
 - 需求复核摘要：`sha256:edace9fb42fe6e194c9f5359318c36c774a5ead75e751d9fa87605322208c405`
-- 实现复核摘要：`sha256:788738407834ef588a173508a223696ee37b1ce33d4d1852e81a60462a831661`
+- 实现复核摘要：`sha256:bde4d5333edd0822af4b0644a1b0a8eb2bf46bd2610e080b488c654df138bbe6`
 - Fixture：生产静态资源配模拟 API；不使用真实账号
 - 目标能力：`playwright-chromium`
 - Oracle 来源：`ui`

@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS psessions (
 CREATE INDEX IF NOT EXISTS i_p__session_kind ON psessions (_session_kind);
 CREATE INDEX IF NOT EXISTS i_p__httpSessionType ON psessions (_httpSessionType);
 CREATE INDEX IF NOT EXISTS i_p__session_uid ON psessions (_session_uid);
+-- Additive and repeatable for databases created before Passkey support.
+ALTER TABLE psessions ADD COLUMN IF NOT EXISTS _webAuthnUserHandle varchar(128);
+CREATE INDEX IF NOT EXISTS i_p__webAuthnUserHandle ON psessions (_webAuthnUserHandle);
 CREATE INDEX IF NOT EXISTS i_p_ipAddr ON psessions (ipAddr);
 CREATE INDEX IF NOT EXISTS i_p__whatToTrace ON psessions (_whatToTrace);
 

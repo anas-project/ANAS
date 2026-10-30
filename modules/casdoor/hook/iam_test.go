@@ -214,6 +214,39 @@ func TestOIDCManagedGroupsClaimIsAlwaysPublished(t *testing.T) {
 	assertTokenAttribute(t, attributes, "groups", "Roles", "Array")
 }
 
+func TestClaimGroupsCreateRolesWithoutApplicationAdmission(t *testing.T) {
+	e := casdoorTestEnv()
+	e["ANAS_IAM_CLIENT__NEXTCLOUD__CLAIM_GROUPS"] = `["Release Reviewers"]`
+	body, err := renderInitData(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string][]map[string]any
+	if err := json.Unmarshal([]byte(body), &document); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, role := range document["roles"] {
+		found = found || role["name"] == "Release Reviewers"
+	}
+	if !found {
+		t.Fatal("claim-only directory group has no role projection")
+	}
+	for _, permission := range document["permissions"] {
+		for _, group := range permission["groups"].([]any) {
+			if group == "anas/Release Reviewers" {
+				t.Fatal("claim-only group received application admission")
+			}
+		}
+	}
+	for _, invalid := range []string{`null`, `"group"`, `[1]`, `[""]`, `["a,b"]`, `["a/b"]`} {
+		e["ANAS_IAM_CLIENT__NEXTCLOUD__CLAIM_GROUPS"] = invalid
+		if _, err := renderInitData(e); err == nil {
+			t.Fatalf("invalid claim groups accepted: %s", invalid)
+		}
+	}
+}
+
 func TestSAMLManagedGroupsAttributeIsAlwaysPublished(t *testing.T) {
 	attributes := samlAttributes(
 		"preferred_username:sAMAccountName:1", "anasIdentityAnchor")
@@ -271,6 +304,9 @@ func TestPublicClientAndNativeReauthenticationApplication(t *testing.T) {
 	if app["clientSecret"] != "" {
 		t.Fatal("public client owns an API secret")
 	}
+	if app["enableAutoSignin"] != true || app["enableSigninSession"] != true {
+		t.Fatal("ordinary OIDC client must reuse the existing IAM session automatically")
+	}
 	reauth, err := oidcReauthenticationApplication(e, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -281,5 +317,19 @@ func TestPublicClientAndNativeReauthenticationApplication(t *testing.T) {
 	e["ANAS_IAM_CLIENT__TEST__PUBLIC_CLIENT"] = "false"
 	if _, err := oidcApplication(e, "test"); err == nil {
 		t.Fatal("confidential client accepted without secret")
+	}
+}
+
+func TestOIDCSessionReuseWithoutReauthenticationClient(t *testing.T) {
+	e := map[string]string{"ANAS_IAM_CLIENT__MAIL__CLIENT_ID": "anas-mail", "ANAS_IAM_CLIENT__MAIL__PUBLIC_CLIENT": "true", "ANAS_IAM_CLIENT__MAIL__REDIRECT_URIS": "https://mail.example.test/oidc/callback"}
+	app, err := oidcApplication(e, "mail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app["enableAutoSignin"] != true || app["enableSigninSession"] != true {
+		t.Fatal("a separate reauthentication client must not be required for ordinary SSO")
+	}
+	if app["disableSignin"] != false || app["enablePassword"] != true {
+		t.Fatal("first login must still require normal IAM authentication")
 	}
 }

@@ -14,15 +14,16 @@ const directory=new URL('../../modules/user_portal/portal/ui/',import.meta.url);
 const app=(name,kind='user')=>({name,display_name:name.toUpperCase(),summary:name+' summary',description:name+' description',url:'https://'+name+'.example.test/start?x=1#frag',documentation_url:'https://docs.example.test/'+name,categories:['files'],icons:{}});
 const groups=[{kind:'user',id:'user',display_name:'User applications',categories:[{id:'files',display_name:'Files',applications:['alpha','beta','gamma'].map(n=>app(n))}]},{kind:'admin',id:'admin',display_name:'Administration',categories:[{id:'identity',display_name:'Identity',applications:[app('console','admin')]}]}];
 
-async function portal({admin=false,authenticated=true,scheme='light',preferences={language:'',theme:'system',show_categories:true,pinned:[]},width=1280,height=900,storage,stale=false}={}) {
+async function portal({admin=false,authenticated=true,scheme='light',preferences={language:'',theme:'system',show_categories:true,pinned:[]},width=1280,height=900,storage,stale=false,passkey=false}={}) {
   const context=await browser.newContext({colorScheme:scheme,viewport:{width,height}}),page=await context.newPage();
   const saved=[],reauth=[],writes=[];let prefs={...preferences},fresh=!stale;
   const person={anchor:'actor',username:'alice',display_name:'Alice Wang',email:'alice@example.test',groups:[],password_state_known:true};
-  const me=()=>({person,csrf:'csrf',actions:admin?['users.read','user.create','password.reset','account.unlock','profile.update']:[],administration:admin,profile_editable:true,profile_version:'v1',mail_domain:'example.test',preferences:prefs});
+  const me=()=>({person,csrf:'csrf',actions:admin?['users.read','user.create','password.reset','account.unlock','profile.update']:[],administration:admin,profile_editable:true,profile_version:'v1',mail_domain:'example.test',preferences:prefs,passkey_authenticated:passkey});
   await context.route('**/*',async route=>{
     const r=route.request(),u=new URL(r.url()),p=u.pathname,json=(d,s=200)=>route.fulfill({status:s,contentType:'application/json',body:JSON.stringify(d)});
     if(p==='/')return route.fulfill({contentType:'text/html',body:await readFile(new URL('index.html',directory),'utf8')});
     if(p.startsWith('/static/'))return route.fulfill({contentType:p.endsWith('.js')?'text/javascript':p.endsWith('.svg')?'image/svg+xml':'text/css',body:await readFile(new URL(p.slice(8),directory),'utf8')});
+    if(p==='/login'&&u.searchParams.get('check')==='1')return route.fulfill({status:303,headers:{location:origin+'/?iam_check=required'},body:''});
     if(p==='/api/bootstrap')return json({language:u.searchParams.get('lang')||'en',authenticated,csrf:'csrf'});
     if(p==='/api/me')return authenticated?json(me()):json({error:'authentication_required'},401);
     if(p==='/api/apps')return json({groups});
@@ -323,6 +324,26 @@ test('an expired recent authentication opens a password dialog and retries the o
     await expect.poll(()=>writes.length).toBe(1);
     if(reauth.length!==2||reauth.some(x=>x.csrf!=='csrf'||Object.keys(x.body).join()!=='password'))throw Error('reauth requests '+JSON.stringify(reauth.map(x=>x.csrf)));
     await expect(zone.locator('.form-result')).toContainText('Saved.');
+  }finally{await context.close();}
+});
+
+// TEST_CASES: PORTALUX-T-003
+test('Passkey sessions use native recent authentication without replaying a pending write',async()=>{
+  const {context,page,reauth,writes}=await portal({admin:true,stale:true,passkey:true,scheme:'dark'});
+  try{
+    await page.goto(origin+'/#/admin/users/bob');await ready(page,'admin-user');
+    const unlock=async()=>{await page.locator('section.danger-zone').getByRole('button',{name:'Unlock account',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Confirm operation',exact:true}).click();};
+    await unlock();
+    const dialog=page.getByRole('dialog',{name:'Confirm your identity'});
+    await expect(dialog).toContainText('submit the operation again');
+    await expect(dialog.locator('input[type=password]')).toHaveCount(0);
+    await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    if(writes.length||reauth.length)throw Error('cancel performed authentication or write');
+    let handoff;
+    await page.route('**/api/reauth?theme=dark',route=>{handoff=route.request();return route.fulfill({contentType:'text/html',body:'native authentication'});});
+    await unlock();await dialog.getByRole('button',{name:'Verify with passkey',exact:true}).click();
+    await expect(page).toHaveURL(origin+'/api/reauth?theme=dark');
+    if(handoff.method()!=='POST'||handoff.postData()!=='csrf=csrf'||writes.length||reauth.length)throw Error('native authentication lost CSRF or replayed a write');
   }finally{await context.close();}
 });
 

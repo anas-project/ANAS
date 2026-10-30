@@ -2,8 +2,57 @@ package runner
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 )
+
+// Resolving "auto" against a newer Module must not silently point an existing
+// application at an empty database of another engine. Check before credentials
+// or Provider requests are materialized, including retained resources and an
+// active deployment whose resource-state file was lost.
+func (a *app) validateDatabaseEngineBinding(consumer, id, iface string) error {
+	if a.base == "" {
+		return nil
+	}
+	check := func(previous string) error {
+		if previous != iface {
+			return fmt.Errorf("resource %s.%s database engine change is not supported by apply; preserve the existing deployment and data and perform an explicit migration separately", consumer, id)
+		}
+		return nil
+	}
+	var state resourceState
+	path := filepath.Join(a.base, "state", "resources", consumer+"."+id+".yml")
+	if err := readYAML(path, &state); err == nil {
+		if state.APIVersion != resourceStateAPIVersion || state.Consumer != consumer || state.ResourceID != id || state.Contract != "relational_database" {
+			return fmt.Errorf("resource %s.%s has invalid recorded database identity", consumer, id)
+		}
+		if err := check(state.Interface); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("resource %s.%s recorded database state is unreadable", consumer, id)
+	}
+	active, err := loadActiveState(a.base)
+	if err != nil {
+		return err
+	}
+	if active.ActiveDeployment == "" {
+		return nil
+	}
+	manifest, err := loadDeploymentManifest(deploymentArtifactDir(a.base, active.ActiveDeployment))
+	if err != nil {
+		return err
+	}
+	for _, resource := range manifest.Resources {
+		if resource.Consumer == consumer && resource.ID == id && resource.Contract == "relational_database" {
+			if err := check(resource.Interface); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // validateRelationalDatabaseSpec checks the current Contract before secrets or
 // Provider writes. Supported extension names and their versions belong to the

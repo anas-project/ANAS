@@ -1,0 +1,181 @@
+{
+  "schema": "anas.mail-directory/v1",
+  "attributes": [
+    {
+      "name": "anasMailboxID",
+      "oid": "1.3.6.1.4.1.66678.1.2.2",
+      "guid": "d43fe06c-b671-49b5-99d8-c2f045fd4515",
+      "min": 36,
+      "max": 36,
+      "single": true,
+      "index": 1,
+      "description": "Stable mailbox UUID, separate from personnel identity"
+    },
+    {
+      "name": "anasMailOwnerAnchor",
+      "oid": "1.3.6.1.4.1.66678.1.2.3",
+      "guid": "13411069-5a8b-4394-b248-01ca29a8de19",
+      "min": 36,
+      "max": 36,
+      "single": true,
+      "index": 1,
+      "description": "Reference to the owning personnel anasIdentityAnchor"
+    },
+    {
+      "name": "anasMailboxKind",
+      "oid": "1.3.6.1.4.1.66678.1.2.4",
+      "guid": "4bcaca2a-7735-46e8-947b-a9907d6c3cb1",
+      "min": 1,
+      "max": 16,
+      "single": true,
+      "index": 0,
+      "description": "Mailbox resource kind: primary or additional"
+    },
+    {
+      "name": "anasMailDefaultAddress",
+      "oid": "1.3.6.1.4.1.66678.1.2.5",
+      "guid": "2aa2d928-f20a-45c7-ba9e-4ae932ac9209",
+      "min": 3,
+      "max": 254,
+      "single": true,
+      "index": 0,
+      "description": "Normalized default SMTP address of one mailbox"
+    },
+    {
+      "name": "anasMailAddress",
+      "oid": "1.3.6.1.4.1.66678.1.2.6",
+      "guid": "168076fe-921b-4da6-b538-aa2c224f499d",
+      "min": 3,
+      "max": 254,
+      "single": true,
+      "index": 1,
+      "description": "Normalized complete SMTP address held by one claim"
+    },
+    {
+      "name": "anasMailAddressKind",
+      "oid": "1.3.6.1.4.1.66678.1.2.7",
+      "guid": "b7f480b5-4c0f-46c5-b065-34603e10435f",
+      "min": 1,
+      "max": 32,
+      "single": true,
+      "index": 0,
+      "description": "Claim kind: primary, additional default or alias"
+    },
+    {
+      "name": "anasMailState",
+      "oid": "1.3.6.1.4.1.66678.1.2.8",
+      "guid": "963ce8a9-2a1c-4eb3-befe-188e3147910e",
+      "min": 1,
+      "max": 16,
+      "single": true,
+      "index": 0,
+      "description": "Mail resource or address lifecycle state"
+    },
+    {
+      "name": "anasMailConfigVersion",
+      "oid": "1.3.6.1.4.1.66678.1.2.9",
+      "guid": "f2f1237c-6d6d-4b23-ae89-4e95cd9a6d18",
+      "min": 36,
+      "max": 36,
+      "single": true,
+      "index": 0,
+      "description": "Opaque UUID changed by each conditional configuration update"
+    },
+    {
+      "name": "anasMailOperationID",
+      "oid": "1.3.6.1.4.1.66678.1.2.10",
+      "guid": "12e03acc-3929-4b21-9b53-6613d831c5dd",
+      "min": 36,
+      "max": 36,
+      "single": true,
+      "index": 1,
+      "description": "Stable UUID of the current resumable mail operation"
+    },
+    {
+      "name": "anasMailOperationState",
+      "oid": "1.3.6.1.4.1.66678.1.2.11",
+      "guid": "af8fa2f6-b3da-4946-8e33-d4f6c5388593",
+      "min": 1,
+      "max": 32,
+      "single": true,
+      "index": 0,
+      "description": "Durable progress of the current mail operation"
+    },
+    {
+      "name": "anasMailOperationData",
+      "oid": "1.3.6.1.4.1.66678.1.2.12",
+      "guid": "563ec0ef-5745-43f4-a909-6c965c708dc6",
+      "min": 2,
+      "max": 65536,
+      "single": true,
+      "index": 0,
+      "description": "Non-secret JSON intent for the current mail operation"
+    },
+    {
+      "name": "anasMailOwnershipHistory",
+      "oid": "1.3.6.1.4.1.66678.1.2.13",
+      "guid": "4a2d0d9c-4831-4c24-8bc8-874ecd548207",
+      "min": 2,
+      "max": 65536,
+      "single": false,
+      "index": 0,
+      "description": "Non-secret ownership transition records keyed by operation UUID"
+    },
+    {
+      "name": "anasMailQuotaState",
+      "oid": "1.3.6.1.4.1.66678.1.2.14",
+      "guid": "f51e0605-6697-4685-a4dc-0c3acb64815e",
+      "min": 2,
+      "max": 65536,
+      "single": true,
+      "index": 0,
+      "description": "Primary mailbox JSON quota configuration and pending reservations"
+    }
+  ],
+  "classes": [
+    {
+      "name": "anasMailbox",
+      "oid": "1.3.6.1.4.1.66678.1.1.1",
+      "guid": "f38827eb-9b75-40ba-a575-59502deed856",
+      "description": "Non-login mailbox resource owned by an existing personnel anchor",
+      "must": [
+        "cn",
+        "anasMailboxID",
+        "anasMailOwnerAnchor",
+        "anasMailState",
+        "anasMailConfigVersion",
+        "anasMailboxKind",
+        "anasMailDefaultAddress"
+      ],
+      "may": [
+        "anasMailOperationID",
+        "anasMailOperationState",
+        "anasMailOperationData",
+        "anasMailQuotaState"
+      ],
+      "security_descriptor": "O:DAG:DAD:(A;;GA;;;DA)(A;;GA;;;SY)(A;;RC;;;OW)"
+    },
+    {
+      "name": "anasMailAddressClaim",
+      "oid": "1.3.6.1.4.1.66678.1.1.2",
+      "guid": "5d7279bf-e9a4-42cd-a23b-828ae8beefff",
+      "description": "Unique managed SMTP address claim referring to one mailbox",
+      "must": [
+        "cn",
+        "anasMailboxID",
+        "anasMailOwnerAnchor",
+        "anasMailState",
+        "anasMailConfigVersion",
+        "anasMailAddress",
+        "anasMailAddressKind"
+      ],
+      "may": [
+        "anasMailOperationID",
+        "anasMailOperationState",
+        "anasMailOperationData",
+        "anasMailOwnershipHistory"
+      ],
+      "security_descriptor": "O:DAG:DAD:(A;;GA;;;DA)(A;;GA;;;SY)(A;;RC;;;OW)"
+    }
+  ]
+}

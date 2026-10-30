@@ -18,6 +18,8 @@ type ServiceAPIOptions struct {
 	Authenticate func(context.Context, string, string, string, string) (string, error)
 	Factory      func(string) application.ApplicationCredentialService
 	Audit        func(context.Context, ServiceCredentialAuditEvent) error
+	MailInstall  func(context.Context, ServiceMailInstallCall) (ServiceMailInstallResult, error)
+	MailOutbound func(context.Context, ServiceMailOutboundCall) (ServiceMailOutboundResult, error)
 }
 
 // The declared actor is untrusted audit context, never an authorization input.

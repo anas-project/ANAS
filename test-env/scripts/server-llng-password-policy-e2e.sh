@@ -65,10 +65,13 @@ PY
 verify_llng_policy() {
   local config catalog=/usr/share/lemonldap-ng/portal/htdocs/static/languages/zh.json
   config=$("$docker_cmd" exec "$llng" "$llng_cli" -json get \
-    passwordPolicyActivation portalDisplayPasswordPolicy passwordPolicyMinSize)
+    passwordPolicyActivation portalDisplayPasswordPolicy passwordPolicyMinSize \
+    ldapChangePasswordAsUser ldapAllowResetExpiredPassword)
   printf '%s' "$config" | jq -e \
     --argjson min "$policy_min_length" \
     '(.passwordPolicyActivation | tonumber) == 1 and
+     (.ldapChangePasswordAsUser | tonumber) == 1 and
+     (.ldapAllowResetExpiredPassword | tonumber) == 1 and
      (.portalDisplayPasswordPolicy | tonumber) == 1 and
      (.passwordPolicyMinSize | tonumber) == $min' >/dev/null
   "$docker_cmd" exec "$llng" grep -Fq "新密码至少 ${policy_min_length} 个字符" "$catalog"

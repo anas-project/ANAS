@@ -28,8 +28,13 @@ application_catalog:
 	if len(cfg.ApplicationCatalog.Entries) != 1 {
 		t.Fatal(cfg)
 	}
+	// APPCAT-R-040 added French to the accepted catalog languages. Keep the
+	// negative case outside the supported set instead of rejecting a valid key.
+	if _, err := Parse([]byte(strings.Replace(source, "{en: External}", "{fr: External}", 1))); err != nil {
+		t.Fatalf("supported French translation rejected: %v", err)
+	}
 	for _, bad := range []string{
-		strings.Replace(source, "{en: External}", "{fr: External}", 1),
+		strings.Replace(source, "{en: External}", "{it: External}", 1),
 		strings.Replace(source, "{en: External}", "{en: ''}", 1),
 		strings.Replace(source, "url: https://external.example/", "url: javascript:alert(1)", 1),
 		strings.Replace(source, "name: external", "name: external\n      client_secret: exposed", 1),

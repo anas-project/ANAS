@@ -15,12 +15,13 @@ services:
     dns: ["${LOCAL_DNS_SERVER}"]
     read_only: true
     cap_drop: [ALL]
-    cap_add: [CHOWN, SETUID, SETGID]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE]
     security_opt: ["no-new-privileges:true"]
     environment:
       TZ: ${TZ}
       USER_PORTAL_URL: ${USER_PORTAL_URL}
       USER_PORTAL_ISSUER: ${USER_PORTAL_ISSUER}
+      USER_PORTAL_ACCOUNT_SCHEMA: ${USER_PORTAL_ACCOUNT_SCHEMA}
       USER_PORTAL_CLIENT_ID: ${USER_PORTAL_CLIENT_ID}
       USER_PORTAL_REAUTH_CLIENT_ID: ${USER_PORTAL_REAUTH_CLIENT_ID}
       USER_PORTAL_LANGUAGE: ${USER_PORTAL_LANGUAGE}
@@ -61,6 +62,7 @@ services:
       USER_PORTAL_PROXY_HOST: ${TRAEFIK_HOSTNAME}
       USER_PORTAL_TRUSTED_FORWARDERS: ${TRAEFIK_FORWARDED_HEADERS_TRUSTED_IPS}
     volumes:
+      - "${ANAS_MODULE_RUNTIME_STATE_PATH}/mail-management:/run/anas/mail-management-input:ro"
       - "${ANAS_IDENTITY_GROUPS_DIR}:/run/anas/identity-groups:ro"
       - "${ANAS_APP_CATALOG_DIR}:/run/anas/application-catalog:ro"
       - "${ANAS_TLS_CERTS_DIR}:/certs:ro"
@@ -71,6 +73,8 @@ services:
         read_only: true
         bind:
           create_host_path: false
+    tmpfs:
+      - /run/anas/mail-management:rw,noexec,nosuid,size=1m,mode=0700
     healthcheck:
       test: [CMD, /usr/local/bin/anas-user-portal, healthcheck]
       interval: 30s

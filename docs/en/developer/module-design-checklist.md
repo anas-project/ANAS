@@ -1,6 +1,6 @@
 # Module design and release checklist
 
-> Status: **current baseline**. Updated: 2026-08-21.
+> Status: **current baseline**. Updated: 2026-10-30.
 
 Use this checklist when creating, upgrading, or reviewing an ANAS Module. It consolidates the
 [Module development standard](/en/developer/module-development),
@@ -102,9 +102,10 @@ An upstream-version or runtime-asset change must also complete the
 
 ## 10. Relational-database consumers (conditional)
 
-- [ ] `[A/M]` A dual PostgreSQL/MariaDB consumer uses `relational_database`; public interfaces are `postgres`/`mariadb`/`auto`, and `mysql` appears only as an internal application mapping.
+- [ ] `[M]` Use PostgreSQL when supported upstream; use MySQL/MariaDB only when the pinned version explicitly lacks PostgreSQL support, with an official source and documented exception.
+- [ ] `[A/M]` Use `relational_database` and declare only supported `postgres` or `mariadb` interfaces; `auto` stays within that set and `mysql` is only an internal application mapping.
 - [ ] `[A/M]` The hook consumes only `<PREFIX>_DB_*` and `<PREFIX>_NETWORK_DB`; Compose joins only the selected provider network and receives no provider root/admin credential.
-- [ ] `[A/E]` Unit tests cover both interfaces, dedicated credentials, and network mapping; release evidence covers empty install, restart, and repeated apply on both engines.
+- [ ] `[A/E]` Tests cover declared engines, dedicated credentials, network mapping, empty install, restart, and repeated apply; removing an existing engine explicitly addresses old configurations and data retention without silent migration.
 
 ## 11. Timezone and localization
 

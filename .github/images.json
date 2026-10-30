@@ -100,6 +100,41 @@
     "platforms": "linux/amd64,linux/arm64"
   },
   {
+    "module": "mail",
+    "image": "anas-mail",
+    "context": "modules/mail",
+    "dockerfile": "modules/mail/service/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64",
+    "shared_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/directorymail",
+      "internal/configschema",
+      "internal/localization"
+    ]
+  },
+  {
+    "module": "mail",
+    "image": "anas-mail-dms",
+    "context": "modules/mail",
+    "dockerfile": "modules/mail/dms/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64",
+    "shared_paths": [
+      "go.mod",
+      "go.sum",
+      "internal/directorymail",
+      "internal/configschema",
+      "internal/localization"
+    ]
+  },
+  {
+    "module": "mail",
+    "image": "anas-mail-webmail",
+    "context": "modules/mail",
+    "dockerfile": "modules/mail/roundcube/Dockerfile",
+    "platforms": "linux/amd64,linux/arm64"
+  },
+  {
     "module": "meshcentral",
     "image": "anas-meshcentral",
     "context": "modules/meshcentral/meshcentral",
@@ -137,7 +172,7 @@
   {
     "module": "samba_dc",
     "image": "anas-samba-dc",
-    "context": "modules/samba_dc/samba_dc",
+    "context": "modules/samba_dc",
     "dockerfile": "modules/samba_dc/samba_dc/Dockerfile",
     "platforms": "linux/amd64,linux/arm64"
   },

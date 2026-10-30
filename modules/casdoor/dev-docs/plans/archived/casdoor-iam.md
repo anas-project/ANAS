@@ -2,7 +2,7 @@
 doc_type: plan
 status: done
 created: 2026-08-26
-updated: 2026-10-07
+updated: 2026-10-20
 ---
 
 # Casdoor IAM Provider 实施计划
@@ -32,6 +32,7 @@ SAML SLO 的不发布决策已有源码审计，Module 生命周期已提升为 
 | M3：删除/停用、Group 门禁、永久锚点与 OIDC/SAML 登录 | R-015—R-016、R-019、R-022—R-025 | 已完成 |
 | M4：OIDC 会话撤销与 SAML SLO | R-027—R-029、R-031 | 已完成 |
 | M5：恢复、备份、升级、密钥轮换与发布 | R-034—R-039 | 已完成 |
+| 2026-10-20 缺陷：并发 LDAP 导入串行化 | R-041 | 单元通过；finance 新镜像复验待执行，见文末 |
 
 ## 2. 已完成落地快照
 
@@ -170,3 +171,50 @@ amd64 镜像：`sha256:9c843a8e6300beb659b05872f8a646715ad50f2bf2c318939e585e4f4
 远端证据：finance `/home/whl/anas-casdoor-test-20261003/casdoor-release-20261006/`，包含正式构建、各阶段失败与最终复验。原始凭据和恢复包不进入 Git。本地脱敏 evidence、source-hashes、test-hashes 及原报告已迁入 Git 忽略的 `test-env/reports/2026-10-07-review-consolidation/`，逐文件 SHA-256 见该目录 manifest；本机副本尚未成为共享持久归档。
 
 下一步：当前已确认 OIDC 发布验收范围无阻塞；SAML SLO/应用会话退出仍按已有待办推进，首次建号延迟继续观察。
+
+## 2026-10-20：并发 LDAP 导入产生 `<uid>_` 重复账号
+
+**现象。** finance 门户验收（夹具前缀 `pua7597e3c2`）在 05:56:32—33（+08）新建 7 个 AD 测试用户后，
+其中 6 个在 Casdoor 各有两条记录：`<uid>` 与 `<uid>_`，`ldap` 相同，均由 `app-anas-directory`
+在同一秒创建。目录订阅器此后每轮报 `Casdoor users X and X_ share identity anchor` 并整批失败，
+`anas_finance_casdoor_dirwatch` 持续 unhealthy，目录到 IAM 的同步全部停滞。
+
+**根因。** 上游 `object.SyncLdapUsers` 先按 LDAP UUID 查已有用户，再逐个插入缺失用户，中间无锁。
+5 分钟自动同步 goroutine 与订阅器调用的 `sync-ldap-users` API 在同一 Casdoor 进程内并发执行时，
+两边都判定新用户缺失；后插入者经 `buildLdapUserName` 重名回退得到 `<uid>_<uidNumber>`，
+AD 用户 `uidNumber` 为空，所以是 `<uid>_`。
+
+**方案取舍（复杂度：低）。** 选用 `0009-ldap-user-sync-serialization.patch`：在 `SyncLdapUsers`
+入口加进程内互斥锁，自动同步、API 和管理界面三条路径共用该入口，后一次导入必然看到前一次的结果。
+新增约 10 行代码和 1 个源码测试，不新增组件、配置或运维步骤；Casdoor 为单副本容器，进程内锁覆盖全部
+导入方。未选方案：关闭上游自动同步会违反 R-013 的兜底要求；在订阅器侧加锁覆盖不到上游 goroutine；
+由订阅器按锚点预建用户或自动修复 `_` 重复，需要复制上游建号字段或删除账号，逻辑多且有误删风险。
+若将来 Casdoor 多副本运行，进程内锁不再充分，须重新评估（例如数据库唯一约束）。
+
+**验证。** 源码测试 `TestAnasLdapUserSyncSerializesImports` 用上游“先查后插”模型并发导入同一用户：
+不经锁时复现 `alice`、`alice_`，经 `SyncLdapUsers` 时只得到 `alice`；临时去掉锁后该测试失败。
+Dockerfile 构建阶段运行此测试。2026-10-20 在固定源码（0001—0009 依次应用）上本地通过 `go test`
+与 `go vet ./object`。R-041：单元通过。finance 尚未部署含 0009 的镜像，真实并发导入复验待执行。
+
+**finance 存量清理。** `anas` 组织开启了软删除，`delete-user` API 只会再次置 `isDeleted`，
+6 条 `_` 记录已是 `isDeleted=true`，API 删除无效，只能在 Casdoor 数据库硬删除。清理前只读核对：
+每条 `_` 记录的 `name = ldap || '_'`、`isDeleted`、`signupApplication = app-anas-directory`、
+创建于 05:56:3x、存在同 `ldap` 的未删除原记录；`casbin_user_rule`、`permission_rule`、`session`、
+`token` 中无引用。清理脚本在单个事务内按上述全部条件选择记录，数量不等于 6 即回滚；删除前把整行
+导出为 JSONL，证据目录为 finance `/home/whl/anas-casdoor-dup-cleanup-20261020/`（`0700`，
+文件 `0600`，含 `SHA256SUMS`）。执行结果见下方记录。
+
+**清理记录（2026-10-20 用户批准后执行）。** 事务筛中 6 条，`DELETE 6` 后提交：`pua7597e3c2{domain,manager,normal,other,privileged,target}_`。
+`deleted-rows.jsonl` SHA-256 `7adec7178058f0d2dc53118ce580b922958c109bb059e099f0399686c83b1042`，
+`result.txt` SHA-256 `a8131761d496f766de21acfe5fd6065d76a202c1c13a20d0f24c67a066ca5da7`。锚点冲突随之消失。
+订阅器仍未恢复：故障期间每轮同步都在锚点检查失败前写入待撤权记录，`pending-logouts.json` 累积到 6547 条，
+全部属于测试用户；其中 3260 条指向已删除的 `_` 用户（无 token、无 session，只有 Immich 策略通知）。
+撤权接口对这些用户返回 `directory user no longer exists`，`revokePreparedLogouts` 遇到首个错误即停，
+健康状态报 `directory logout is overdue`。暴露独立缺陷：失败轮次因策略通知 `eventTimestamp` 每次不同而
+无法去重，待撤权记录无限增长；用户被删除后，引用它的待撤权记录无法完成，会一直阻塞后续记录。
+
+经用户批准，停止订阅器、备份后只移除指向 6 个已删除 `_` 用户 ID 的 3260 条记录（6547→3287，全部无 token/session），再启动。`pending-logouts.before.json` SHA-256 `321fd9d7fa9dba2c399680148e876937a12fbd29bae905ade6956e872312b838`，`pending-logouts.removed.json` SHA-256 `c002ec60a5648da3b5aeaea70ecefae7f6f8c6bdd9e1722644d0a5a2ea09d941`，同在上述证据目录。此后 LDAP 同步恢复（游标 286→310，触发无错误），但仍 unhealthy：其余 3260 条属于 5 个原记录测试用户，快照 `subject` 为空，只有 Immich 策略通知目标；`0006` 的 deliver 对空 subject 返回 `captured directory subject is invalid`，这些记录永远无法完成，同属上述“无法完成的记录永久挂起”缺陷。
+
+经用户再次批准，停止订阅器、备份后只移除 `name` 以 `pua7597e3c2` 开头、`subject` 为空且无 token/session 的 3260 条记录（3268→8，保留另一会话夹具 `pua96083604` 的 8 条），再启动。`pending-logouts.before2.json` SHA-256 `7e8f8efb57547e972629808b8b19ba66106061e0d564370f5e71b26e191a4338`，`pending-logouts.removed2.json` SHA-256 `00db7cb098d2e51d152c42e7a471ebaba3518659e1c3909561f4e21759099408`。10:24:30（+08）订阅器恢复 healthy，`ready=true`、`pending_logouts=0`（保留的 8 条已正常投递），Casdoor `anas` 组织 157 个用户中无 `ldap` 重复、无 `_` 结尾账号。
+
+**后续。** 上述两个撤权缺陷（失败轮次待撤权记录无限增长；引用已删除用户或空 subject 的记录永久挂起并使健康检查失败）未在本次修复，另行处理。finance 尚未部署含 0009 的镜像，R-041 的实机并发复验待新镜像部署后执行。

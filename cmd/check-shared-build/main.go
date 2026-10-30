@@ -119,6 +119,7 @@ func check(root string) error {
 			Services map[string]struct {
 				Build struct {
 					Context    string            `yaml:"context"`
+					Dockerfile string            `yaml:"dockerfile"`
 					Additional map[string]string `yaml:"additional_contexts"`
 				} `yaml:"build"`
 			} `yaml:"services"`
@@ -129,6 +130,13 @@ func check(root string) error {
 		found := false
 		for name, service := range compose.Services {
 			if filepath.Clean(filepath.Join(filepath.Dir(composePath), service.Build.Context)) != image.Context {
+				continue
+			}
+			dockerfile := service.Build.Dockerfile
+			if dockerfile == "" {
+				dockerfile = "Dockerfile"
+			}
+			if filepath.Clean(filepath.Join(image.Context, dockerfile)) != image.Dockerfile {
 				continue
 			}
 			found = true

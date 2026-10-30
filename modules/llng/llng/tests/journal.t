@@ -1,0 +1,58 @@
+use strict;
+use warnings;
+use Test::More;
+use File::Temp qw(tempdir);
+use JSON qw(encode_json);
+use FindBin;
+use lib "$FindBin::Bin/..";
+require DirectoryJournal;
+
+my $dir = tempdir(CLEANUP => 1);
+my $path = "$dir/events.jsonl";
+my $journal = Anas::LLNG::DirectoryJournal->new(path => $path,
+    attributes => {member => 1, useraccountcontrol => 1, lockouttime => 1});
+sub append {
+    my ($seq, $attr, $tail) = @_;
+    open my $fh, '>>', $path or die $!;
+    print {$fh} encode_json({seq => $seq, op => 'Modify', dn => 'CN=test,DC=fixture', attributes => [$attr]});
+    print {$fh} "\n" unless $tail;
+    close $fh;
+}
+is($journal->snapshot(0)->{cursor}, 0, 'empty journal starts without invented events');
+append(1, 'member');
+append(2, 'lastLogon');
+append(3, 'lockoutTime', 1);
+my $batch = $journal->snapshot(0);
+is($batch->{cursor}, 2, 'partial tail not acknowledged');
+is(scalar(grep {$journal->relevant($_)} @{$batch->{rows}}), 1, 'unrelated attribute filtered');
+open my $tail, '>>', $path; print {$tail} "\n"; close $tail;
+is($journal->snapshot(2)->{rows}->[0]->{seq}, 3, 'completed tail becomes visible');
+rename $path, "$path.1";
+append(3, 'lockoutTime'); append(4, 'userAccountControl');
+$batch = $journal->snapshot(2);
+is_deeply([map {$_->{seq}} @{$batch->{rows}}], [3, 4], 'rotation and duplicates preserve ordering');
+ok(!$batch->{gap}, 'retained generation bridges rotation');
+unlink "$path.1";
+ok($journal->snapshot(1)->{gap}, 'retention gap demands reconciliation');
+ok($journal->snapshot(9)->{gap}, 'producer reset demands reconciliation');
+rename $path, "$path.missing";
+eval {$journal->snapshot(4)};
+like($@, qr/previous journal unavailable/, 'missing journal cannot reset an established cursor');
+rename "$path.missing", $path;
+open my $conflict, '>', "$path.1";
+print {$conflict} encode_json({seq => 3, op => 'Modify', dn => 'CN=other', attributes => ['member']}) . "\n";
+close $conflict;
+eval {$journal->snapshot(4)};
+like($@, qr/conflicting journal sequence/, 'different records cannot share an acknowledged sequence');
+unlink "$path.1";
+my $state = {cursor => 2, pending => {logout => {rp => 'fixture'}}, reconciled => 0};
+Anas::LLNG::DirectoryJournal->save("$dir/state.json", $state);
+is_deeply(Anas::LLNG::DirectoryJournal->load("$dir/state.json"), $state, 'pending logout survives restart before cursor commit');
+is((stat("$dir/state.json"))[2] & 0777, 0600, 'durable session references are private');
+open my $bad, '>', "$dir/state.json"; print {$bad} '{broken'; close $bad;
+eval { Anas::LLNG::DirectoryJournal->load("$dir/state.json") };
+like($@, qr/restore/, 'corrupt pending state never silently loses notifications');
+open $bad, '>>', $path; print {$bad} "{broken}\n"; close $bad;
+eval {$journal->snapshot(4)};
+like($@, qr/invalid complete/, 'malformed complete event cannot advance cursor');
+done_testing;

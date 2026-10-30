@@ -27,7 +27,7 @@
 - 级别：`unit`
 - 覆盖需求：`PORTAL-R-002`、`PORTAL-R-003`、`PORTAL-R-004`、`PORTAL-R-005`、`PORTAL-R-007`、`PORTAL-R-012`、`PORTAL-R-016`、`PORTAL-R-018`、`PORTAL-R-025`、`PORTAL-R-035`、`PORTAL-R-037`、`PORTAL-R-038`、`PORTAL-R-039`、`PORTAL-R-032`、`PORTAL-R-034`、`PORTAL-R-041`、`PORTAL-R-080`、`PORTAL-R-082`
 - 需求复核摘要：`sha256:79fc78a28bd813c6dfe9cd6d5d1ece80353008a137a1631b53422eb4826038f0`
-- 实现复核摘要：`sha256:44d9a4f54ae2e8b5bd1f7e303fd213b512b5b80ef34259f00c977644fbe495aa`
+- 实现复核摘要：`sha256:3f81cabb74ea8f4b4f57c2f7bd89e8a138d0be4440fcf42da73316d061f48b64`
 - Fixture：固定候选；e2e 使用用户确认的测试主机独立 namespace、Docker endpoint、Samba/Casdoor/Traefik 和随机测试账号
 - 目标能力：`go`、`https-test-server`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
@@ -284,7 +284,7 @@ go test ./modules/user_portal/portal -tags portal_native -run TestNativeDirector
 - 级别：`unit`
 - 覆盖需求：`PORTAL-R-045`、`PORTAL-R-046`、`PORTAL-R-048`、`PORTAL-R-049`、`PORTAL-R-050`、`PORTAL-R-051`、`PORTAL-R-052`、`PORTAL-R-053`、`PORTAL-R-055`、`PORTAL-R-056`、`PORTAL-R-057`、`PORTAL-R-058`、`PORTAL-R-059`、`PORTAL-R-062`、`PORTAL-R-063`、`PORTAL-R-064`、`PORTAL-R-065`、`PORTAL-R-066`、`PORTAL-R-067`、`PORTAL-R-069`、`PORTAL-R-073`、`PORTAL-R-071`、`PORTAL-R-072`、`PORTAL-R-075`、`PORTAL-R-076`、`PORTAL-R-077`、`PORTAL-R-081`
 - 需求复核摘要：`sha256:92dfd8f76d9f7e9fdfb575194893bf68123072c7001d13e1b23b999c8cc8919a`
-- 实现复核摘要：`sha256:d3f42ee58186d25298617d3052e47252b89f091971e0244ede3b772d17759d7c`
+- 实现复核摘要：`sha256:245d1159f0737379f289f815f42615d88dafe598a20dbc38d4ce78e09f62eafc`
 - Fixture：内存目录与 HTTPS 服务、无 Samba 写入的配置守卫和生产静态资源配模拟 API；不使用真实账号
 - 目标能力：`go`、`https-test-server`、`python3`、`playwright-chromium`
 - Oracle 来源：`return-value`、`error-contract`、`filesystem`
@@ -389,7 +389,7 @@ node test-env/playwright/user-portal-account-management.mjs
 - 级别：`e2e`
 - 覆盖需求：`PORTAL-R-055`、`PORTAL-R-057`、`PORTAL-R-068`
 - 需求复核摘要：`sha256:343b85b4a48ed846aa64633ed4c545a54ac6fedae2b5b8d1cd50742d5d518b03`
-- 实现复核摘要：`sha256:9ea9f27c96a459c8cfc350d9410bb572aa6875f6e88c1028e72f51530e77abcc`
+- 实现复核摘要：`sha256:50a38c4b29ea9d439fa23ba23cc1ab9bda1a2de379af5bda5d454253ed7532d9`
 - Fixture：完全断网的 owner.test 假域，无生产信任或现有目录凭据；使用本轮生产 Go 适配器
 - 目标能力：`go`、`docker`、`openssl`、`python3`、`ldaps`
 - Oracle 来源：`return-value`、`api`、`runtime`、`report`
@@ -447,7 +447,7 @@ go test ./modules/user_portal/portal -run 'TestDomainOwnershipSteps|TestOwnerDes
 - 级别：`contract`
 - 覆盖需求：`PORTAL-R-069`、`PORTAL-R-073`、`PORTAL-R-071`、`PORTAL-R-072`、`PORTAL-R-075`、`PORTAL-R-076`
 - 需求复核摘要：`sha256:7ef1fe16a6ee2f6c67f4aeef704c6b6f1f2d2d2fba2ebacd870111a909717de2`
-- 实现复核摘要：`sha256:255b678f637421eb2d3d09b6441bce5db259183ef31630a20b0683ce92942142`
+- 实现复核摘要：`sha256:ba7dda0dbbfa864c668356c36a391c5edcf5aa63be302b255c145eb8bab373b8`
 - Fixture：生产前端加隔离模拟 API 和 Go 目录替身
 - 目标能力：`go`、`playwright`
 - Oracle 来源：`ui`、`api`、`error-contract`

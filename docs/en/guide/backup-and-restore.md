@@ -15,6 +15,8 @@ anas backup verify --to <destination>
 
 Use current CLI help as the authority for exact arguments.
 
+Before capturing data for a stopped backup, ANAS uses the active deployment's frozen environment to check its Compose containers again, including stopped and orphaned containers. Capture proceeds only when all containers are exited or have not started. An unreadable frozen environment, failed stop, timed-out query, unknown state, or still-running container fails the backup and attempts to restart previously running services using the existing recovery record. Unconfirmed stop cleanup still blocks automatic restart. This check does not verify external writers or data outside the backup.
+
 ## Three recovery tools
 
 | Failure | Tool |

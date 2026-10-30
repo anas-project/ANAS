@@ -1,0 +1,7 @@
+{
+  "name": "anas-mail-ingress-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test ingress.test.mjs"},
+  "devDependencies": {"miniflare": "4.20260730.0"}
+}

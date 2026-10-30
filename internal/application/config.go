@@ -52,6 +52,10 @@ type ConfigPutRequest struct {
 	Candidate         ConfigCandidate
 	Precondition      ConfigPreconditionMode
 	ExpectedValidator string
+	// ExpectedStoredInputs is an in-process-only Secret Store precondition.
+	// A nil value requires absence; a non-nil value must match the current
+	// module-owned managed input exactly. Never serialize or log this map.
+	ExpectedStoredInputs map[string]*string `json:"-"`
 }
 
 type ConfigField struct {
@@ -68,6 +72,7 @@ type ConfigField struct {
 	MustResolve    bool                     `json:"must_resolve"`
 	Constraints    configschema.Constraints `json:"constraints"`
 	Sensitive      bool                     `json:"sensitive"`
+	StoreInput     bool                     `json:"store_input,omitempty"`
 	SensitiveState string                   `json:"sensitive_state,omitempty"`
 	Editable       bool                     `json:"editable"`
 	EditCommand    string                   `json:"edit_command,omitempty"`

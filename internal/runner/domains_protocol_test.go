@@ -68,3 +68,37 @@ func TestCalculateDomainsProtocolPublishesOnlyApplicationFQDNs(t *testing.T) {
 		t.Fatalf("DOMAINS owner = %q, want %q", got, runnerScope)
 	}
 }
+
+func TestAdditionalPublishedDomainsHaveExplicitOwnerAndNoCredentialOrURL(t *testing.T) {
+	for _, mode := range []string{"valid", "foreign-key", "foreign-owner", "url", "missing", "conflict", "duplicate"} {
+		a := &app{order: []string{"mail", "other"}, reg: map[string]Module{"mail": {Name: "mail", EnvPrefix: "MAIL", PublishesDomain: true, AdditionalDomains: []string{"MAIL_WEBMAIL_DOMAIN"}}, "other": {Name: "other", EnvPrefix: "OTHER", PublishesDomain: true}}, env: map[string]string{"MAIL_DOMAIN": "mail.example.test", "MAIL_WEBMAIL_DOMAIN": "webmail.example.test", "OTHER_DOMAIN": "other.example.test"}, envOwner: map[string]string{"MAIL_WEBMAIL_DOMAIN": "mail"}}
+		switch mode {
+		case "foreign-key":
+			m := a.reg["mail"]
+			m.AdditionalDomains = []string{"OTHER_DOMAIN"}
+			a.reg["mail"] = m
+		case "foreign-owner":
+			a.envOwner["MAIL_WEBMAIL_DOMAIN"] = "other"
+		case "url":
+			a.env["MAIL_WEBMAIL_DOMAIN"] = "https://webmail.example.test:10000"
+		case "missing":
+			delete(a.env, "MAIL_WEBMAIL_DOMAIN")
+		case "conflict":
+			a.env["MAIL_WEBMAIL_DOMAIN"] = "other.example.test"
+		case "duplicate":
+			m := a.reg["mail"]
+			m.AdditionalDomains = append(m.AdditionalDomains, "MAIL_WEBMAIL_DOMAIN")
+			a.reg["mail"] = m
+		}
+		err := a.publishApplicationDomains()
+		if mode != "valid" {
+			if err == nil {
+				t.Fatal("invalid domain publication accepted", mode)
+			}
+			continue
+		}
+		if err != nil || a.env["DOMAINS"] != "inner/mail.example.test/mail,inner/other.example.test/other,inner/webmail.example.test/mail" || a.envOwner["DOMAINS"] != runnerScope {
+			t.Fatal("additional publication", err)
+		}
+	}
+}

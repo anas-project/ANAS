@@ -14,14 +14,16 @@ import (
 )
 
 type Record struct {
-	ID     string    `json:"id"`
-	Time   time.Time `json:"time"`
-	Phase  string    `json:"phase"`
-	Actor  string    `json:"actor"`
-	Target string    `json:"target"`
-	Action string    `json:"action"`
-	Rule   string    `json:"rule,omitempty"`
-	Group  string    `json:"group,omitempty"`
+	Mailbox       string    `json:"mailbox,omitempty"`
+	MailOperation string    `json:"mail_operation,omitempty"`
+	ID            string    `json:"id"`
+	Time          time.Time `json:"time"`
+	Phase         string    `json:"phase"`
+	Actor         string    `json:"actor"`
+	Target        string    `json:"target"`
+	Action        string    `json:"action"`
+	Rule          string    `json:"rule,omitempty"`
+	Group         string    `json:"group,omitempty"`
 	// Reason is retained only to read historical audit records.
 	Reason         string   `json:"reason,omitempty"`
 	Directory      string   `json:"directory,omitempty"`

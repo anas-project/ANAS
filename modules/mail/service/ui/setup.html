@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>ANAS Mail</title><link rel="stylesheet" href="/assets/mail.css"><script src="/assets/setup.js" defer></script></head>
+<body><header><a class="brand" href="/">ANAS Mail</a><nav><a href="/" id="back"></a><label><span class="sr" id="language-label">Language</span><select id="language" aria-labelledby="language-label"><option value="en">English</option><option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="de">Deutsch</option><option value="es">Español</option><option value="fr">Français</option><option value="ja">日本語</option><option value="ko">한국어</option></select></label></nav></header>
+<main><h1 id="title"></h1><p id="intro"></p><p id="status" role="status" aria-live="polite"></p><button id="reload" type="button" hidden></button>
+<form id="setup-form" autocomplete="off" hidden>
+<section class="mailbox"><h2 data-word="2"></h2><label><span data-word="3"></span><select id="inbound"><option value=""></option><option value="direct" id="direct-inbound-option"></option><option value="worker-r2">Cloudflare Worker + R2</option><option value="cloud-relay">Cloudflare + VPS</option><option value="vps-direct" id="vps-direct-option"></option></select></label><div id="inbound-guide" class="guide"></div><div class="setup-fields">
+<label><span data-word="4"></span><input id="domain" type="text" maxlength="253" placeholder="example.org" spellcheck="false"></label><label><span id="dns-expected-label"></span><input id="dns-expected" type="text" maxlength="253" placeholder="mx.example.org" spellcheck="false"></label><div><button id="dns-check" type="button"></button><p id="dns-result" role="status" aria-live="polite"></p></div>
+<div id="vps-probe" class="guide" hidden><label><span id="vps-probe-label"></span><input id="vps-probe-host" type="text" maxlength="253" placeholder="mx.example.org" spellcheck="false"></label><p id="vps-probe-note"></p><button id="vps-probe-check" type="button"></button><p id="vps-probe-result" role="status" aria-live="polite"></p></div>
+<div id="cloud-fields" class="setup-fields">
+<label><span data-word="5"></span><input id="source_url" type="url" maxlength="300" placeholder="https://mail-source.example.org" spellcheck="false"></label>
+<label><span data-word="6"></span><input id="ingress_secret_ref" type="text" maxlength="77" placeholder="secrets.MAIL_INGRESS" spellcheck="false"></label></div></div>
+<div id="worker-installer" class="guide" hidden><h3 id="worker-title"></h3><p id="worker-note"></p><div class="setup-fields">
+<label><span id="worker-operation-label"></span><input id="worker-operation" type="text" maxlength="36" spellcheck="false" autocomplete="off"></label>
+<label><span>Cloudflare Account ID</span><input id="worker-account" type="text" maxlength="32" spellcheck="false" autocomplete="off"></label>
+<label><span>Cloudflare Zone ID</span><input id="worker-zone" type="text" maxlength="32" spellcheck="false" autocomplete="off"></label>
+<label><span>Worker name</span><input id="worker-name" type="text" maxlength="63" spellcheck="false" autocomplete="off"></label>
+<label><span>R2 bucket name</span><input id="worker-bucket" type="text" maxlength="63" spellcheck="false" autocomplete="off"></label>
+<label><span id="worker-capacity-label"></span><input id="worker-capacity" type="number" min="1" max="9007199254740991"></label>
+<label><span id="worker-drain-label"></span><input id="worker-drain" type="text" maxlength="295" spellcheck="false" autocomplete="off"></label>
+<label><span id="worker-deploy-label"></span><input id="worker-deploy-token" type="password" maxlength="512" autocomplete="new-password"></label>
+<label><span id="worker-routing-label"></span><input id="worker-routing-token" type="password" maxlength="512" autocomplete="new-password"></label>
+</div><button id="worker-prepare" type="button"></button> <button id="worker-commit" type="button"></button><p id="worker-result" role="status" aria-live="polite"></p></div>
+<div id="vps-installer" class="guide" hidden><h3 id="vps-title"></h3><p id="vps-note"></p><div class="setup-fields">
+<label><span id="vps-operation-label"></span><input id="vps-operation" maxlength="36" autocomplete="off" spellcheck="false"></label>
+<label><span id="vps-host-label"></span><input id="vps-host" maxlength="253" autocomplete="off" spellcheck="false"></label>
+<label><span id="vps-port-label"></span><input id="vps-port" type="number" min="1" max="65535" value="22"></label>
+<label><span id="vps-user-label"></span><input id="vps-user" maxlength="32" autocomplete="off"></label>
+<label><span id="vps-hostkey-label"></span><textarea id="vps-hostkey" maxlength="8192" autocomplete="off"></textarea></label>
+<label><span id="vps-sshkey-label"></span><textarea id="vps-sshkey" maxlength="65536" autocomplete="off"></textarea></label>
+<label><span id="vps-cert-label"></span><textarea id="vps-cert" maxlength="32768" autocomplete="off"></textarea></label>
+<label><span id="vps-tlskey-label"></span><textarea id="vps-tlskey" maxlength="32768" autocomplete="off"></textarea></label>
+<label><span id="vps-smtp-label"></span><input id="vps-smtp" maxlength="253" autocomplete="off" spellcheck="false"></label>
+<div id="vps-forward-fields" class="setup-fields" hidden><p id="vps-forward-note"></p>
+<label><span id="vps-account-label"></span><input id="vps-account" maxlength="32" autocomplete="off" spellcheck="false"></label>
+<label><span id="vps-zone-label"></span><input id="vps-zone" maxlength="32" autocomplete="off" spellcheck="false"></label>
+<label><span id="vps-domain-label"></span><input id="vps-domain" maxlength="253" autocomplete="off" spellcheck="false"></label>
+<label><span id="vps-routing-label"></span><input id="vps-routing" type="password" maxlength="256" autocomplete="new-password"></label>
+<label><span id="vps-destination-label"></span><input id="vps-destination" type="password" maxlength="256" autocomplete="new-password"></label></div>
+<label><span id="vps-capacity-label"></span><input id="vps-capacity" type="number" min="1" max="9007199254740991"></label>
+<label><span id="vps-drain-label"></span><input id="vps-drain" maxlength="295" autocomplete="off"></label>
+<label class="confirmation"><input id="vps-ipv4" type="checkbox"><span id="vps-ipv4-label"></span></label>
+</div><button id="vps-publish" type="button"></button> <button id="vps-activate" type="button"></button> <button id="vps-prepare" type="button"></button> <button id="vps-commit" type="button"></button><p id="vps-result" role="status" aria-live="polite"></p></div>
+<div id="relay-attach" class="guide" hidden><h3 id="relay-title"></h3><p id="relay-note"></p><div class="setup-fields">
+<label><span id="relay-operation-label"></span><input id="relay-operation" type="text" maxlength="36" spellcheck="false" autocomplete="off"></label>
+<label><span id="relay-source-label"></span><input id="relay-source-id" type="text" maxlength="36" spellcheck="false" autocomplete="off"></label>
+<label><span id="relay-generation-label"></span><input id="relay-generation" type="text" maxlength="36" spellcheck="false" autocomplete="off"></label>
+<label><span id="relay-capacity-label"></span><input id="relay-capacity" type="number" min="1" max="9007199254740991"></label>
+<label><span id="relay-drain-label"></span><input id="relay-drain" type="text" maxlength="295" spellcheck="false" autocomplete="off"></label>
+<label><span id="relay-reader-label"></span><input id="relay-reader" type="password" maxlength="64" autocomplete="new-password"></label>
+<label><span id="relay-control-label"></span><input id="relay-control" type="password" maxlength="64" autocomplete="new-password"></label>
+<label><span id="relay-notification-label"></span><input id="relay-notification" type="password" maxlength="64" autocomplete="new-password"></label>
+<label class="confirmation"><input id="relay-ipv4" type="checkbox"><span id="relay-ipv4-label"></span></label>
+</div><button id="relay-prepare" type="button"></button> <button id="relay-commit" type="button"></button><p id="relay-result" role="status" aria-live="polite"></p></div></section>
+<section class="mailbox"><h2 data-word="7"></h2><p id="outbound-runtime" role="status"></p><button id="outbound-refresh" type="button"></button><p id="queue-note"></p><button id="queue-check" type="button"></button><p id="queue-result" role="status" aria-live="polite"></p><p id="secret-guide"></p><label><span data-word="8"></span><select id="provider"><option value=""></option><option value="direct" id="direct-option"></option><option value="resend">Resend</option><option value="smtp">SMTP</option></select></label><div id="outbound-guide" class="guide"></div><div class="setup-fields">
+<label><span id="sending-domain-label"></span><input id="sending-domain" type="text" maxlength="253" placeholder="send.example.org" spellcheck="false"></label>
+<label><span id="sending-selector-label"></span><input id="sending-selector" type="text" maxlength="253" placeholder="selector" spellcheck="false"></label>
+<div><button id="sending-dns-check" type="button"></button><p id="sending-dns-result" role="status" aria-live="polite"></p></div></div><p id="sending-dns-note"></p><div class="setup-fields" id="smtp-fields">
+<label><span data-word="9"></span><input id="host" type="text" maxlength="253" placeholder="smtp.example.org" spellcheck="false"></label><label><span data-word="10"></span><input id="port" type="number" min="1" max="65535"></label>
+<label><span>TLS</span><select id="tls"><option value=""></option><option value="starttls">STARTTLS</option><option value="tls">TLS</option></select></label><label><span data-word="11"></span><input id="username" type="text" maxlength="512" spellcheck="false"></label><label><span data-word="6"></span><input id="secret_ref" type="text" maxlength="77" placeholder="secrets.MAIL_OUTBOUND_PASSWORDS" spellcheck="false"></label></div>
+<div id="outbound-probe" class="guide" hidden><button id="outbound-probe-check" type="button"></button><p id="outbound-probe-note"></p><p id="outbound-probe-result" role="status" aria-live="polite"></p></div>
+<div id="outbound-apply-box" class="guide" hidden><h3 id="outbound-apply-title"></h3><p id="outbound-apply-note"></p><label><span id="outbound-operation-label"></span><input id="outbound-operation" readonly autocomplete="off"></label><label id="outbound-password-field"><span id="outbound-password-label"></span><input id="outbound-password" type="password" maxlength="512" autocomplete="new-password"></label><button id="outbound-apply" type="button"></button><p id="outbound-apply-result" role="status" aria-live="polite"></p></div></section>
+<section class="mailbox"><h2 data-word="12"></h2><p id="retention-guide"></p><div class="setup-fields">
+<label><span data-word="13"></span><input id="additional_mailboxes" type="number" min="0" max="1000000"></label><label><span data-word="14"></span><input id="aliases" type="number" min="0" max="1000000"></label><label><span data-word="15"></span><input id="mailbox_bytes" type="number" min="1" max="9007199254740991"></label><label><span data-word="16"></span><input id="messages_per_minute" type="number" min="1" max="1000000"></label><div id="cloud-limits" class="setup-fields"><label><span data-word="17"></span><input id="cloud_bytes" type="number" min="1" max="9007199254740991"></label><label><span data-word="18"></span><input id="delivered_days" type="number" min="1" max="1000000"></label></div></div><label class="confirmation"><input id="limits_confirmed" type="checkbox"><span data-word="19"></span></label></section>
+<section id="notification-section" class="mailbox"><h2 data-word="20"></h2><p id="notification-guide"></p><p id="notification-path"></p><div class="setup-fields"><label><span id="notification-origin-label"></span><input id="notification_url" type="url" maxlength="300" placeholder="https://mail.example.org:10000" spellcheck="false"></label><label><span data-word="6"></span><input id="notification_secret_ref" type="text" maxlength="77" placeholder="secrets.MAIL_NOTIFICATION" spellcheck="false"></label></div></section>
+<section class="mailbox"><h2 id="runtime-title"></h2><p id="runtime-note"></p><button id="runtime-refresh" type="button"></button><p id="runtime-status" role="status" aria-live="polite"></p><div id="runtime-sources"></div></section>
+<section class="mailbox"><h2 data-word="21"></h2><p id="quota-guide"></p><ul id="checks"></ul><button id="enable" type="button" disabled></button></section>
+<div class="setup-actions"><button id="save" type="submit"></button><span id="revision"></span></div></form></main></body></html>

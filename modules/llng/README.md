@@ -8,7 +8,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `llng` |
-| 版本 / revision | `2.23.2-r13` |
+| 版本 / revision | `2.23.4-r13` |
 | 状态 | `developing` |
 | 类别 | `identity` |
 | 运行时 | `compose` |
@@ -34,7 +34,7 @@ modules:
 
 Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consumer 发布 OIDC/SAML 端点和 Group 属性。`Admins` 可进入 Manager。
 
-固定 LLNG `2.23.2` 在 OIDC RP 声明标准 endpoint 时配置 back-channel logout 和 session-required；从 Portal 登出可同步撤销通过 E2E 的应用会话。SAML 从 SP metadata 导入 SLS 并签名 SLO，Redirect/POST 均需要浏览器。每次 apply 会先删除旧 `LogoutUrl`、OIDC RP、SAML SLS/SP 元数据，再按当前协议重建，覆盖声明消失、换域名、协议切换和重复 apply。
+固定 LLNG `2.23.4` 在 OIDC RP 声明标准 endpoint 时配置 back-channel logout 和 session-required；从 Portal 登出可同步撤销通过 E2E 的应用会话。SAML 从 SP metadata 导入 SLS 并签名 SLO，Redirect/POST 均需要浏览器。每次 apply 会先删除旧 `LogoutUrl`、OIDC RP、SAML SLS/SP 元数据，再按当前协议重建，覆盖声明消失、换域名、协议切换和重复 apply。
 
 | 能力 | 当前声明 |
 | --- | --- |
@@ -50,8 +50,9 @@ Samba AD 是用户和 Group 来源。Portal 使用目录认证，IAM 向 Consume
 **OIDC 匹配键：`anasIdentityAnchor`。** r12 为每个 RP 设置
 `oidcRPMetaDataOptionsUserIDAttr=anasIdentityAnchor`；ID Token、UserInfo、刷新后的 ID Token
 与 Logout Token 使用同一来源。RP 准入规则要求会话包含非空 anchor，并与应用组规则取交集；
-不回退到用户名。Portal 仍按 `sAMAccountName` 登录，`whatToTrace` 保留小写登录名作为日志与会话查询标签。
-LLNG 不建立用户副本，会话表的主键是 session ID，`_whatToTrace` 是索引字段。
+不回退到用户名。密码仍按 `sAMAccountName` 登录；Passkey 按不可变 anchor 查找同一用户，
+`whatToTrace=anasIdentityAnchor` 使持久凭据在改名后继续有效。LLNG 不建立用户副本，普通会话的
+主键是 session ID，持久会话由 anchor 定位。
 
 Netbird 会把 `sub` 放入普通用户 API URL，尚无 anchor 投影例外；calculate 和 render_env
 均拒绝 LLNG + Netbird OIDC 组合（`DIRKEY-R-013`）。Nextcloud 新部署已获内部 UID 和技术路径
@@ -59,7 +60,7 @@ Netbird 会把 `sub` 放入普通用户 API URL，尚无 anchor 投影例外；c
 
 | 目录变化 | LLNG 的动作 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改名 | 重新登录读取新标签，OIDC `sub` 不变；支持 anchor 的 Consumer 继续使用原账号。SAML NameID 稳定性待实现 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
+| `sAMAccountName` 改名 | 重新登录读取新标签，OIDC `sub` 不变；支持 anchor 的 Consumer 继续使用原账号。SAML anchor 映射已接入，实际 SP 验收待完成 | `已验证`；见[实机验收](https://github.com/anas-project/ANAS/blob/master/dev-docs/plans/directory-identity-key.md) |
 | `mail` / UPN 改变 | 下次目录认证更新属性；不改变 OIDC `sub` | `推断`；本轮未跑邮箱/UPN 专项 |
 | `displayName` 等属性变化 | 下次目录认证重新读取；已建立会话可能保留旧值 | 读取链路 `已验证`；变更专项 `推断` |
 | 直接或递归组变化 | 下次目录认证重新计算组；没有目录事件驱动的既有会话撤权 | 历史准入矩阵 `已验证`；实时撤权尚未实现 |
@@ -104,6 +105,7 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 
 | 路径 | 类型 | 约束 | 默认值 | 默认来源 | 环境变量 | 输入必填 | 必须解析 | 敏感 | 可编辑性 | 影响 | 作用 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `llng.background_logout_exceptions` | string | — | `""` | `static` | `LLNG_BACKGROUND_LOGOUT_EXCEPTIONS` | 否 | 否 | 否 | 是 | `container_recreate` | 显式接受无法后台强制退出的 OIDC client ID，逗号分隔；应用旧会话仍可能有效 |
 | `llng.db_name` | string | — | `lemonldap_ng` | `static` | `LLNG_DB_NAME` | 否 | 否 | 否 | 是 | `container_recreate` | 应用数据库名 |
 | `llng.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `LLNG_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-llng-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `llng.domain_prefix` | string | — | `auth` | `static` | `LLNG_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `reconcile` | 服务域名前缀 |
@@ -111,6 +113,7 @@ Runner 为本 Module 创建专属数据库、用户和稳定生成凭据。修�
 | `llng.log_level` | string | — | `warn` | `static` | `LLNG_LOG_LEVEL` | 否 | 否 | 否 | 是 | `container_recreate` | 日志级别 |
 | `llng.manager_domain_prefix` | string | — | `auth-manager` | `static` | `LLNG_MANAGER_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | Manager 域名前缀 |
 | `llng.test_domain_prefix` | string | — | `auth-test` | `static` | `LLNG_TEST_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 测试入口域名前缀 |
+| `llng.workers` | int | — | `2` | `static` | `LLNG_WORKERS` | 否 | 否 | 否 | 是 | `container_recreate` | FastCGI worker 数（1–32）；较少 worker 降低内存，较多 worker 提高并发容量 |
 
 ### 查询和修改
 
@@ -141,45 +144,32 @@ anas status -w /srv/anas
 
 密码存储、环境作用域、Hook、网络、Resource 和测试细节见[技术文档](docs/technical.md)。
 
-## Samba 密码同步行为 / Samba password behavior
+## Samba 密码同步与强制改密
 
-LLNG 的用户改密直接写回 Samba AD。ANAS 将 Samba 的最小长度、复杂度开关和密码历史
-次数写入 LLNG 配置或中文规则提示；修改这些 Samba 设置后，需要重新执行 ANAS
-apply/reconcile 才会刷新 LLNG。当前 LDAP 写回使用委派服务账号重置语义；Samba 会执行
-长度、复杂度和姓名规则，但不会可靠执行用户改密的历史与最小间隔。因此这两项目前仅作
-提示，不能声称已强制执行。
+LLNG 通过校验证书的 LDAPS 将用户改密直接写回 Samba AD。Module 在初始配置及每次启动时
+启用 `ldapChangePasswordAsUser=1`、`ldapAllowResetExpiredPassword=1`，因此已有持久配置
+也会收敛到原生用户改密流程，不需要 LLNG 源码补丁。
 
-LLNG 能在提交前精确检查最小长度和两次输入是否一致。复杂度与用户名/姓名规则仍由
-Samba 最终裁决。Samba 的 LDAP 返回码通常只把策略拒绝归为 19 或 53，LLNG
-不能可靠区分具体违反的是复杂度、姓名、历史还是最小间隔；中文页面因此显示包含全部
-相关规则的可操作说明，而不会伪造一个精确原因。原始目录诊断保留给管理员日志。
+用户输入正确原密码后，`pwdLastSet=0` 显示强制改密表单，真正到期的密码显示到期改密表单。
+提交成功会显示成功提示，**随后仍需用新密码登录一次**；原生流程不会在改密提交时创建 SSO。
+实际 OIDC 应用回跳的基线与结果见[配套计划](dev-docs/plans/llng-password-change.md)。
 
-LLNG password changes are written directly to Samba AD. ANAS synchronizes the
-minimum length, complexity flag, and history count into LLNG configuration or its
-Chinese guidance; run ANAS apply/reconcile after changing these Samba settings.
-The delegated LDAP reset reliably enforces Samba length, complexity, and name
-rules, but not user-change history or minimum age; those two are guidance-only.
+写回是同一次 LDAP Modify 删除旧 `unicodePwd`、添加新值；服务查询连接不意味着管理员
+重置语义。Samba 验证旧密码并裁决域密码策略。LLNG 可精确预检最小长度和两次输入一致性；
+复杂度、姓名、历史和最小间隔不能仅凭 LDAP 19/53 返回码区分。中文提示列出相关规则，
+原始目录诊断保留在管理员日志。历史和最小间隔的完整策略矩阵未在本轮逐项验收。
 
-LLNG can preflight the minimum length and matching confirmation exactly. Samba
-remains authoritative for complexity and username/display-name content. LDAP
-result codes normally collapse policy rejection into 19 or 53, so LLNG cannot
-safely name one exact failed rule; it displays comprehensive actionable guidance
-and keeps raw directory diagnostics in administrator logs.
-See [Module IAM / OIDC 支持清单](../../docs/reference/module-iam-support.md#samba-目录密码接入规范)
-for the provider contract.
-
-服务器 E2E `test-env/scripts/server-llng-password-policy-e2e.sh` 使用临时 Samba 用户覆盖
-长度、确认、复杂度和成功写回（`pwdLastSet` 变化且新密码可认证）；历史次数与最小间隔
-只验证提示状态，并在退出时恢复临时修改的域策略。当前 LLNG 未把 Samba 的
-`pwdLastSet=0`/LDAP 773 状态路由到强制改密流程，因此不声明首次登录强制改密支持。
-测试不要求旧密码立即失效，因为 Samba 可以按配置在旧密码宽限期内继续接受它。
+ANAS 将 Samba 最小长度、复杂度和历史次数写入配置或提示；更改域策略后应重新执行
+apply/reconcile。Samba 的旧密码宽限期可能使原密码短时间内仍可认证，本 Module 不改变该策略。
+回归入口为 `server-llng-password-policy-e2e.sh`、`server-llng-password-config-e2e.sh`
+和 `test-env/playwright/llng-password-oidc.spec.mjs`。
 
 <!-- generated:localization:start -->
 ## 时区与语言 / Timezone and language
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`2.23.2-r13`（reviewed 2026-08-21）
+- Module version / 版本：`2.23.4-r13`（reviewed 2026-10-23）
 - Timezone / 时区：`container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - Language scope / 语言范围：LemonLDAP::NG Portal and language selector
 - Selection / 选择方式：`browser`
@@ -191,5 +181,5 @@ for the provider contract.
 
 Evidence / 证据：
 
-- [v2.23.2 — Portal JSON language directory](https://gitlab.ow2.org/lemonldap-ng/lemonldap-ng/-/tree/v2.23.2/lemonldap-ng-portal/site/htdocs/static/languages)
+- [v2.23.4 — Portal JSON language directory](https://gitlab.ow2.org/lemonldap-ng/lemonldap-ng/-/tree/v2.23.4/lemonldap-ng-portal/site/htdocs/static/languages)
 <!-- generated:localization:end -->

@@ -87,6 +87,8 @@ func TestServerBuildPinsAndVerifiesPatchedUpstreamSource(t *testing.T) {
 		"patches/0002-oidc-session-logout.patch",
 		"patches/0003-oidc-logout-delivery-logging.patch",
 		"patches/0004-postgres-token-user-filter.patch",
+		"patches/0010-oidc-silent-authorization.patch",
+		"go test ./routers -run '^TestAnasSilentAuthorization$'",
 		"patch -p1",
 		"COPY --chmod=0755 --from=casdoor-server /out/server /server",
 	} {

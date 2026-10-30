@@ -33,8 +33,20 @@ def change(**overrides) -> dict:
 
 
 class NormalizeTest(unittest.TestCase):
+    def test_mail_and_public_contact_changes_include_names_only(self):
+        for attribute in ('primaryGroupID','proxyAddresses','pwdLastSet','telephoneNumber','department','anasMailboxID',
+                          'anasMailState','anasMailConfigVersion','anasMailOperationState','anasMailOwnershipHistory'):
+            event = self.normalize(change(attributes={attribute: {'value': 'private-value'}}))
+            self.assertEqual(event['attributes'], [attribute])
+            self.assertNotIn('private-value', json.dumps(event))
     def normalize(self, record, attributes=DEFAULT_ATTRIBUTES):
         return normalize_change(record, attributes, in_scope)
+
+    def test_account_lock_and_expiry_are_published_without_values(self):
+        for attribute in ("lockoutTime", "accountExpires"):
+            event = self.normalize(change(attributes={attribute: {"value": "private-value"}}))
+            self.assertEqual(event["attributes"], [attribute])
+            self.assertNotIn("private-value", json.dumps(event))
 
     def test_publishes_the_group_membership_change_that_broke_the_login(self):
         # Verbatim shape of the record Samba wrote when hailongwang was added

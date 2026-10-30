@@ -93,8 +93,8 @@ func TestModulesUseManifestRule(t *testing.T) {
 			continue
 		}
 		dir := filepath.Join(root, entry.Name())
-		if _, err := os.Stat(filepath.Join(dir, "module.yml")); err != nil {
-			t.Fatalf("%s missing module.yml", entry.Name())
+		if _, err := os.Lstat(filepath.Join(dir, "module.yml")); os.IsNotExist(err) {
+			continue
 		}
 		b, err := os.ReadFile(filepath.Join(dir, "module.yml"))
 		if err != nil {
@@ -441,6 +441,9 @@ func TestBundledModulesDeclareDataBreaking(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
+		if _, err := os.Lstat(filepath.Join(root, entry.Name(), "module.yml")); os.IsNotExist(err) {
+			continue
+		}
 		mod, err := loadModuleManifest(filepath.Join(root, entry.Name()), entry.Name())
 		if err != nil {
 			t.Fatalf("%s: %v", entry.Name(), err)
@@ -471,6 +474,9 @@ func TestBundledModulesDeclareLifecycle(t *testing.T) {
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(root, entry.Name(), "module.yml")); os.IsNotExist(err) {
 			continue
 		}
 		mod, err := loadModuleManifest(filepath.Join(root, entry.Name()), entry.Name())

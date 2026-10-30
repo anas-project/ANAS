@@ -149,7 +149,7 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 > [AI Agent 编排设计](ai-agent-orchestration-design.md)。
 
 `APP_<module-id>` 回答“能不能进这个应用”。有些 Module 还需要回答“进去之后能用哪个功能”——例如
-谁可以让 AI Agent 执行代码、谁可以附着运行中的终端。这类授权：
+谁可以操作 AI Agent（2026-10-23 目标统一为一个使用组，不再细分执行或终端）。这类授权：
 
 - 不是 `ROLE_*`：那是管理员按组织结构维护的职责组，由人创建、随组织调整；
 - 不是 `FS_*`：它不描述文件或存储资源；
@@ -163,14 +163,14 @@ E2E 会创建临时 `ROLE_*` 嵌套组，同时验证两种 IAM 的结果。
 | 位置 | `OU=Cap,OU=Groups` |
 | 创建主体 | ANAS，随 Module 启停增删；管理员不手工创建 |
 | 语义 | 应用内的功能授权；不隐含登录权，成员仍需通过 `APP_<module-id>`、`APP_all` 或 `Admins` 进入应用 |
-| 与 `Admins` 的关系 | 由各 Module 决定是否让 `Admins` 默认获得某项能力；能力组用于把该能力开放给**非管理员** |
-| 消费方式 | 经 IAM 的 group claim 投影到应用侧（例如 Forgejo 的 `--group-team-map`），应用或其编排器读取投影结果 |
+| 与 `Admins` 的关系 | 由各 Module 决定；ai_agent 的单组目标不为 `Admins` 豁免，管理员同样须入组 |
+| 消费方式 | 按 Module 设计直接查询目录并订阅事件，或经 IAM claim 投影；ai_agent 目标采用 LDAPS + 目录事件，不依赖 Forgejo team |
 
 独立 OU 的理由是边界清楚：`OU=Cap` 里的对象全部由 ANAS 生成、可整体审计与备份筛选、可在 Module
 停用时安全回收，不与管理员手建的组混在一起。
 
-示例：`CAP_ai_agent_execute`（可批准 AI Agent 执行）、`CAP_ai_agent_terminal`（非管理员可附着 Agent
-终端）、`CAP_nextcloud_admin`（应用内管理员，若该 Module 选择用能力组表达）。
+示例：`CAP_ai_agent_use`（AI Agent 单组使用权的已确认目标，尚未迁移实现）、`CAP_nextcloud_admin`
+（应用内管理员，若该 Module 选择用能力组表达）。AI Agent 成员可用全部启用 Agent，仍受仓库访问和任务批准约束。
 
 #### 5.4.2 三项决定
 
@@ -195,10 +195,9 @@ Module 在自己的 Hook 里把需要的能力码追加到部署级列表 `ANAS_
 `<module-id>_<capability>`），`samba_dc` 消费该列表创建 `CAP_<module-id>_<capability>`。这与应用把
 自己追加进 `APPS_LIST` 是同一个模式，因此没有第二套机制。
 
-用 Hook 追加而不是在 manifest 里写死，是因为有些能力码来自**配置**而不是 Module 的固有属性：
-`ai_agent` 的 `CAP_ai_agent_execute` 与 `CAP_ai_agent_terminal` 是固有的，而每个 Agent 运行时一个的
-`CAP_ai_agent_<运行时>` 取决于该部署启用了哪些运行时。写进 manifest 就意味着把运行时名单抄第二遍，
-两份迟早会不一致。
+当前 ai_agent Hook 仍追加旧 execute/terminal 及按运行时生成的能力码，这是历史分层设计的实现事实。
+2026-10-23 新目标改为只声明 `ai_agent_use`，不再复制运行时名单生成权限组；Hook/分组清单尚未迁移。
+通用声明机制继续保留，其他 Module 的能力码仍可按各自配置产生。旧组成员不自动并入新组，以免无确认扩大授权。
 
 Module 停用后不再追加，已建的组按上面第三条保留。
 
@@ -216,7 +215,7 @@ Module 停用后不再追加，已建的组按上面第三条保留。
 | 新增文件或资源权限 | 管理员创建 | `FS_<资源代码>_<RO\|RW\|ADMIN>` | `OU=Access,OU=Groups` | 单域资源通常用 `Domain` / `Security` | `FS_FINANCE_RW`、`FS_ARCHIVE_RO` |
 | 单应用登录 | ANAS 按启用的 LDAP Module 生成 | `APP_<module-id>` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_nextcloud`、`APP_meshcentral` |
 | 全应用登录 | ANAS 固定创建 | `APP_all` | `OU=Apps,OU=Groups` | 由 ANAS 管理 | `APP_all` |
-| 应用内能力（见 §5.4.1） | ANAS 按启用的 Module 生成 | `CAP_<module-id>_<capability>` | `OU=Cap,OU=Groups` | 由 ANAS 管理 | `CAP_ai_agent_execute` |
+| 应用内能力（见 §5.4.1） | ANAS 按启用的 Module 生成 | `CAP_<module-id>_<capability>` | `OU=Cap,OU=Groups` | 由 ANAS 管理 | `CAP_ai_agent_use`（目标） |
 | ANAS 固定管理/资源组 | ANAS 固定创建 | 保留产品定义的准确名称 | `OU=Role` 或 `OU=Access` | 由 ANAS 管理 | `Admins`、`Unix Admins`、`FS Admins`、`FS Share RW` |
 | AD 内置组 | AD 建域时创建 | 保留 AD 的准确名称 | AD 内置容器 | 由 AD 管理 | `Domain Admins`、`Administrators`、`Domain Users` |
 

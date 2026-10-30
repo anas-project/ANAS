@@ -1,3 +1,4 @@
+// TEST_CASES: MAILMOD-T-083
 package runner
 
 import (
@@ -648,9 +649,15 @@ func (a *app) stopRelease(release string, jsonMode bool) error {
 // modules that are no longer selected are appended, so iterating the reversed
 // slice stops removed modules first.
 func (a *app) releaseModules(release string) []string {
+	modules, _ := a.releaseModulesChecked(release)
+	return modules
+}
+
+// A safety barrier must distinguish an empty release from an unreadable one.
+func (a *app) releaseModulesChecked(release string) ([]string, error) {
 	entries, err := os.ReadDir(release)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	present := map[string]bool{}
 	for _, entry := range entries {
@@ -677,7 +684,7 @@ func (a *app) releaseModules(release string) []string {
 		extras = append(extras, name)
 	}
 	sort.Strings(extras)
-	return append(ordered, extras...)
+	return append(ordered, extras...), nil
 }
 
 func (a *app) releaseComposeFile(name string) string {
@@ -1159,31 +1166,7 @@ func (a *app) calculate() error {
 	if err := a.prepareApplicationCatalog(); err != nil {
 		return fmt.Errorf("application catalog: %w", err)
 	}
-	domains := []string{}
-	seenDomains := map[string]bool{}
-	addDomain := func(fqdn, owner string) {
-		fqdn = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(fqdn), "."))
-		if fqdn == "" || seenDomains[fqdn] {
-			return
-		}
-		seenDomains[fqdn] = true
-		domains = append(domains, "inner/"+fqdn+"/"+owner)
-	}
-	for _, name := range a.order {
-		mod := a.reg[name]
-		if !mod.PublishesDomain {
-			continue
-		}
-		key := strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_DOMAIN"
-		addDomain(a.env[key], name)
-	}
-	a.env["DOMAINS"] = strings.Join(domains, ",")
-	// DOMAINS is an input to Samba's zone reconciler, not a deployment-wide
-	// setting. Keep it runner-owned so only an explicit consumer changes when
-	// the enabled module set changes. Treating it as global made adding
-	// Nextcloud rewrite PostgreSQL's .env and recreate PostgreSQL itself.
-	a.setEnvOwner("DOMAINS", runnerScope)
-	return nil
+	return a.publishApplicationDomains()
 }
 
 func (a *app) renderAll(work string) error {

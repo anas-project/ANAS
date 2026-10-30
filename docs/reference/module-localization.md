@@ -18,7 +18,8 @@
 | [incus](#incus) | 7.3.0-r4 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
 | [lam](#lam) | 9.6.0-r9 | application | supported | deployment_default | applied | not_consumed | 15 |
 | [lego](#lego) | 5.3.1-r6 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [llng](#llng) | 2.23.2-r13 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [llng](#llng) | 2.23.4-r13 | container | supported | browser | not_consumed | not_consumed | 17 |
+| [mail](#mail) | 0.1.0-r1 | configured | supported | application | applied | not_consumed | 8 |
 | [mariadb](#mariadb) | 12.3.2-r5 | container | supported | browser | not_consumed | not_consumed | 47 |
 | [meshcentral](#meshcentral) | 1.2.4-r9 | container | supported | browser | not_consumed | not_consumed | 30 |
 | [netbird](#netbird) | 0.76.1-r6 | partial | fixed | fixed | not_consumed | not_consumed | 1 |
@@ -161,14 +162,25 @@
 
 ## llng
 
-- **Version / 版本：** `2.23.2-r13`; reviewed 2026-08-21
+- **Version / 版本：** `2.23.4-r13`; reviewed 2026-10-23
 - **Timezone / 时区：** `container` — LLNG receives TZ through the module .env; no deployment-wide application timezone is forced.
 - **Language / 语言：** `supported`, `browser` — LemonLDAP::NG Portal and language selector
 - **ANAS globals / 全局默认：** `default_language=not_consumed`; `default_locale=not_consumed`
 - **Fallback / 回退：** Portal language selector and Accept-Language are used; unmatched requests fall back to English.
 - **Supported / 支持语言：** `ar`, `en`, `es`, `fi`, `fr`, `he`, `it`, `mfe`, `pl`, `pt-BR`, `pt`, `ru`, `sk`, `tr`, `vi`, `zh-TW`, `zh`
 - **Notes / 说明：** Manager and mail templates have separate translation resources; the list records the user-facing Portal inventory.
-- **Evidence / 证据：** [v2.23.2 — Portal JSON language directory](https://gitlab.ow2.org/lemonldap-ng/lemonldap-ng/-/tree/v2.23.2/lemonldap-ng-portal/site/htdocs/static/languages)
+- **Evidence / 证据：** [v2.23.4 — Portal JSON language directory](https://gitlab.ow2.org/lemonldap-ng/lemonldap-ng/-/tree/v2.23.4/lemonldap-ng-portal/site/htdocs/static/languages)
+
+## mail
+
+- **Version / 版本：** `0.1.0-r1`; reviewed 2026-10-26
+- **Timezone / 时区：** `configured` — The foundation inherits TZ; database timestamps are stored as timestamptz and diagnostics use RFC 3339 UTC.
+- **Language / 语言：** `supported`, `application` — Optional candidate Go mail home and handoff/logout pages; formal module UI deployment remains pending.
+- **ANAS globals / 全局默认：** `default_language=applied`; `default_locale=not_consumed`
+- **Fallback / 回退：** Unconfigured language uses English; all eight Go UI dictionaries are complete. Roundcube locale mapping is wired but native eight-language acceptance remains pending.
+- **Supported / 支持语言：** `en`, `zh-CN`, `zh-TW`, `de`, `es`, `fr`, `ja`, `ko`
+- **Notes / 说明：** Candidate UI tests are separate from actual Roundcube and formal module acceptance; no shared theme integration is claimed yet.
+- **Evidence / 证据：** [0.1.0 — modules/mail/service/ui/mail.js](https://github.com/anas-project/ANAS/blob/master/modules/mail/service/ui/mail.js)
 
 ## mariadb
 

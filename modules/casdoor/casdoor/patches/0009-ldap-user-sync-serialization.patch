@@ -1,0 +1,105 @@
+--- /dev/null
++++ b/object/anas_ldap_sync.go
+@@ -0,0 +1,12 @@
++package object
++
++import "sync"
++
++// SyncLdapUsers looks up existing LDAP UUIDs and then inserts the missing users.
++// Auto-sync, the sync-ldap-users API and the administration UI run it in this
++// process; overlapping runs both miss a new UUID and the second insert becomes
++// "<uid>_" with the same directory identity. Serialize every run.
++var (
++	anasLdapUserSyncMutex sync.Mutex
++	anasSyncLdapUsers     = syncLdapUsers
++)
+--- /dev/null
++++ b/object/anas_ldap_sync_test.go
+@@ -0,0 +1,72 @@
++package object
++
++import (
++	"slices"
++	"sync"
++	"testing"
++	"time"
++)
++
++// fakeLdapImport models upstream's lookup-then-insert import and its "<uid>_"
++// name-clash fallback for a user whose uidNumber is empty.
++type fakeLdapImport struct {
++	mu      sync.Mutex
++	anchors map[string]bool
++	names   []string
++}
++
++func (f *fakeLdapImport) sync(owner string, users []LdapUser, ldapId string) ([]LdapUser, []LdapUser, error) {
++	var missing []LdapUser
++	f.mu.Lock()
++	for _, user := range users {
++		if !f.anchors[user.Uuid] {
++			missing = append(missing, user)
++		}
++	}
++	f.mu.Unlock()
++	time.Sleep(50 * time.Millisecond)
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	for _, user := range missing {
++		name := user.Uid
++		if slices.Contains(f.names, name) {
++			name += "_" + user.UidNumber
++		}
++		f.anchors[user.Uuid] = true
++		f.names = append(f.names, name)
++	}
++	return nil, nil, nil
++}
++
++func runConcurrentLdapSyncs(run func(string, []LdapUser, string) ([]LdapUser, []LdapUser, error)) {
++	users := []LdapUser{{Uid: "alice", Uuid: "anchor-alice"}}
++	start := make(chan struct{})
++	var runs sync.WaitGroup
++	for range 2 {
++		runs.Add(1)
++		go func() {
++			defer runs.Done()
++			<-start
++			_, _, _ = run("anas", users, "anas/ad")
++		}()
++	}
++	close(start)
++	runs.Wait()
++}
++
++func TestAnasLdapUserSyncSerializesImports(t *testing.T) {
++	unlocked := &fakeLdapImport{anchors: map[string]bool{}}
++	runConcurrentLdapSyncs(unlocked.sync)
++	if !slices.Equal(unlocked.names, []string{"alice", "alice_"}) {
++		t.Fatalf("unserialized imports did not reproduce the duplicate: %v", unlocked.names)
++	}
++
++	original := anasSyncLdapUsers
++	defer func() { anasSyncLdapUsers = original }()
++	locked := &fakeLdapImport{anchors: map[string]bool{}}
++	anasSyncLdapUsers = locked.sync
++	runConcurrentLdapSyncs(SyncLdapUsers)
++	if !slices.Equal(locked.names, []string{"alice"}) {
++		t.Fatalf("serialized imports created %v", locked.names)
++	}
++}
+--- a/object/ldap_conn.go
++++ b/object/ldap_conn.go
+@@ -434,6 +434,12 @@ func AutoAdjustLdapUser(users []LdapUser) []LdapUser {
+ }
+ 
+ func SyncLdapUsers(owner string, syncUsers []LdapUser, ldapId string) (existUsers []LdapUser, failedUsers []LdapUser, err error) {
++	anasLdapUserSyncMutex.Lock()
++	defer anasLdapUserSyncMutex.Unlock()
++	return anasSyncLdapUsers(owner, syncUsers, ldapId)
++}
++
++func syncLdapUsers(owner string, syncUsers []LdapUser, ldapId string) (existUsers []LdapUser, failedUsers []LdapUser, err error) {
+ 	var uuids []string
+ 	for _, user := range syncUsers {
+ 		uuids = append(uuids, user.Uuid)

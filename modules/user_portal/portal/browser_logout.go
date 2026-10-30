@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -58,7 +59,7 @@ type browserLogoutTarget struct {
 
 // These tickets permit only native sign-out. They carry no identity or IAM token
 // and cannot read a directory, authenticate, or restore a deleted portal session.
-func (s *Server) logoutResponse(w http.ResponseWriter, publish bool) {
+func (s *Server) logoutResponse(w http.ResponseWriter, session Session, publish bool) {
 	targets := []browserLogoutTarget{}
 	if publish {
 		native, err := browserlogout.Targets(s.catalog, s.config.URL)
@@ -71,7 +72,47 @@ func (s *Server) logoutResponse(w http.ResponseWriter, publish bool) {
 			targets = append(targets, browserLogoutTarget{target.Origin, target.Origin + browserlogout.Path + "?ticket=" + url.QueryEscape(s.store.signLogout("bridge", ticket)), ticket.Nonce})
 		}
 	}
-	respond(w, 200, map[string]any{"iam_endpoint": s.oidc.logout, "local": "logged_out", "targets": targets})
+	response := map[string]any{"iam_endpoint": s.oidc.logout, "local": "logged_out", "targets": targets}
+	if s.config.AccountSchema == "llng-account/v1" {
+		// Local logout has already happened. Discovery is cached at startup, so
+		// an unavailable provider cannot prevent local session destruction.
+		f := Flow{State: randomID(), Cookie: randomID(), Logout: true, Expires: time.Now().Add(5 * time.Minute)}
+		if !s.store.addFlow(f) {
+			failure(w, 503, "capacity_reached")
+			return
+		}
+		cookie(w, logoutCookie, f.Cookie, 300)
+		u, _ := url.Parse(s.oidc.logout)
+		q := u.Query()
+		q.Set("client_id", s.config.ClientID)
+		q.Set("post_logout_redirect_uri", s.config.URL+"/oidc/logout-callback")
+		q.Set("state", f.State)
+		if session.IDToken != "" {
+			q.Set("id_token_hint", session.IDToken)
+		}
+		u.RawQuery = q.Encode()
+		response["iam_redirect"] = u.String()
+	}
+	respond(w, 200, response)
+}
+
+func (s *Server) oidcLogoutCallback(w http.ResponseWriter, r *http.Request) {
+	f, ok := s.store.consumeFlow(r.URL.Query().Get("state"))
+	c, err := r.Cookie(logoutCookie)
+	confirmed := ok && f.Logout && err == nil && subtle.ConstantTimeCompare([]byte(c.Value), []byte(f.Cookie)) == 1 && r.URL.Query().Get("error") == ""
+	cookie(w, logoutCookie, "", -1)
+	value := "failed"
+	if confirmed {
+		value = "confirmed"
+	}
+	// Only this verified response can confirm the central logout in the UI.
+	// No session is created, and neither the state nor an ID token enters HTML.
+	data, _ := ui.ReadFile("ui/index.html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if !confirmed {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+	_, _ = w.Write([]byte(strings.Replace(string(data), "<head>", "<head><meta name=\"anas-oidc-logout\" content=\""+value+"\">", 1)))
 }
 
 func (s *Server) browserLogout(w http.ResponseWriter, r *http.Request) {

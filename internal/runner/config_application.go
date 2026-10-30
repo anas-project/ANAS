@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -149,6 +150,9 @@ func (service *workspaceConfigApplication) PutConfig(ctx context.Context, reques
 	if err != nil {
 		return application.ConfigPutResult{}, err
 	}
+	if err := checkStoredInputPreconditions(request, prepared.currentStoreBytes, reg); err != nil {
+		return application.ConfigPutResult{}, err
+	}
 	if observer == nil {
 		return application.ConfigPutResult{}, configInternalError("audit_unavailable", errors.New("config commit observer is unavailable"))
 	}
@@ -195,6 +199,43 @@ func (service *workspaceConfigApplication) PutConfig(ctx context.Context, reques
 		Config: prepared.document, AvailableModules: configAvailableModuleNames(reg),
 		Fields: prepared.fields, Changes: prepared.changes,
 	}, nil
+}
+
+// The check uses the same Secret Store bytes included in the subsequent
+// transaction's expected generation. No secret or comparison value is
+// returned in errors or audit events.
+func checkStoredInputPreconditions(request application.ConfigPutRequest, raw []byte, reg map[string]Module) error {
+	if len(request.ExpectedStoredInputs) == 0 {
+		return nil
+	}
+	if len(request.ExpectedStoredInputs) > 8 || request.Precondition != application.ConfigPreconditionMatch {
+		return configPreconditionError("config_precondition_failed", "stored input precondition failed", nil)
+	}
+	store, err := parseSecretStoreBytes("", raw)
+	if err != nil {
+		return configInternalError("secrets_unavailable", err)
+	}
+	for path, expected := range request.ExpectedStoredInputs {
+		target, e := resolveConfigTarget(path, reg)
+		policy := policyForTarget(target, reg)
+		mutation, present := request.Candidate.Sensitive[path]
+		if e != nil || target.Display != path || !policy.StoreInput || !present || mutation.Operation != application.ConfigSensitiveSet {
+			return configPreconditionError("config_precondition_failed", "stored input precondition failed", nil)
+		}
+		module := reg[target.Module]
+		key := moduleParamEnvKey(target.Module, module.EnvPrefix, module.Exports, target.Parameter)
+		value, exists := store.values[key]
+		if expected == nil {
+			if exists {
+				return configPreconditionError("config_precondition_failed", "stored input precondition failed", nil)
+			}
+			continue
+		}
+		if len(*expected) == 0 || len(*expected) > 65536 || !exists || store.metadata[key].Kind != "managed_input" || store.metadata[key].Owner != target.Module || subtle.ConstantTimeCompare([]byte(value), []byte(*expected)) != 1 {
+			return configPreconditionError("config_precondition_failed", "stored input precondition failed", nil)
+		}
+	}
+	return nil
 }
 
 func configTransactionApplicationError(err error) error {
@@ -393,6 +434,7 @@ func (service *workspaceConfigApplication) prepareCandidate(ctx context.Context,
 	if err != nil {
 		return preparedConfigCandidate{}, configInternalError("secrets_unavailable", err)
 	}
+	oldValues := store.clone()
 	currentDoc, currentRoot, effectiveSensitivePaths, err := privateConfigDocument(current.configBytes, reg, store)
 	_ = currentDoc
 	if err != nil {
@@ -417,6 +459,40 @@ func (service *workspaceConfigApplication) prepareCandidate(ctx context.Context,
 	}
 	if err := applySensitiveCandidateOperations(candidateRoot, currentRoot, candidate.Sensitive, reg, entries); err != nil {
 		return preparedConfigCandidate{}, err
+	}
+	// Stored inputs have an explicit lifecycle distinct from rotating service
+	// credentials. Apply removals only to records owned by the declared module.
+	for _, entry := range entries {
+		if !entry.Policy.StoreInput {
+			continue
+		}
+		mutation := candidate.Sensitive[entry.Path]
+		if mutation.Operation == application.ConfigSensitiveSet && (mutation.Value == nil || *mutation.Value == "") {
+			return preparedConfigCandidate{}, configInvalidError("config_sensitive_operation_invalid", "stored input must be nonempty; use unset to remove it", nil)
+		}
+		key := config.EnvKey(entry.EnvKey)
+		old := store.values[key]
+		changing := mutation.Operation == application.ConfigSensitiveUnset || mutation.Operation == application.ConfigSensitiveSet && mutation.Value != nil && *mutation.Value != old
+		if changing && old != "" {
+			privateForms := map[string]bool{}
+			addSensitiveValueForms(privateForms, old)
+			if yamlTreeContainsSensitiveValue(candidateRoot, privateForms, map[*yaml.Node]bool{}) {
+				return preparedConfigCandidate{}, configInvalidError("config_sensitive_conflict", "stored input is still referenced by another configuration value", nil)
+			}
+		}
+		if mutation.Operation != application.ConfigSensitiveUnset {
+			continue
+		}
+		if store.values[key] == "" {
+			continue
+		}
+		meta := store.metadata[key]
+		if meta.Kind != "managed_input" || meta.Owner != entry.Module {
+			return preparedConfigCandidate{}, configInvalidError("config_sensitive_conflict", "stored input conflicts with another credential", nil)
+		}
+		delete(store.values, key)
+		delete(store.metadata, key)
+		store.dirty = true
 	}
 	candidateBytes, err := encodeYAMLDocument(candidateRoot)
 	if err != nil {
@@ -444,15 +520,28 @@ func (service *workspaceConfigApplication) prepareCandidate(ctx context.Context,
 		return preparedConfigCandidate{}, configInvalidError("config_candidate_invalid", "candidate config failed validation", err)
 	}
 	for _, secret := range result.Secrets {
-		if old := store.values[secret.Key]; old != "" && old != secret.Value {
+		old := store.values[secret.Key]
+		if secret.ManagedInput && old != "" && (store.metadata[secret.Key].Kind != "managed_input" || store.metadata[secret.Key].Owner != secret.Owner) {
+			return preparedConfigCandidate{}, configInvalidError("config_sensitive_conflict", "stored input conflicts with another credential", nil)
+		}
+		explicitUpdate := false
+		for _, entry := range entries {
+			if entry.Policy.StoreInput && config.EnvKey(entry.EnvKey) == secret.Key && candidate.Sensitive[entry.Path].Operation == application.ConfigSensitiveSet {
+				explicitUpdate = true
+				break
+			}
+		}
+		if old != "" && old != secret.Value && !(secret.ManagedInput && explicitUpdate) {
 			return preparedConfigCandidate{}, configInvalidError("config_field_read_only", "lifecycle-managed configuration is read-only", nil)
 		}
-		if old := store.values[secret.Key]; old == secret.Value && old != "" {
+		if old == secret.Value && old != "" {
 			continue
 		}
 		metadata := secretMetadata{Owner: secret.Owner, Kind: "lifecycle_managed", Provenance: "console-config:" + secret.Path}
 		if secret.Generated {
 			metadata.Kind = "local_admin"
+		} else if secret.ManagedInput {
+			metadata.Kind = "managed_input"
 		}
 		store.SetWithMetadata(secret.Key, secret.Value, metadata)
 	}
@@ -464,6 +553,33 @@ func (service *workspaceConfigApplication) prepareCandidate(ctx context.Context,
 	if err != nil {
 		return preparedConfigCandidate{}, err
 	}
+	for _, entry := range entries {
+		if !entry.Policy.StoreInput {
+			continue
+		}
+		key := config.EnvKey(entry.EnvKey)
+		before, after := oldValues[key], store.values[key]
+		if before == after {
+			continue
+		}
+		found := false
+		for _, change := range changes {
+			if change.Path == entry.Path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			change := "change"
+			if before == "" {
+				change = "add"
+			} else if after == "" {
+				change = "remove"
+			}
+			changes = append(changes, application.ConfigChange{Path: entry.Path, Change: change, Effect: entry.Policy.Effect, Apply: entry.Policy.Apply, Sensitive: true, Editable: true})
+		}
+	}
+	sort.Slice(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	if current.managed && len(changes) == 0 {
 		// JSON cannot preserve irrelevant YAML mapping order or spelling. If the
 		// complete writable semantic projection did not change, retain the exact
@@ -485,6 +601,31 @@ func (service *workspaceConfigApplication) prepareCandidate(ctx context.Context,
 		changes: changes, storeChanged: store.dirty || !currentStoreExists,
 		currentStoreBytes: currentStoreBytes, currentStoreExists: currentStoreExists,
 	}, nil
+}
+
+// A replaced or deleted private value must not leave a formerly redacted alias
+// in the public configuration. Inspect values only and guard YAML alias cycles.
+func yamlTreeContainsSensitiveValue(node *yaml.Node, values map[string]bool, visited map[*yaml.Node]bool) bool {
+	if node == nil || visited[node] {
+		return false
+	}
+	visited[node] = true
+	if node.Kind == yaml.AliasNode {
+		return yamlTreeContainsSensitiveValue(node.Alias, values, visited)
+	}
+	if node.Kind == yaml.ScalarNode {
+		return matchesSensitiveValue(values, node.Value)
+	}
+	start, step := 0, 1
+	if node.Kind == yaml.MappingNode {
+		start, step = 1, 2
+	}
+	for i := start; i < len(node.Content); i += step {
+		if yamlTreeContainsSensitiveValue(node.Content[i], values, visited) {
+			return true
+		}
+	}
+	return false
 }
 
 // restoreEffectiveSensitiveAliases round-trips fields whose current value is
@@ -609,8 +750,8 @@ func buildConfigFieldsFromBytes(body []byte, reg map[string]Module, store *secre
 			Type: kind, AllowedValues: append([]string{}, allowed...), Default: entry.Default,
 			HasDefault: entry.HasDefault, DefaultSource: entry.DefaultSource,
 			InputRequired: parameterInputRequired(entry.Module, entry.Parameter, reg),
-			MustResolve:   parameterMustResolve(entry.Module, entry.Parameter, reg),
-			Constraints:   spec.Constraints, Sensitive: effectiveSensitive,
+			MustResolve:   parameterMustResolve(entry.Module, entry.Parameter, reg), StoreInput: entry.Policy.StoreInput,
+			Constraints: spec.Constraints, Sensitive: effectiveSensitive,
 			// A schema-declared sensitive field remains editable through the
 			// explicit sensitive-operation map. Only an otherwise ordinary field
 			// tainted by a private value alias must be locked against round-trip

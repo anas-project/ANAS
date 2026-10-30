@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS psessions (
 CREATE INDEX IF NOT EXISTS i_p__session_kind    ON psessions ((a_session ->> '_session_kind'));
 CREATE INDEX IF NOT EXISTS i_p__httpSessionType ON psessions ((a_session ->> '_httpSessionType'));
 CREATE INDEX IF NOT EXISTS i_p__session_uid     ON psessions ((a_session ->> '_session_uid'));
+CREATE INDEX IF NOT EXISTS i_p__webAuthnUserHandle ON psessions ((a_session ->> '_webAuthnUserHandle'));
 CREATE INDEX IF NOT EXISTS i_p_ipAddr           ON psessions ((a_session ->> 'ipAddr'));
 CREATE INDEX IF NOT EXISTS i_p__whatToTrace     ON psessions ((a_session ->> '_whatToTrace'));
 

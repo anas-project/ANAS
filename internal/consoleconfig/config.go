@@ -44,16 +44,17 @@ const (
 // Config is the root-managed, host-level configuration for anasd. It is not a
 // workspace desired-state document and must not be populated from config.yml.
 type Config struct {
-	APIVersion      string              `yaml:"api_version"`
-	Mode            Mode                `yaml:"mode"`
-	Port            int                 `yaml:"port"`
-	AllowedDNSHosts []string            `yaml:"allowed_dns_hosts,omitempty"`
-	ConsoleStore    string              `yaml:"console_store"`
-	Workspaces      []Workspace         `yaml:"workspaces,omitempty"`
-	BackupTargets   []BackupTarget      `yaml:"backup_targets,omitempty"`
-	TLS             TLSConfig           `yaml:"tls,omitempty"`
-	TrustedProxy    *TrustedProxyConfig `yaml:"trusted_proxy,omitempty"`
-	ServiceAPI      *serviceauth.Config `yaml:"service_api,omitempty"`
+	APIVersion        string                   `yaml:"api_version"`
+	Mode              Mode                     `yaml:"mode"`
+	Port              int                      `yaml:"port"`
+	AllowedDNSHosts   []string                 `yaml:"allowed_dns_hosts,omitempty"`
+	ConsoleStore      string                   `yaml:"console_store"`
+	Workspaces        []Workspace              `yaml:"workspaces,omitempty"`
+	BackupTargets     []BackupTarget           `yaml:"backup_targets,omitempty"`
+	TLS               TLSConfig                `yaml:"tls,omitempty"`
+	TrustedProxy      *TrustedProxyConfig      `yaml:"trusted_proxy,omitempty"`
+	ServiceAPI        *serviceauth.Config      `yaml:"service_api,omitempty"`
+	MailInstallSocket *MailInstallSocketConfig `yaml:"mail_install_socket,omitempty"`
 	// HostActions explicitly opts into the installed non-root host preflight
 	// queue. It is not a privilege override or automatic host installation.
 	HostActions bool `yaml:"host_actions,omitempty"`
@@ -63,6 +64,13 @@ type Config struct {
 // existence, .anas marker, and symlink canonicalisation remain registry
 // responsibilities; this package establishes the static schema and absolute
 // path boundary.
+// MailInstallSocketConfig opts into a TLS-only, mail-install-only local listener.
+// Directory is pre-provisioned for GroupID and is never a workspace path.
+type MailInstallSocketConfig struct {
+	Directory string `yaml:"directory"`
+	GroupID   int    `yaml:"group_id"`
+}
+
 type Workspace struct {
 	ID   string `yaml:"id"`
 	Path string `yaml:"path"`
@@ -490,15 +498,52 @@ func validateResolvedStorageBoundary(config Config) error {
 		resolvedWorkspaces[workspace.ID] = resolvedWorkspace
 	}
 	var resolvedServiceDirectory string
+	var resolvedMailInstallDirectory string
 	if config.ServiceAPI != nil {
 		directory, err := resolvePathAllowMissing(config.ServiceAPI.Directory)
 		if err != nil {
 			return fmt.Errorf("resolve service_api.credentials_dir: %w", err)
 		}
 		resolvedServiceDirectory = directory
+		if hasMailInstallGrant(config.ServiceAPI) {
+			resolvedMailInstallDirectory, err = resolvePathAllowMissing(filepath.Join(filepath.Dir(config.ServiceAPI.Directory), "mail-installations"))
+			if err != nil || pathsOverlap(resolvedMailInstallDirectory, directory) || pathsOverlap(resolvedMailInstallDirectory, resolvedStore) {
+				return fmt.Errorf("mail installation state resolves across service credentials or console store")
+			}
+		}
 		for id, workspace := range resolvedWorkspaces {
 			if pathsOverlap(directory, workspace) {
 				return fmt.Errorf("service_api.credentials_dir resolves across registered workspace %q", id)
+			}
+			if resolvedMailInstallDirectory != "" && pathsOverlap(resolvedMailInstallDirectory, workspace) {
+				return fmt.Errorf("mail installation state resolves across registered workspace %q", id)
+			}
+		}
+	}
+	var resolvedMailSocket string
+	if config.MailInstallSocket != nil {
+		resolvedMailSocket, err = resolvePathAllowMissing(config.MailInstallSocket.Directory)
+		if err != nil || pathsOverlap(resolvedMailSocket, resolvedStore) || pathsOverlap(resolvedMailSocket, resolvedServiceDirectory) || pathsOverlap(resolvedMailSocket, resolvedMailInstallDirectory) {
+			return errors.New("mail install socket resolves across private host state")
+		}
+		for _, workspace := range resolvedWorkspaces {
+			if pathsOverlap(resolvedMailSocket, workspace) {
+				return errors.New("mail install socket resolves across a workspace")
+			}
+		}
+		keys := []string{}
+		if config.TLS.Lego != nil {
+			keys = append(keys, config.TLS.Lego.PrivateKey)
+		}
+		if config.TLS.Temporary != nil {
+			keys = append(keys, config.TLS.Temporary.PrivateKey)
+		}
+		for _, key := range keys {
+			if key != "" {
+				resolvedKey, e := resolvePathAllowMissing(key)
+				if e != nil || pathWithin(resolvedKey, resolvedMailSocket) {
+					return errors.New("mail install socket resolves across TLS private key")
+				}
 			}
 		}
 	}
@@ -508,8 +553,14 @@ func validateResolvedStorageBoundary(config Config) error {
 		if err != nil {
 			return fmt.Errorf("resolve backup target %q: %w", target.ID, err)
 		}
+		if resolvedMailSocket != "" && pathsOverlap(resolvedMailSocket, resolvedTarget) {
+			return fmt.Errorf("backup target %q resolves across mail install socket", target.ID)
+		}
 		if resolvedServiceDirectory != "" && pathsOverlap(resolvedServiceDirectory, resolvedTarget) {
 			return fmt.Errorf("backup target %q resolves across service_api.credentials_dir", target.ID)
+		}
+		if resolvedMailInstallDirectory != "" && pathsOverlap(resolvedMailInstallDirectory, resolvedTarget) {
+			return fmt.Errorf("backup target %q resolves across mail installation state", target.ID)
 		}
 		if pathsOverlap(resolvedStore, resolvedTarget) {
 			return fmt.Errorf("backup target %q resolves across console_store", target.ID)

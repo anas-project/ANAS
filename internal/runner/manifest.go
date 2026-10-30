@@ -302,21 +302,23 @@ type manifestChangePolicy struct {
 	Apply       string `yaml:"apply"`
 	Description string `yaml:"description"`
 	Sensitive   bool   `yaml:"sensitive"`
+	StoreInput  bool   `yaml:"store_input"`
 	Executor    string `yaml:"executor"`
 	Verify      string `yaml:"verify"`
 }
 
 // manifestFeatures is decoded with KnownFields(true), so every key a module may
-// write has to appear here. Only HostLAN reaches the runner; the rest are
-// declarations modules make about themselves that nothing yet consults.
+// write has to appear here. Host LAN and explicit published domains are
+// consumed by the runner; other flags describe module-owned behavior.
 type manifestFeatures struct {
-	LDAPProvider     bool     `yaml:"ldap_provider"`
-	GeneratedSecrets bool     `yaml:"generated_secrets"`
-	Domain           bool     `yaml:"domain"`
-	HostLAN          string   `yaml:"host_lan"`
-	KerberosEnv      bool     `yaml:"kerberos_env"`
-	AfterStart       string   `yaml:"after_start"`
-	Special          []string `yaml:"special_files"`
+	LDAPProvider      bool     `yaml:"ldap_provider"`
+	GeneratedSecrets  bool     `yaml:"generated_secrets"`
+	Domain            bool     `yaml:"domain"`
+	AdditionalDomains []string `yaml:"additional_domains"`
+	HostLAN           string   `yaml:"host_lan"`
+	KerberosEnv       bool     `yaml:"kerberos_env"`
+	AfterStart        string   `yaml:"after_start"`
+	Special           []string `yaml:"special_files"`
 }
 
 // manifestIdentity declares direct identity protocols used by a module. IAM
@@ -450,6 +452,12 @@ func loadRegistryDir(modulesRoot string) (map[string]Module, error) {
 		// into a deployment rather than copying the link itself.
 		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
 			dir = resolved
+		}
+		// A source tree can also contain unfinished applications or notes.
+		// Only a manifest declares a Module; publication catalog validation
+		// separately rejects a listed Module whose manifest is missing.
+		if _, err := os.Lstat(filepath.Join(dir, "module.yml")); os.IsNotExist(err) {
+			continue
 		}
 		mod, err := loadModuleManifest(dir, entry.Name())
 		if err != nil {
@@ -1094,10 +1102,14 @@ func loadModuleManifest(dir, dirname string) (Module, error) {
 		Commands:                 commands,
 		UseHostLAN:               manifest.Features.HostLAN,
 		PublishesDomain:          manifest.Features.Domain,
+		AdditionalDomains:        append([]string(nil), manifest.Features.AdditionalDomains...),
 		Hook:                     hook,
 		RuntimeType:              manifest.Runtime.Type,
 		ComposeFile:              composeFile,
 		TemporaryDirectories:     temporaryDirectories,
+	}
+	if err := validateAdditionalDomains(mod); err != nil {
+		return Module{}, err
 	}
 	if err := validateApplicationManifest(mod); err != nil {
 		return Module{}, err
@@ -1346,9 +1358,12 @@ func normalizeChangePolicies(owner string, in map[string]manifestChangePolicy) (
 		if policy.Effect == "credential_rotate" && !policy.Sensitive {
 			return nil, fmt.Errorf("module %q config.changes.%s uses credential_rotate but is not marked sensitive", owner, name)
 		}
+		if policy.StoreInput && (!policy.Sensitive || policy.Effect != "container_recreate") {
+			return nil, fmt.Errorf("module %q config.changes.%s store_input requires sensitive container_recreate", owner, name)
+		}
 		out[parameter] = ChangePolicy{
 			Effect: policy.Effect, Apply: policy.Apply,
-			Description: policy.Description, Sensitive: policy.Sensitive,
+			Description: policy.Description, Sensitive: policy.Sensitive, StoreInput: policy.StoreInput,
 			Executor: policy.Executor, Verify: policy.Verify,
 		}
 	}

@@ -1,3 +1,4 @@
+// TEST_CASES: MAILMOD-T-042
 package consoleconfig
 
 import (
@@ -43,6 +44,28 @@ func TestServiceAPIConfigGrantsAndIsolation(t *testing.T) {
 	}
 	if _, err := Load(path, CurrentUIDFilePolicy()); err == nil || !strings.Contains(err.Error(), "outside registered workspace") {
 		t.Fatalf("workspace config authority accepted: %v", err)
+	}
+}
+
+func TestMailInstallServiceGrantIsNarrowAndStateIsIsolated(t *testing.T) {
+	dir := t.TempDir()
+	base := fmt.Sprintf("api_version: anas.console-config/v1\nconsole_store: %s/console\nworkspaces: [{id: main, path: %s/workspace}]\n", dir, dir)
+	service := fmt.Sprintf("service_api:\n  credentials_dir: %s/clients\n  clients:\n    - id: mail-service\n      enabled: true\n      uid: 65532\n      gid: 65532\n      grants:\n        - permission: mail.ingress.install\n          workspace: main\n          resources: [mail]\n", dir)
+	if _, err := Parse([]byte(base + service)); err != nil {
+		t.Fatal("valid mail install grant rejected", err)
+	}
+	for _, source := range []string{
+		strings.Replace(service, "resources: [mail]", "resources: [other]", 1),
+		strings.Replace(service, "resources: [mail]", "resources: [mail, other]", 1),
+		strings.Replace(base, dir+"/workspace", dir+"/mail-installations/workspace", 1) + service,
+		strings.Replace(base, dir+"/console", dir+"/mail-installations/console", 1) + service,
+	} {
+		if !strings.Contains(source, "api_version:") {
+			source = base + source
+		}
+		if _, err := Parse([]byte(source)); err == nil {
+			t.Fatal("unsafe grant or installation state accepted")
+		}
 	}
 }
 

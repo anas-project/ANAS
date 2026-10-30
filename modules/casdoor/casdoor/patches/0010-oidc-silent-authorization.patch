@@ -1,0 +1,243 @@
+diff --git a/routers/static_filter.go b/routers/static_filter.go
+--- a/routers/static_filter.go
++++ b/routers/static_filter.go
+@@ -161,6 +161,7 @@
+ 	}
+ 
+ 	if urlPath == "/login/oauth/authorize" {
++		if handleAnasSilentAuthorization(ctx) { return }
+ 		redirectUrl, err := fastAutoSignin(ctx)
+ 		if err != nil {
+ 			responseError(ctx, err.Error())
+diff --git a/routers/anas_silent_authorization.go b/routers/anas_silent_authorization.go
+new file mode 100644
+--- /dev/null
++++ b/routers/anas_silent_authorization.go
+@@ -0,0 +1,101 @@
++package routers
++
++import (
++	"net/http"
++	"net/url"
++	"regexp"
++	"strings"
++
++	"github.com/beego/beego/v2/server/web/context"
++	"github.com/casdoor/casdoor/object"
++)
++
++// Keep the native application, scope, admission, consent and code-issuance
++// checks. These seams let the HTTP rejection paths run without a database.
++var anasSilentApplication = object.GetApplicationByClientId
++var anasSilentLogin = object.CheckOAuthLogin
++var anasSilentUser = getSessionUser
++var anasSilentIssue = fastAutoSignin
++var anasSilentChallenge = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
++
++func handleAnasSilentAuthorization(ctx *context.Context) bool {
++	q, err := url.ParseQuery(ctx.Request.URL.RawQuery)
++	none := false
++	for _, value := range q["prompt"] {
++		for _, token := range strings.Fields(value) {
++			none = none || token == "none"
++		}
++	}
++	if !none {
++		return false
++	}
++	ctx.Output.Header("Cache-Control", "no-store")
++	ctx.Output.Header("Referrer-Policy", "no-referrer")
++	bad := func() bool {
++		http.Error(ctx.ResponseWriter, "Invalid silent authorization request", http.StatusBadRequest)
++		return true
++	}
++	if err != nil || ctx.Request.Method != http.MethodGet || len(ctx.Request.URL.RawQuery) > 16384 || len(q["prompt"]) != 1 || q.Get("prompt") != "none" {
++		return bad()
++	}
++	for _, name := range []string{"client_id", "redirect_uri", "response_type"} {
++		if len(q[name]) != 1 || q.Get(name) == "" {
++			return bad()
++		}
++	}
++	for _, name := range []string{"state", "scope", "nonce", "code_challenge", "code_challenge_method", "response_mode"} {
++		if len(q[name]) > 1 {
++			return bad()
++		}
++	}
++	if q.Get("response_type") != "code" || q.Get("response_mode") != "" && q.Get("response_mode") != "query" || len(q.Get("state")) > 4096 {
++		return bad()
++	}
++	uri, e := url.Parse(q.Get("redirect_uri"))
++	if e != nil || uri.Host == "" || uri.User != nil || uri.Fragment != "" || uri.Scheme != "https" && uri.Scheme != "http" {
++		return bad()
++	}
++	app, e := anasSilentApplication(q.Get("client_id"))
++	if e != nil || app == nil {
++		return bad()
++	}
++	exact := false
++	for _, registered := range app.RedirectUris {
++		exact = exact || registered == q.Get("redirect_uri")
++	}
++	if !exact {
++		return bad()
++	}
++	if q.Get("code_challenge_method") != "S256" || !anasSilentChallenge.MatchString(q.Get("code_challenge")) {
++		return bad()
++	}
++	message, _, e := anasSilentLogin(q.Get("client_id"), "code", q.Get("redirect_uri"), q.Get("scope"), q.Get("state"), getAcceptLanguage(ctx))
++	if e != nil || message != "" {
++		return bad()
++	}
++	reject := func(code string) bool {
++		query := uri.Query()
++		query.Set("error", code)
++		if state := q.Get("state"); state != "" {
++			query.Set("state", state)
++		}
++		uri.RawQuery = query.Encode()
++		http.Redirect(ctx.ResponseWriter, ctx.Request, uri.String(), http.StatusFound)
++		return true
++	}
++	if anasSilentUser(ctx) == "" {
++		return reject("login_required")
++	}
++	if !app.EnableAutoSignin {
++		return reject("interaction_required")
++	}
++	target, e := anasSilentIssue(ctx)
++	if e != nil {
++		return reject("server_error")
++	}
++	if target == "" {
++		return reject("interaction_required")
++	}
++	http.Redirect(ctx.ResponseWriter, ctx.Request, target, http.StatusFound)
++	return true
++}
+diff --git a/routers/anas_silent_authorization_test.go b/routers/anas_silent_authorization_test.go
+new file mode 100644
+--- /dev/null
++++ b/routers/anas_silent_authorization_test.go
+@@ -0,0 +1,121 @@
++package routers
++
++import (
++	"errors"
++	"github.com/beego/beego/v2/server/web/context"
++	"github.com/casdoor/casdoor/object"
++	"net/http/httptest"
++	"net/url"
++	"strings"
++	"testing"
++)
++
++func TestAnasSilentAuthorization(t *testing.T) {
++	oldApp, oldLogin, oldUser, oldIssue := anasSilentApplication, anasSilentLogin, anasSilentUser, anasSilentIssue
++	defer func() {
++		anasSilentApplication, anasSilentLogin, anasSilentUser, anasSilentIssue = oldApp, oldLogin, oldUser, oldIssue
++	}()
++	callback := "https://portal.example.test/oidc/callback"
++	for _, kind := range []string{"anonymous", "authenticated", "interaction", "reauth", "unknown-client", "foreign-redirect", "duplicate-client", "duplicate-state", "ambiguous-prompt", "pkce-downgrade", "generated-secret-pkce-downgrade", "invalid-scope", "provider-error", "ordinary"} {
++		t.Run(kind, func(t *testing.T) {
++			app := &object.Application{ClientId: "public", RedirectUris: []string{callback}, EnableAutoSignin: true}
++			q := url.Values{"client_id": {"public"}, "redirect_uri": {callback}, "response_type": {"code"}, "scope": {"openid profile email"}, "state": {"bound&state"}, "prompt": {"none"}, "code_challenge_method": {"S256"}, "code_challenge": {strings.Repeat("A", 43)}}
++			user := "anas/alice"
++			issued := 0
++			anasSilentApplication = func(string) (*object.Application, error) { return app, nil }
++			anasSilentLogin = func(string, string, string, string, string, string) (string, *object.Application, error) {
++				if kind == "invalid-scope" {
++					return "invalid scope", app, nil
++				}
++				return "", app, nil
++			}
++			anasSilentUser = func(*context.Context) string { return user }
++			anasSilentIssue = func(*context.Context) (string, error) {
++				issued++
++				if kind == "provider-error" {
++					return "", errors.New("fixture")
++				}
++				if kind == "interaction" {
++					return "", nil
++				}
++				return callback + "?code=fixture-code&state=bound%26state", nil
++			}
++			want := 302
++			code := ""
++			switch kind {
++			case "anonymous":
++				user = ""
++				code = "login_required"
++			case "interaction", "reauth":
++				code = "interaction_required"
++				app.EnableAutoSignin = kind != "reauth"
++			case "unknown-client":
++				anasSilentApplication = func(string) (*object.Application, error) { return nil, nil }
++				want = 400
++			case "foreign-redirect":
++				q.Set("redirect_uri", "https://foreign.example/callback")
++				want = 400
++			case "duplicate-client":
++				q.Add("client_id", "other")
++				want = 400
++			case "duplicate-state":
++				q.Add("state", "other")
++				want = 400
++			case "ambiguous-prompt":
++				q.Set("prompt", "none login")
++				want = 400
++			case "generated-secret-pkce-downgrade":
++				app.ClientSecret = "native-only-secret"
++				q.Set("code_challenge_method", "plain")
++				want = 400
++			case "pkce-downgrade":
++				q.Set("code_challenge_method", "plain")
++				want = 400
++			case "invalid-scope":
++				want = 400
++			case "provider-error":
++				code = "server_error"
++			case "ordinary":
++				q.Del("prompt")
++			}
++			request := httptest.NewRequest("GET", "https://iam.example.test/login/oauth/authorize?"+q.Encode(), nil)
++			w := httptest.NewRecorder()
++			ctx := context.NewContext()
++			ctx.Reset(w, request)
++			handled := handleAnasSilentAuthorization(ctx)
++			if kind == "ordinary" {
++				if handled || issued != 0 {
++					t.Fatal("ordinary authorization intercepted")
++				}
++				return
++			}
++			if !handled || w.Code != want {
++				t.Fatalf("handled=%v status=%d", handled, w.Code)
++			}
++			target, _ := url.Parse(w.Header().Get("Location"))
++			if want == 400 {
++				if target.String() != "" || issued != 0 {
++					t.Fatal("invalid request redirected or issued code")
++				}
++				return
++			}
++			if target.Scheme+"://"+target.Host+target.Path != callback || target.Query().Get("state") != "bound&state" {
++				t.Fatal("error escaped callback/state binding")
++			}
++			if target.Query().Get("error") != code {
++				t.Fatalf("unexpected result %q", target.Query().Get("error"))
++			}
++			if code != "" && target.Query().Get("code") != "" {
++				t.Fatal("error also issued code")
++			}
++			if kind == "anonymous" || kind == "reauth" {
++				if issued != 0 {
++					t.Fatal("interaction unexpectedly issued code")
++				}
++			}
++			if kind == "authenticated" && (issued != 1 || target.Query().Get("code") != "fixture-code") {
++				t.Fatal("native issuance not preserved")
++			}
++		})
++	}
++}

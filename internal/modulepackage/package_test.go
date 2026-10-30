@@ -60,6 +60,12 @@ func TestValidateCatalogRejectsInvalidModuleSets(t *testing.T) {
 			}
 		})
 	}
+	if err := os.Remove(filepath.Join(moduleDir, "module.yml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCatalog(root, []CatalogEntry{valid}); err == nil {
+		t.Fatal("publication catalog accepted a listed Module with no manifest")
+	}
 }
 
 func TestRuntimeTrackedFilesExcludeDocumentationAndTests(t *testing.T) {

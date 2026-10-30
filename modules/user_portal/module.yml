@@ -31,7 +31,7 @@ runtime:
   type: compose
   compose_file: docker-compose.yml
 dependencies:
-  requires: [traefik, samba_dc, casdoor]
+  requires: [traefik, samba_dc]
   requires_capabilities:
     - name: iam
       interface_selected_by: iam_protocol
@@ -128,6 +128,11 @@ config:
     - SAMBA_DC_ADMIN_GROUP_DN
     - SAMBA_DC_BASE_SERVICE_ACCOUNTS_DN
     - SAMBA_DC_MAIL_DOMAIN
+    - SAMBA_DC_MAIL_DIRECTORY_ENABLED
+    - SAMBA_DC_MAIL_MANAGEMENT_POLICY
+    - SAMBA_DC_MAIL_CREATOR_BIND_DN
+    - SAMBA_DC_MAIL_CREATOR_BIND_PASSWORD
+    - SAMBA_DC_ANCHOR_BIND_DN
     - SAMBA_DC_USER_PRINCIPAL_NAME_BASE_DOMAIN
     - SAMBA_DC_FS_ADMIN_GROUP_NAME
     - TRAEFIK_BASE_PORT
@@ -136,4 +141,4 @@ config:
 logic:
   hook:
     command: [go, run, ./hook]
-    phases: [calculate, render_env, validate]
+    phases: [calculate, render_env, validate, runtime_restore]

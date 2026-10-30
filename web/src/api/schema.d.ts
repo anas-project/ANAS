@@ -34,6 +34,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/service/workspaces/{ws}/applications/{application}/mail-ingress-install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: "mail";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install or configure a restricted mail ingress source
+         * @description Full-state direct TLS only. Requires the exact mail.ingress.install
+         *     service grant for this workspace and the mail resource. The calling
+         *     service authenticates the human administrator for each step; actor is
+         *     declared audit context and is not a user authentication claim. Provider
+         *     tokens are private request inputs and are never returned. Preparing or
+         *     committing configuration does not imply deployment or email delivery.
+         *     A vps-ssh Cloudflare-forwarding request must supply account_id, zone_id,
+         *     forward_domain, routing_token and destination_token together; direct VPS
+         *     requests must omit them. The two provider tokens must be distinct.
+         */
+        post: operations["installServiceMailIngress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/service/workspaces/{ws}/applications/{application}/mail-outbound-configure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: "mail";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save the explicit default mail sending profile
+         * @description Full-state direct TLS only. Requires a separate mail.outbound.configure
+         *     service grant scoped to this workspace and mail. The calling service
+         *     authenticates its administrator; actor is declared audit context, not
+         *     proof of human authorization. The password is a private request input.
+         *     The host preserves sender-domain overrides and only commits workspace
+         *     configuration. It does not deploy DMS or dispose of queued messages;
+         *     a successful response does not prove delivery or readiness. An unknown
+         *     response must not be treated as a failed commit or blindly retried.
+         */
+        post: operations["configureServiceMailOutbound"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{ws}/host/actions/incus.status": {
         parameters: {
             query?: never;
@@ -2831,6 +2894,156 @@ export interface operations {
             413: components["responses"]["PayloadTooLargeProblem"];
             415: components["responses"]["UnsupportedMediaTypeProblem"];
             428: components["responses"]["PreconditionRequiredProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    installServiceMailIngress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: "mail";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    actor: string;
+                    /** @enum {string} */
+                    action: "publish" | "activate" | "prepare" | "commit";
+                    /** @enum {string} */
+                    provider?: "worker-r2" | "cloud-relay" | "vps-ssh";
+                    operation_id: string;
+                    account_id?: string;
+                    worker?: string;
+                    bucket?: string;
+                    zone_id?: string;
+                    domains: string[];
+                    allowed_domains: string[];
+                    drain_ids: string[];
+                    capacity_bytes: number;
+                    total_capacity_bytes: number;
+                    delivered_days: number;
+                    notification_origin?: string;
+                    deployment_token?: string;
+                    routing_token?: string;
+                    /** Format: uuid */
+                    source_id?: string;
+                    /** Format: uuid */
+                    generation?: string;
+                    source_origin?: string;
+                    reader_token?: string;
+                    control_token?: string;
+                    notification_token?: string;
+                    ipv4_only?: boolean;
+                    ssh_host?: string;
+                    ssh_port?: number;
+                    ssh_user?: string;
+                    ssh_host_key?: string;
+                    ssh_private_key?: string;
+                    tls_certificate?: string;
+                    tls_private_key?: string;
+                    smtp_hostname?: string;
+                    forward_domain?: string;
+                    destination_token?: string;
+                } & ({
+                    /** @enum {string} */
+                    provider?: "worker-r2";
+                    /** @enum {string} */
+                    action?: "prepare" | "commit";
+                } | {
+                    /** @constant */
+                    provider: "cloud-relay";
+                    /** @enum {string} */
+                    action?: "prepare" | "commit";
+                } | {
+                    /** @constant */
+                    provider: "vps-ssh";
+                });
+            };
+        };
+        responses: {
+            /** @description Step confirmed; not delivery readiness. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        state: "published" | "activated" | "prepared" | "configured";
+                        source_id: string;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
+            500: components["responses"]["InternalProblem"];
+            503: components["responses"]["ServiceUnavailableProblem"];
+            504: components["responses"]["DeadlineProblem"];
+        };
+    };
+    configureServiceMailOutbound: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Opaque ID of a workspace registered when the daemon started; never a filesystem path. */
+                ws: components["parameters"]["WorkspaceID"];
+                application: "mail";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    actor: string;
+                    operation_id: string;
+                    /** @enum {string} */
+                    provider: "direct" | "resend" | "smtp";
+                    host?: string;
+                    port?: number;
+                    /** @enum {string} */
+                    tls?: "" | "starttls" | "tls";
+                    username?: string;
+                    password?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Workspace configuration saved; not delivery readiness. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        state: "configured";
+                    };
+                };
+            };
+            400: components["responses"]["BadRequestProblem"];
+            401: components["responses"]["UnauthorizedProblem"];
+            403: components["responses"]["ForbiddenProblem"];
+            404: components["responses"]["NotFoundProblem"];
+            405: components["responses"]["PostMethodNotAllowedProblem"];
+            408: components["responses"]["RequestCanceledProblem"];
+            409: components["responses"]["ConflictProblem"];
+            413: components["responses"]["PayloadTooLargeProblem"];
+            415: components["responses"]["UnsupportedMediaTypeProblem"];
             500: components["responses"]["InternalProblem"];
             503: components["responses"]["ServiceUnavailableProblem"];
             504: components["responses"]["DeadlineProblem"];

@@ -1,0 +1,28 @@
+[Unit]
+Description=ANAS mail cloud relay
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=anas-mail-relay
+StateDirectoryMode=0700
+UMask=0077
+LoadCredential=runtime.json:/etc/anas-mail-relay/runtime.json
+ExecStart=/usr/local/libexec/anas-mail-relay/cloudrelay run-systemd
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

@@ -69,7 +69,8 @@ RUN apt-get update \
   /var/tmp/* \
   /var/log/*
 
-COPY root/ /
+COPY samba_dc/root/ /
+COPY anchor_worker/mail_policy.py /usr/local/share/anas/mail_policy.py
 
 RUN chmod 0755 \
   /etc \

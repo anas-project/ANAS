@@ -80,6 +80,8 @@ const (
 )
 
 const PermissionApplicationCredentialRead Permission = "application.credentials.read"
+const PermissionMailIngressInstall Permission = "mail.ingress.install"
+const PermissionMailOutboundConfigure Permission = "mail.outbound.configure"
 
 type ObjectScope string
 

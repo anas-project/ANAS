@@ -1,5 +1,8 @@
 # Module、Contract 与 Resource 架构
 
+> 当前范围（2026-10-10）：Authentik 已移除，Casdoor 为主力，保留 LLNG。文中 Authentik 对比、命令及验收记录属于历史基线；移除的命令不可执行，也不代表 Casdoor 已通过相同验收。
+
+
 状态：实施基线
 日期：2026-08-22
 
@@ -207,6 +210,7 @@ Contract 声明虚假兼容性。
 | [`lam`](/reference/modules/lam/) | `identity` | `release` | Web UI for LDAP account administration. |
 | [`lego`](/reference/modules/lego/) | `certificate` | `release` | Issues and stores wildcard certificates used by Traefik and domain services. |
 | [`llng`](/reference/modules/llng/) | `identity` | `developing` | SSO portal, SAML/OIDC identity provider, and app launcher. |
+| [`mail`](/reference/modules/mail/) | `app` | `developing` | Mail management with directory-owned addresses, DMS and Roundcube; phase-one integration remains under validation. |
 | [`mariadb`](/reference/modules/mariadb/) | `database` | `release` | MariaDB database service with optional Adminer UI. |
 | [`meshcentral`](/reference/modules/meshcentral/) | `app` | `release` | Remote device management with OIDC-only authentication and LDAP directory synchronization. |
 | [`netbird`](/reference/modules/netbird/) | `network` | `developing` | Incomplete WireGuard overlay network scaffold; excluded from recommended deployments. |

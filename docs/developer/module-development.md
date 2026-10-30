@@ -14,6 +14,9 @@ Module 是独立的发布和部署单元。它拥有：
 
 Module 不应依赖仓库检出的相对路径才能启动。冻结后的 deployment 必须携带运行所需的 Compose、环境、文件和 Hook 二进制。
 
+`module.yml` 声明 Module 身份；没有该文件的开发目录不进入运行时或文档 inventory。
+已列入发布清单的 Module 缺失 manifest、已存在的 manifest 无效，或有效 Module 未登记发布清单时，门禁仍然失败。
+
 Module 参数的业务语义属于 Module，不属于 Core。跨参数校验放入 `validate` Hook，派生值放入
 `calculate` Hook，持久状态协调使用 lifecycle operation/reconciler；不要要求 Core 添加
 Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标准](/architecture/core-implementation-standard)。
@@ -47,6 +50,17 @@ Module 名称分支或直接改写私有参数。完整边界见 [Core 实现标
 本规则适用于新 Module 和后续存储变更；既有不符合项应单独评审迁移。迁移必须停写、备份、验证数据
 与路径关系并具备失败恢复，不得只改挂载路径或在普通 apply 中静默搬迁。
 
+### 持久目录声明草案（2026-10-13，未实施）
+
+目标由 Module 逐目录声明稳定名称、服务或 compute Resource、运行时路径、UID/GID、权限和敏感性。
+后续评审建议仅作为冻结目录清单：Compose 复用既有 DATA_PATH 挂载，compute 复用受管卷接口，不增加
+一套自动挂载变量、账号模板或备份策略字段。guest UID 不等于宿主 UID；sensitive 不是备份/加密开关。
+声明移除不自动删数据，保留映射仍需覆盖备份。既有目录不因新声明自动迁移；数据库/Secret Store 状态不复制。
+
+字段草案 `persistent_directories` 和认证/临时代码示例见[AI Agent 持久化设计](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/architecture/persistence-and-recovery.md)。
+当前 manifest 尚未支持该声明，现有 `temporary_directories` 仅用于 Compose 临时目录，不能跨用于 Incus。
+本段是后续契约设计，不能据此修改现有 module.yml 或宣称受管池已加入备份。
+
 ## 版本与 revision 所有权
 
 `version` 跟随规范化的上游应用版本；`revision` 表示同一上游版本下已经发布的 ANAS 镜像
@@ -70,7 +84,11 @@ Module 参数的机器契约只在 `modules/<name>/module.yml` 的 `config` 下�
 2. 只有调用者必须输入时才加入 `input_required`；最终解析结果必须非空时加入
    `must_resolve`。不要为新代码增加旧式 `required`。
 3. 在 `config.changes` 写明 `effect`、`apply` 和真实运行影响；敏感参数同时声明
-   `sensitive: true`。跨字段规则由 `validate` Hook 或共享应用层执行，派生值由
+   `sensitive: true`。需要让用户输入由 Secret Store 保管时，可对 `container_recreate`
+   的敏感参数显式声明 `store_input: true`；该输入可通过配置事务设置、更新或删除，
+   与应用内凭据轮换（`credential_rotate`）不同。旧明文配置必须迁移，冲突不会覆盖；
+   `anas config set` 不接收此类值，使用受保护的配置事务或配置导入。
+   跨字段规则由 `validate` Hook 或共享应用层执行，派生值由
    `calculate` Hook 产生。
 4. 同步 Compose、Hook、模板、测试和迁移/兼容逻辑中的实际消费方。参数重命名不是简单删除再新增，
    必须说明旧配置如何迁移或被拒绝。
@@ -216,6 +234,13 @@ profile/Properties。Consumer 自行选择 claim 名和应用的 `roleClaim`；�
 此映射不改变 `sub`，也不替代目录变更后旧会话和独立凭据的撤销。当前 Casdoor 的固定
 实现负责受信组计算；支持情况必须有对应版本验证，不能将一方通过结果推广到另一方。
 
+Consumer 需要把准入组之外的目录组用于应用内权限映射时，可发布
+`ANAS_IAM_CLIENT__<APP>__CLAIM_GROUPS`，值为组名的 JSON 数组。Provider 必须从真实目录成员资格
+生成这些组的 claim 投射，不能把组名追加到 `ALLOW_GROUPS`，也不能据此创建目录组或信任用户自报属性。
+Forgejo 用它请求 team 映射组及管理员组。Casdoor 将其纳入既有受信组/role 投射和变更核对；
+当前 Casdoor 对象 ID 与 watcher 名单不支持含逗号、斜线或控制字符的组名，必须明确拒绝。LLNG
+原本返回实际目录组集合，无须另造一份成员副本。
+
 需要区分目录准入丧失与普通退出的 OIDC Consumer，可请求现有通用注册字段
 `ANAS_IAM_CLIENT__<APP>__OIDC_CAEP_EVENTS=session-revoked`。Provider 在自己的 calculate Hook 发布
 `ANAS_IAM_BINDING__<APP>__OIDC_CAEP_EVENTS` 支持集合；Runner 校验交集、backchannel URI 和
@@ -351,9 +376,11 @@ Collabora 使用自己的 Module 参数并在省略密码时生成独立 Secret�
 Module 的参数或独立生成 Secret。若以后提供批量轮换，应由 Runner 对每个账号分别执行其
 handler 并报告逐账号结果，不能重新引入共享密码。
 
-## 同时支持 PostgreSQL 与 MariaDB 的规范
+## 关系数据库选型与接入
 
-同时支持两个数据库的 Consumer Module 必须通过 `relational_database` Contract 集成，不能写死对 `postgres`、`mariadb` Module 的硬依赖，也不能读取 Provider 的管理员凭据。Manifest 至少包含以下结构：
+Module 主要支持 PostgreSQL。上游固定版本支持 PostgreSQL 时，使用 `postgres`，不因为同时支持 MySQL、镜像默认值或部署方便而新增 MariaDB 分支。只有上游明确不支持 PostgreSQL 的 Module 才使用 MySQL/MariaDB；应在技术文档记录固定版本的官方支持说明与例外原因。ANAS 对外使用 `mariadb` interface，上游的 `mysql` 名称只在 Module 内部转换。
+
+数据库 Consumer 通过 `relational_database` Contract 接入，不写死对具体 Provider Module 的硬依赖，不读取 Provider 管理员凭据。PostgreSQL Consumer 的最小结构如下：
 
 ```yaml
 dependencies:
@@ -361,7 +388,7 @@ dependencies:
     - name: relational_database
       version: ">=1.0.0 <2.0.0"
       selected_by: db_type
-      interfaces: [postgres, mariadb]
+      interfaces: [postgres]
       default: postgres
 resources:
   requires:
@@ -379,6 +406,9 @@ config:
   defaults:
     db_type: auto
     db_name: example_app
+  types:
+    db_type:
+      enum: [auto, postgres]
   changes:
     db_type:
       effect: data_migrate
@@ -390,14 +420,14 @@ config:
 
 实现必须遵守以下边界：
 
-1. `db_type` 的公开值是 `postgres`、`mariadb`、`auto`；不要把 Contract interface 命名为 `mysql`。MariaDB 对应用的 MySQL 协议兼容只在 Module 内部转换。
+1. `auto` 只能在 Module 声明的 interface 中解析；只声明 PostgreSQL 时不得回落到 MariaDB。例外 Module 只声明实际验证的 `mariadb`，不声明未经验证的 PostgreSQL 支持。
 2. Runner 解析完成后发布 `<PREFIX>_DB_TYPE`、`_DB_HOST`、`_DB_PORT`、`_DB_NAME`、`_DB_USERNAME`、`_DB_PASSWORD`、`_NETWORK_DB`。Hook 只消费这些 Consumer 私有值，不读取 `POSTGRES_PASSWORD`、`MARIADB_PASSWORD` 或 `MYSQL_ROOT_PASSWORD`。
 3. Compose 通过 `*_NETWORK_DB` 加入所选 Provider 的 external network。不得同时连接两个数据库网络，也不得用 Compose `depends_on` 跨 Project 模拟资源依赖。
-4. 容器必须包含两个引擎所需的客户端/驱动，并在入口点显式映射上游应用配置。例如 PostgreSQL 分支可生成 `POSTGRES_*`，MariaDB 分支可生成应用所需的 `MYSQL_*`；这些是 Module 内部适配，不是跨 Module 契约。
+4. 镜像只需包含实际支持引擎的客户端/驱动。上游专有的 `POSTGRES_*` 或 `MYSQL_*` 配置由 Module 内部映射，不构成跨 Module 契约。
 5. 初始化 SQL 必须可重复执行。数据库和专属用户由 Provider `ensure` 创建；应用入口点只负责自身 schema，不应创建全局用户或授予管理员权限。
-6. Hook 单元测试必须覆盖两个 `db_type` 分支、专属凭据和网络映射；render/Compose 测试必须各覆盖至少一个引擎；声明为稳定支持前还必须有真实容器测试验证 schema 初始化、重启和幂等重应用。
+6. Hook、render/Compose 与真实容器验收覆盖所声明的引擎、专属凭据、网络映射、空库初始化、重启和重复 apply。单一 PostgreSQL Module 不承担未声明的 MariaDB 验收矩阵。
 
-如果上游应用只支持一个引擎，只在 `interfaces` 中声明实际验证过的 interface。不要为了保持 Manifest 对称而声明未实现的兼容性。
+已有双引擎 Module 收敛时必须单独记录兼容范围、旧配置拒绝或显式迁移路径及数据保留。更改默认值不能自动搬迁、改绑或删除既有数据库；保留兼容分支期间仍须验证该分支。不得以本指南更新替代已有需求的明确调整。
 
 ## 升级与兼容
 
@@ -433,7 +463,6 @@ IAM 消费者声明 application_catalog.consumes: true、limitations，以及固
 /run/anas/application-catalog 挂载和单独的公网 assets 挂载。render Hook 读取临时的
 ANAS_APP_CATALOG_FILE 并投射到已有原生 IAM 对象。源目录仍是事实来源，独立 user_portal 复用相同私有目录制品，按当前 IAM/AD 权限保护 API 和图标。
 细节见[目录设计](/architecture/app-catalog-design)。
-
 
 ### 门户后台凭据
 
@@ -480,3 +509,11 @@ README 和技术说明写明实际认证方式及原因，不得用 `access.mode
 
 不需要目录卡片的IAM客户端仍须提供隐藏品牌声明（如 `user_portal` 的 `hidden: true`、`access.mode: iam`、`visibility.mode: authenticated`）。该声明只补齐原生登录logo，不生成可见自链；无准入组的IAM品牌不得通过override取消隐藏。有准入组的应用仍用既有access过滤。没有任何人员入口的纯后端Module才使用 `applications_not_published` 写明原因。
 新增入口时同时更新两套内置主题和来源记录，运行 `node scripts/application-themes.mjs --render` / `--check`，并验证原生IAM应用列表、登录及再次验证logo。主题来源与导入边界见[主题指南](/guide/application-themes)。
+
+公开多个 Web 名称的 Module 可声明 `features.domain: true` 和 `features.additional_domains: [<本模块的附加_DOMAIN键>]`。列表最多八项，只能引用本 Module 自己的非敏感 `*_DOMAIN` 主机名键，不能引用其他 Module、URL、端口或秘密。Root 在 calculate 后核验并以相同 Module owner 追加至既有 DOMAINS 协议；附加名称同样保留给该 Module，不能与计算租约发布范围重叠。未声明此特性的旧 Module 保持单域行为。
+
+## Go 镜像共享构建检查
+
+`go run ./cmd/check-shared-build` 按每个 Dockerfile 实际 COPY 的源码跨平台检查依赖；同一个本地
+构建 context 内未复制的其他程序不算该镜像输入。Compose 按 context 与 Dockerfile 一起匹配，允许
+同一 context 的不同镜像有不同共享输入。这是静态门禁，不能替代镜像构建。

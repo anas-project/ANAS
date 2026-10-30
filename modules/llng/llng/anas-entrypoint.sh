@@ -2,11 +2,45 @@
 
 set -euo pipefail
 
+# A container restart retains its writable /run directory. Never let an old
+# ready marker expose a partially rebuilt client registry.
+rm -f /run/llng-configured /var/lib/lemonldap-ng/conf/.anas-ready
+mkdir -p /var/lib/anas-dirwatch
+chown 33:33 /var/lib/anas-dirwatch
+chmod 0700 /var/lib/anas-dirwatch
+
+# The upstream FCGI server defaults to seven Perl workers. Small NAS hosts can
+# use fewer; keep the native worker control rather than adding another server.
+case "${LLNG_WORKERS:-2}" in
+  [1-9]|[12][0-9]|3[0-2]) export NPROC="${LLNG_WORKERS:-2}" ;;
+  *) echo 'LLNG_WORKERS must be between 1 and 32' >&2; exit 1 ;;
+esac
+
 # These paths are inherited Docker VOLUME declarations. Compose supplies fresh
 # tmpfs mounts so they are explicit, non-persistent runtime state instead of
 # anonymous Docker volumes. LLNG's authoritative configuration is mounted
 # separately at /var/lib/lemonldap-ng/conf and sessions are stored in the DB.
 /usr/local/bin/anas-llng-restore-runtime
+
+# Configuration uses the separate loopback reload listener while workers start.
+# Every portal request waits for complete rules, including a loopback proxy.
+cat >/etc/nginx/anas-ready.conf <<'NGINX'
+# OIDC URLs and Referer headers can contain authorization codes and ID tokens.
+access_log /dev/stdout anas_iam;
+# Nginx error entries embed the original request and cannot redact its query.
+# Keep request status in the safe access log and native LLNG service errors.
+error_log /dev/null;
+# Override the upstream http-level error redirect to the portal itself.
+error_page 503 =503 @anas_unavailable;
+location @anas_unavailable { return 503; }
+set $anas_configuring 1;
+if (-f /run/llng-configured) { set $anas_configuring 0; }
+if ($anas_configuring = 1) { return 503; }
+NGINX
+for site in /etc/nginx/sites-enabled/*; do
+  [ -f "$site" ] || continue
+  sed -i '/^[[:space:]]*server[[:space:]]*{/a\    include /etc/nginx/anas-ready.conf;' "$site"
+done
 
 # LLNG's Nginx is the application-side trust boundary. Resolve forwarded
 # addresses recursively, but only through the exact Traefik peer and any
@@ -31,6 +65,9 @@ real_ip_config=/etc/nginx/sites-enabled/00-anas-real-ip.conf
     done
   fi
 } >"$real_ip_config"
+cat >>"$real_ip_config" <<'NGINX'
+log_format anas_iam '$remote_addr [$time_local] "$request_method $uri $server_protocol" $status $body_bytes_sent';
+NGINX
 
 # Keep configuration reload on loopback. The upstream image has no reload
 # virtual host, so CLI saves otherwise hit the default vhost and workers can
@@ -48,7 +85,7 @@ server {
 }
 NGINX
 
-for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SAMBA_DC_USER_COMPLEX_PASS SAMBA_DC_USER_MIN_PASS_LENGTH SAMBA_DC_USER_PASSWORD_HISTORY SERVER_NAME TRAEFIK_DOMAIN_FULL; do
+for name in BASE_DOMAIN DB_HOST DB_PASSWORD DB_POST DB_USER LLNG_DB_NAME LLNG_DB_TYPE LLNG_DOMAIN LLNG_DOMAIN_FULL LLNG_LDAP_AUTH_FILTER LLNG_LDAP_MAIL_FILTER LLNG_MANAGER_DOMAIN LLNG_MANAGER_DOMAIN_FULL SAMBA_DC_ADMIN_GROUP_NAME SAMBA_DC_BASE_GROUPS_DN SAMBA_DC_BASE_GROUPS_ROLE_DN SAMBA_DC_BASE_USERS_DN SAMBA_DC_LDAPS_PORT SAMBA_DC_LDAPS_SERVER_URL SAMBA_DC_PASSWORD_BIND_DN SAMBA_DC_PASSWORD_BIND_PASSWORD SAMBA_DC_USER_CLASS_FILTER SAMBA_DC_USER_ENABLED_FILTER SAMBA_DC_USER_COMPLEX_PASS SAMBA_DC_USER_MIN_PASS_LENGTH SAMBA_DC_USER_PASSWORD_HISTORY SERVER_NAME TRAEFIK_DOMAIN_FULL; do
   if [ -z "${!name:-}" ]; then
     echo "missing required environment variable: $name" >&2
     exit 1
@@ -72,6 +109,10 @@ until nc -z "$DB_HOST" "$DB_POST"; do
 done
 
 if [ "$LLNG_DB_TYPE" = postgres ]; then
+  # Load the SQL driver before FastCGI starts its request timeout. An alarm
+  # during lazy require leaves DBD::Pg poisoned in a persistent worker's %INC.
+  # The native entrypoint inherits this standard Perl startup option.
+  export PERL5OPT="${PERL5OPT:+${PERL5OPT} }-MDBD::Pg"
   browseable_db_config=Apache::Session::Browseable::PgJSON
   db_config="DBI:Pg:database=${LLNG_DB_NAME};host=${DB_HOST};port=${DB_POST}"
   sed "s/{{LLNG_DB_NAME}}/${LLNG_DB_NAME}/g" /opt/anas/postgre_init.sql >/tmp/anas-llng-init.sql
@@ -93,7 +134,7 @@ for name in LLNG_MANAGER_DOMAIN_FULL LLNG_MANAGER_DOMAIN LLNG_DOMAIN SAMBA_DC_AD
   printf -v replacement '${%s}' "$name"
   sed -i "s/{{${name}}}/${replacement}/g" /tmp/anas-lmConf.template
 done
-envsubst "$template_variables" </tmp/anas-lmConf.template >/tmp/anas-lmConf.json
+envsubst "$template_variables" </tmp/anas-lmConf.template | jq -f /opt/anas/authentication.jq >/tmp/anas-lmConf.json
 jq empty /tmp/anas-lmConf.json
 perl -MYAML=Dump -MJSON=decode_json -0777 -ne 'print Dump(decode_json($_))' \
   /tmp/anas-lmConf.json >/tmp/llng_config_custom.yaml

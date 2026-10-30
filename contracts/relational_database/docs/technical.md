@@ -162,6 +162,13 @@ Runner 的定向测试只证明输入拒绝、参数传递和失败状态行为�
 定向验证：`go test ./internal/runner -run 'TestRelationalDatabase'`。真实 Provider 检查和受控升级验证见
 PostgreSQL Module 的源文档与测试脚本，不由 Contract schema 推断通过。
 
+## 数据库引擎变更保护
+
+普通配置准备会核对已有 Resource state 和当前部署记录中的数据库引擎；包括保留资源，以及 state
+丢失但当前部署仍有记录的情况。引擎变化在生成凭据和准备 Provider 写操作前失败，损坏记录也不当成
+新资源。例如 Module 将 `auto` 收敛为 PostgreSQL 时，旧 MariaDB 绑定不会静默改绑到空库。
+跨引擎数据迁移必须单独执行；此保护不迁移、删除数据或改写已有记录。
+
 ## 文档生成管线
 
 1. 读取 `contract.yml` 并校验 `anas.contract/v1`。
@@ -172,3 +179,5 @@ PostgreSQL Module 的源文档与测试脚本，不由 Contract schema 推断通
 6. 对中英文结构、断链、未知 `$ref` 和未记录字段执行 CI 检查。
 
 生成输出不能取代源文件；schema 是字段事实源，技术文档负责解释为什么以及如何实现。
+
+关系数据库连接投影中，`primary_database` 继续使用既有 `<CONSUMER>_DB_*` 和 `<CONSUMER>_NETWORK_DB`。同一 Consumer 的其他资源按稳定资源 ID 加前缀，例如 `webmail` 使用 `MAIL_WEBMAIL_DB_*` 与 `MAIL_WEBMAIL_NETWORK_DB`，避免后创建资源覆盖主库连接。各资源仍使用原有独立凭据、保留策略与生命周期，不新增 Provider 或数据库服务。

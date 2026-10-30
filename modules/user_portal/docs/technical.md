@@ -6,14 +6,18 @@
 
 ## 依赖的 Module、Capability 与 Contract
 
-原生 OIDC binding 负责发行者；Casdoor 原生 API 用于本人事实读取，Samba AD 用于当前状态、组和密码。首版限定 Casdoor，没有 SAML 或数据库。
+原生 OIDC binding 负责发行者，Provider 的本人账户 API 用于当前 IAM 事实读取，Samba AD 用于当前状态、组和密码。支持 Casdoor 与 LLNG 账户格式；门户不使用 SAML 或数据库。
+
+Issuer 保留 Provider binding 的精确值，包括可选的根路径尾斜杠；只有构造端点 URL 时
+去掉重复分隔符，discovery 和 token 校验仍使用原值。其他 issuer 路径仍不支持。
+LLNG 的实现和实机验收进度见 LLNG 上线计划。
 
 ## Compose 拓扑
 
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 5 |
+| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 6 |
 <!-- generated:compose-topology:end -->
 
 单个 Go 进程交付嵌入页面和 API，只有 Traefik 路由，无宿主发布端口。不挂 Docker socket。root 启动仅通过固定审计挂载的目录描述符初始化权限，再不可逆切换至 UID/GID 65532。应用 rootfs 只读。
@@ -58,12 +62,14 @@ Hook 仅发布自己的 ANAS_IAM_CLIENT__USER_PORTAL__ 注册，PUBLIC_CLIENT �
 
 应用 API 复用 internal/appcatalog 的语言和 BuildView，固定策略必须启用、Approved、Allow、匹配 model/resource/Read/组集合，并与当前 AD 组交叉确认。enforce 的默认允许和管理员绕过不用于门户。图标读取使用 no-link reader 及内容摘要，授权先于文件读取。
 
-服务端 LDAP 动作限定为三个姓名字段、unicodePwd change/reset、pwdLastSet、lockoutTime 与单个 member add/delete。以当前 anchor 找到 GUID 后进行稳定寻址；不接受任意属性、DN、完整 member replace 或命令。审计记录稳定引用和结果，没有密码/token 字段；意图先 fsync，网络未知不重放，结果存储失败关闭后续写入。
+基础 LDAP 动作限定为三个姓名字段、unicodePwd change/reset、pwdLastSet、lockoutTime 与单个 member add/delete；邮件目录候选的额外动作及权限见下节。以当前 anchor 找到 GUID 后进行稳定寻址；不接受任意属性、DN、完整 member replace 或命令。审计记录稳定引用和结果，没有密码/token 字段；意图先 fsync，普通非幂等操作的网络未知不自动重放，结果存储失败关闭后续写入。
 
 
 ### 资料与 ANAS 管理员管理
 
 个人资料允许修改名、姓、显示名；邮箱、登录名、锚点只读，未接邮件模块不提供别名写入。资料在写入前逐字复核版本及旧值，门户内串行写入；同一 LDAP Modify 检查旧属性值。AD 的姓名匹配忽略大小写，因此不能承诺与外部工具之间的全局事务。分类开关同时控制用户应用和后台管理的小分类，保留两大组并记住当前浏览器偏好；密码/资料结果显示在表单旁，资料保存后立即刷新当前页的姓名摘要。未支持语言仍回退英文。
+
+启用邮件目录管理时，邮箱页不再提示别名功能尚未提供，而说明地址变更仍需邮件服务确认。此文案不改变既有目录授权、写入或下游就绪规则；未启用管理时保留原提示。
 
 `administration_enabled` 使用目录 Provider 注册的管理员组并绑定稳定标识，不以 Casdoor 原生管理员或名称前缀授权。默认管理列表只展示明确注册的 ANAS 组，按应用、能力、文件资源和角色分类；高级视图说明系统权限风险。不能重置本人密码、移出自身管理员路径或移除最后一个可确认的可用管理员。计算机、服务和信任主体不进入人员管理。
 
@@ -101,7 +107,14 @@ Hook 仅发布自己的 ANAS_IAM_CLIENT__USER_PORTAL__ 注册，PUBLIC_CLIENT �
 
 提交前审查修复了公开改密的身份限流响应差异和无效成员请求的审计身份遗漏。本地回归通过；历史 95/95 与 41/41 属于修复前制品，当前正式制品需重新构建并在 finance 复验。
 
-账户 API 格式由 `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1` 声明；门户按绑定契约检查，不按 IAM Module 名分支。它仍依赖现有原生本人 API，不扩展 API 权限。门户以 `no_prior_release` 登记首次发布基线，不宣称存在旧版本升级通过结果。
+账户 API 格式由 `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA` 声明，支持
+`casdoor-account/v1` 和 `llng-account/v1`，不按 IAM Module 名分支。Casdoor 保留原生本人
+接口；LLNG 使用原生 UserInfo 及受限 `/anas-account` 插件接口，核对 token 主体、当前 AD
+状态和实际准入规则，再与门户目录及应用配置取交集。缺字段、目录故障、规则不一致或重复
+应用策略均拒绝。不增加门户持有的 IAM 管理员凭据。LLNG 实际门户验收仍在上线计划中进行。
+LLNG 通过已验证签名、issuer、audience、nonce 和时间的 ID Token `amr` 声明识别 Passkey：必须包含 `webauthn` 且不含 `pwd`。只有这类会话允许 AD 强制改密或密码到期；缺失或格式错误的登录方式不得获得豁免。当前目录禁用、锁定、账号到期、未知状态和稳定身份检查保持生效，写入前同样复核。本人改密仍要求旧密码。近期认证过期时，Passkey 会话通过原生 OIDC 重新验证，返回后重新提交操作；密码会话保留页内密码核验。域级操作继续要求本人 AD 密码，不由 Passkey 代替。
+
+门户以 `no_prior_release` 登记首次发布基线，不宣称存在旧版本升级通过结果。
 
 Go 依赖采用 coreos/go-oidc 验证 OIDC 与签名登出，go-ldap 提交受限目录请求；x/net/publicsuffix 校验门户与 IAM 的同站关系。共享目录的 x/image 用于生成七档 PNG。这些库复用协议实现，不增加运行服务。
 
@@ -109,12 +122,30 @@ Go 依赖采用 coreos/go-oidc 验证 OIDC 与签名登出，go-ldap 提交受�
 
 `samba_dc.mail_domain` 缺省继承 AD DNS 域。例如 finance.hlong.wang 的 admin 获得 `admin@finance.hlong.wang`；设置为 hlong.wang 后，指定人员 OU 的主地址按 `用户名@hlong.wang` 维护。它不改变 AD 域、UPN、登录名或锚点。`mail` 完全由系统管理，页面不接受手工主地址；地址存在不代表邮件服务已经开通。
 
-人员枚举、详情、姓名、密码、分组及域级操作均以 Provider 的用户 OU 及子 OU 为边界。ANAS 管理员可用“新建用户”创建普通人员；后端使用 `create_bind_dn/password` 指定的授权绑定，而不是使用前台操作者的域权限。推荐独立 `svc_portal_create`，仅授予用户 OU 的 user 创建权限。配置账号也可已有相应 AD 授权；门户角色和后端目录授权分别检查。若指定域管理员作为创建绑定，门户进程会长期持有该账号既有权限，逐次域级验证并不能隔离这份凭据；默认专用受限绑定可避免这一点。
+人员枚举、详情、姓名、密码、分组及域级操作均以 Provider 的用户 OU 及子 OU 为边界。ANAS 管理员可用“新建用户”创建普通人员；后端使用 `create_bind_dn/password` 指定的授权绑定，而不是使用前台操作者的域权限。推荐独立 `svc_portal_create`，授予用户 OU 的 user 创建权限，以及固定 Mail OU 内两类邮件资源的创建、读取和指定状态属性写权；不给已有人员的额外写权或资源 ACL 修改权。门户角色和后端目录授权分别检查。若指定域管理员作为创建绑定，门户进程会长期持有该账号既有权限，逐次域级验证并不能隔离这份凭据；默认专用受限绑定可避免这一点。
 
-`POST /api/users` 只接收 `username`、三项 `profile`、`force_change`。登录名限 20 位 ASCII 字母、数字、下划线、点、连字符，并须能组成系统邮箱。邮箱、UPN 后缀、目标 DN、初始随机密码和锚点由服务器决定，一次原生 LDAP Add 写入；不授予管理组。该动作需要近期认证、CSRF、当前管理员权限和持久审计；冲突或结果未知不得自动重试。临时密码只在成功响应显示一次，默认要求下次修改。
+`POST /api/users` 只接收 `username`、三项 `profile`、`force_change`。登录名限 20 位 ASCII 字母、数字、下划线、点、连字符，并须能组成系统邮箱。邮箱、UPN 后缀、目标 DN、初始随机密码和锚点由服务器决定。候选源码先保存待执行主箱意图及唯一地址占用，再比较更新配置版本选出创建者，以一次原生 LDAP Add 写入人员，不授予管理组。回读核对人员 DN、二进制/文本锚点、objectGUID、姓名/地址及普通用户类型后，绑定 objectGUID 并分步提交地址和主箱。AD 提交不代表 DMS、云路由或 Webmail 已就绪。域级冲突预查询使用 critical 当前域搜索控制，并拒绝意外目录引用；不把部分读取当成无冲突。
+
+该动作需要近期认证、CSRF、当前管理员权限和持久审计；冲突或结果未知不得自动重试。密码不进入邮件操作记录，只有本次人员 Add 已确认且完整目录提交成功才在响应显示一次；对同一操作的内部核对不会重置密码或把另一份随机密码当成原密码。创建已开始但找不到匹配人员时保留 `creating`/未知，不自动重建人员或释放地址。内部恢复尚无管理员页面/API，HTTP 再次建号也不会复用旧人员标识。
+
+这条候选路径要求 `anas.mail-directory/v1` schema、固定 OU 和受限 ACL 已就绪，缺失时关闭建号，不退回仅预查询。Samba 开发工具 `install-mail-directory.py` 已提供显式 OU/ACL 准备，并分离 reader、creator、address_writer、primary_writer；候选建号只使用 creator。现有 `tools/provision-directory.py` 尚未自动调用该工具或创建地址维护账号，正式初始化、所有主地址写入口及既有地址协调仍在邮件集成计划中；不能仅更新门户镜像就视为升级完成，业务域尚未应用该变更。
 
 建号授权边界：finance Samba 4.23.6 的专用创建者同时成为新用户对象所有者，能修改该对象的 DACL（访问控制表）；临时原生 Owner Rights 规则未移除该能力。因此仅配置子对象创建 ACL 不能证明与后续高权限账号严格隔离。门户在加入域风险组前执行下一节的所有者移交并核对结果；默认创建绑定不应授予额外域权限。没有向正式 OU 添加全局 Owner Rights 规则，也没有新增 Casdoor 补丁。
 
+
+### 邮箱与个人别名管理候选
+
+开发候选增加 `GET/POST /api/mail` 及管理员 `GET/POST /api/users/{anchor}/mail`。仅当私有固定文件 `/run/anas/mail-management/config.json` 存在并通过校验时启用。文件 schema 为 `anas.portal-mail/v1`，含独立 `bind_dn`/`bind_password` 和 `policy`；writer 必须是 Service Accounts 的直接子项，并与只读、建号、密码绑定不同。文件必须由当前进程所有、0600、单硬链接且无符号链接。未知字段、尾随 JSON、缺省或 null 配额均拒绝。没有新增 manifest 参数或通用环境变量；正式 Hook、Secret 交付及挂载尚未接入，当前默认关闭。
+
+邮件地址写入请求只接受一个 JSON Content-Type 和精确字段名，拒绝重复键（包括转义后相同的键）、大小写变体、null、非字符串及额外 JSON。操作 ID、版本、动作和地址必须存在，邮箱 ID 按动作规则校验；歧义请求在调用目录写入前拒绝。
+
+`policy` 显式包含 `domains`、`protected_addresses`、`max_additional`、`max_aliases`、`capacity_bytes`、`send_per_minute`。计数上限为 0—1000（0 表示不允许新增），单箱容量为 1 MiB—1 TiB，发送速率为每分钟 1—1000000。后两项写入独立箱的目录配额，不代表 DMS 已执行；正式 Tutorial 和下游配额仍待接线。受管域及地址须规范化；没有无限默认值，普通用户的读取结果不返回保护地址清单。
+
+POST 只接受 `operation_id`、`version`、`action`、`mailbox_id`（别名动作必填）及 `address`。动作限 `additional.create`、`alias.add`、`alias.remove`；人员归属来自当前会话或已授权管理员路径，拒绝浏览器提交 owner/DN/属性。当前 IAM、人员 objectGUID、近期认证、CSRF、受管范围与保护人员在准入及逐次写入前重新核验；管理员权限撤销或人员替换后停止后续写入。审计先保存意图，记录稳定人员/箱/操作 ID，不存地址正文或绑定秘密。
+
+共享 Go `directorymail.ManagementDirectory` 复用两类 AD 对象及严格原子 Modify。主箱 `anasMailQuotaState` 只保存一项 pending 意图和最后回执，以主箱配置版本在各请求间串行计算配额；不增加数据库或常驻服务。独立箱先占址再建随机 ID 的箱，增删别名只 Add/Delete 对应 SMTP proxy，保留全部其他值。中断或响应丢失可用同一原请求恢复；重新提交不同操作/版本/操作者/策略不会接管待执行项。附加箱的别名变更在写入前后更新该箱版本，配合邮件只读端的末次版本复核；主箱使用自身操作两端的版本更新。移除后占用改为 retained，不删除箱、地址历史或旧邮件；主地址、旧主地址、保护地址和未明确纳管的历史别名拒绝移除。系统后缀变更与个人操作共用主箱版本，pending 个人操作期间不改默认地址。
+
+本人“邮箱”页和管理员详情页显示箱、地址、配额及待恢复原操作，移除用页内确认；支持八语言、当前页响应隔离、原请求重试和手机宽度的长地址换行。AD 提交响应固定 `mail_ready:false`，页面明确目录保存与邮件可用分别确认。本人管理页可从已授权应用目录取得正式 mail Module 的 Go 入口，并在新窗口打开邮件服务；管理员查看他人时不附指向本人的入口。入口使用当前 IAM/AD 应用准入，不签发邮箱凭据、不将目录保存改为已就绪，后续状态和 Webmail 交接由 Go 核验。停用/地址移交 API、跨操作者恢复及完整上线仍待完成。实机及故障结果统一记录在根邮件集成计划 §4.21。
 
 ### 域风险组的对象所有权
 
@@ -187,3 +218,33 @@ Casdoor 的 ANAS 目录登录页提供“首次／到期改密 · Set new passwo
 获取前先持久写审计意图，返回前重新确认会话、目录角色与 IAM 权限并持久写结果；任一步失败不交付密码。审计动作是 `application.credentials.read`，只含操作者、入口、请求 ID 和结果。页面分别提供用户名、密码复制按钮；密码默认遮盖，关闭、页内导航或退出时清空输入，晚到响应不能重建弹框。剪贴板中已复制的内容由用户管理。
 
 本地验证为 `go test ./modules/user_portal/portal ./modules/user_portal/hook` 和 `node --test test-env/playwright/user-portal-credentials.test.mjs`。后者使用真实门户界面与模拟 API；不代表真实主机、anasd 或目标后台的验收。
+
+LLNG 门户退出使用 discovery 的标准 `end_session_endpoint`。`POST /api/logout` 先删除
+本地会话，再返回带 `client_id`、原已验证 `id_token_hint`、精确登记的
+`/oidc/logout-callback` 和随机 state 的浏览器跳转。state 保存在既有有界一次性流程存储中，
+绑定独立 Secure/HttpOnly Cookie；过期、错浏览器、错误流程及重放不确认中央退出。
+回调不创建登录会话，界面仅根据服务端确认展示结果；离开后未收到回调时保留部分完成并允许
+重试。IAM 不可达不影响本地失效。Casdoor 的既有原生浏览器退出路径继续使用原接口。
+ID Token 只保留在内存会话并用于标准退出提示，不进入持久状态、日志或审计。
+
+退出完成提示仅确认结果列表中的项目，不据此声称未列出的应用或不支持通知的应用也已退出。
+
+邮件受管接线候选：Samba 明确启用目录邮箱并提供完整限额政策及独立 creator 身份后，Hook 固定门户建号身份，不接受与其冲突的自定义建号绑定。门户 runtime 仅保存冲突检查政策，不再交付地址写入 Secret；地址写身份由邮件 Module 的私有 binding 接收；启动时从只读输入复制为当前启动身份所有的 0600 文件，完成配置读取后沿用现有降权过程。禁用时私有空输入清除旧运行副本；runtime_restore 可重建绑定。新增 DAC_OVERRIDE 只用于根身份读取主机 0600 输入，服务请求阶段仍为 UID 65532。门户依赖通用 OIDC 能力，不再强制绑定 casdoor Module。Samba 自动引导、完整双方 Provider、正式容器及业务部署尚待验证。
+
+
+正式启动先按已打开的固定 DATA 挂载描述符检查根目录：仅接受无其他用户写权限的 root 目录或已有 UID 65532、0700 的目录，将 root 挂载目录连同既有私有子目录交给 UID/GID 65532 后再降权。Core 创建的 root:0700 根目录必须处理，否则即使 audit 子目录归属正确，降权后仍不能访问。拒绝外国所有者、可共同写入或已暴露的既有目录，不递归修改未知文件；原生正式启动和 root 容器权限回归结果见根计划。
+
+### 建号前的邮件地址冲突查询
+
+启用邮件管理后，建号页面通过管理员限定的 `GET /api/users/mail-conflict?username=...` 查询当前完整地址。查询同时覆盖 AD 地址占用对象及尚未迁入资源对象的既有 `mail`/SMTP `proxyAddresses`，读取失败返回不可核验，不能显示可用。接口只读，不预留或释放地址；最终建号仍重新执行目录占用选举。
+
+冲突页显示地址类型及有权查看的归属，允许更换用户名，或在新标签页打开邮件服务的原人员地址管理，再重新读取占用。系统主地址、保留占用和受保护地址不提供维护选择；邮件服务重新核验权限、当前版本及进行中的操作；域外人员不泄露归属。移除别名继续保留占用，不能将此查询或维护链接视为已完成管理员地址移交；显式移交另按 MAILMOD-R-068 实施和验收。
+
+
+### 登录页主动检查 IAM 会话
+
+2026-10-30 实现候选：匿名用户进入普通登录页，或页面内导航遇到会话失效（401）时，自动导航至 `/login?check=1`，通过现有 OIDC 授权码流程发送 `prompt=none`。授权成功沿用 state、浏览器 Cookie、nonce、PKCE、签名、IAM 与目录准入核验；保留真实 `auth_time`，不会将无交互登录当成近期重新认证。需要登录、同意或选择账号时回到门户登录页，仍可手动登录；其余授权错误显示重试提示。每次返回只显示结果，不立即重复导航。IAM 未返回而用户回到门户时，以当前标签页的未完成标记提示重试；无法接管 IAM 域或浏览器自身的网络错误页面。
+
+已有门户会话、退出结果页和密码恢复页不自动发起检查。原页面目标仅保存在当前标签页，沿用已有安全的 hash 恢复规则。2026-10-30 已在 ln 隔离环境通过 Casdoor 固定源及当前 LLNG 2.23.4 的真实浏览器会话验证；[配套验收计划](../dev-docs/plans/archived/iam-session-check.md)记录源码、重试和边界，完整邮件下游及 Core 部署验收仍归邮件计划。
+
+地址管理已迁至邮件服务。门户不再暴露 `GET/POST /api/mail` 与 `GET/POST /api/users/{anchor}/mail`，账号页面不提供邮箱管理页签。保留人员资料中的只读主地址及建号冲突查询；创建提交仍由目录原子占用检查决定能否建号，门户不执行地址移交。升级时应一起重新生成门户和邮件 Module 的 runtime binding，旧版门户地址写凭据配置会被拒绝。

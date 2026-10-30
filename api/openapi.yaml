@@ -139,6 +139,180 @@ paths:
           $ref: "#/components/responses/ServiceUnavailableProblem"
         "504":
           $ref: "#/components/responses/DeadlineProblem"
+  /api/v1/service/workspaces/{ws}/applications/{application}/mail-ingress-install:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: application
+        in: path
+        required: true
+        schema: {type: string, const: mail}
+    post:
+      operationId: installServiceMailIngress
+      summary: Install or configure a restricted mail ingress source
+      description: |
+        Full-state direct TLS only. Requires the exact mail.ingress.install
+        service grant for this workspace and the mail resource. The calling
+        service authenticates the human administrator for each step; actor is
+        declared audit context and is not a user authentication claim. Provider
+        tokens are private request inputs and are never returned. Preparing or
+        committing configuration does not imply deployment or email delivery.
+        A vps-ssh Cloudflare-forwarding request must supply account_id, zone_id,
+        forward_domain, routing_token and destination_token together; direct VPS
+        requests must omit them. The two provider tokens must be distinct.
+      tags: [Service]
+      security:
+        - serviceBearer: []
+      x-anas-permission: mail.ingress.install
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        full: {authentication: service, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [actor, action, operation_id, domains, allowed_domains, drain_ids, capacity_bytes, total_capacity_bytes, delivered_days]
+              oneOf:
+                - required: [account_id, worker, bucket, zone_id, routing_token]
+                  properties:
+                    provider: {type: string, enum: [worker-r2]}
+                    action: {type: string, enum: [prepare, commit]}
+                - required: [provider, source_id, generation, source_origin, reader_token, control_token]
+                  properties:
+                    provider: {type: string, const: cloud-relay}
+                    action: {type: string, enum: [prepare, commit]}
+                - required: [provider, source_origin, ssh_host, ssh_port, ssh_user, ssh_host_key, ssh_private_key, tls_certificate, tls_private_key, smtp_hostname]
+                  properties:
+                    provider: {type: string, const: vps-ssh}
+              properties:
+                actor: {type: string, minLength: 1, maxLength: 256}
+                action: {type: string, enum: [publish, activate, prepare, commit]}
+                provider: {type: string, enum: [worker-r2, cloud-relay, vps-ssh]}
+                operation_id: {type: string}
+                account_id: {type: string}
+                worker: {type: string}
+                bucket: {type: string}
+                zone_id: {type: string}
+                domains: {type: array, minItems: 1, maxItems: 100, items: {type: string}}
+                allowed_domains: {type: array, minItems: 1, maxItems: 100, items: {type: string}}
+                drain_ids: {type: array, maxItems: 8, items: {type: string}}
+                capacity_bytes: {type: integer, minimum: 1}
+                total_capacity_bytes: {type: integer, minimum: 1}
+                delivered_days: {type: integer, minimum: 1, maximum: 3650}
+                notification_origin: {type: string}
+                deployment_token: {type: string, writeOnly: true}
+                routing_token: {type: string, writeOnly: true}
+                source_id: {type: string, format: uuid}
+                generation: {type: string, format: uuid}
+                source_origin: {type: string}
+                reader_token: {type: string, writeOnly: true}
+                control_token: {type: string, writeOnly: true}
+                notification_token: {type: string, writeOnly: true}
+                ipv4_only: {type: boolean}
+                ssh_host: {type: string, minLength: 1, maxLength: 253}
+                ssh_port: {type: integer, minimum: 1, maximum: 65535}
+                ssh_user: {type: string, minLength: 1, maxLength: 32}
+                ssh_host_key: {type: string, minLength: 1, maxLength: 8192}
+                ssh_private_key: {type: string, writeOnly: true, minLength: 1, maxLength: 65536}
+                tls_certificate: {type: string, minLength: 1, maxLength: 32768}
+                tls_private_key: {type: string, writeOnly: true, minLength: 1, maxLength: 32768}
+                smtp_hostname: {type: string, minLength: 1, maxLength: 253}
+                forward_domain: {type: string, minLength: 1, maxLength: 253}
+                destination_token: {type: string, writeOnly: true, minLength: 20, maxLength: 256}
+      responses:
+        "200":
+          description: Step confirmed; not delivery readiness.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state, source_id]
+                properties:
+                  state: {type: string, enum: [published, activated, prepared, configured]}
+                  source_id: {type: string}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
+  /api/v1/service/workspaces/{ws}/applications/{application}/mail-outbound-configure:
+    parameters:
+      - $ref: "#/components/parameters/WorkspaceID"
+      - name: application
+        in: path
+        required: true
+        schema: {type: string, const: mail}
+    post:
+      operationId: configureServiceMailOutbound
+      summary: Save the explicit default mail sending profile
+      description: |
+        Full-state direct TLS only. Requires a separate mail.outbound.configure
+        service grant scoped to this workspace and mail. The calling service
+        authenticates its administrator; actor is declared audit context, not
+        proof of human authorization. The password is a private request input.
+        The host preserves sender-domain overrides and only commits workspace
+        configuration. It does not deploy DMS or dispose of queued messages;
+        a successful response does not prove delivery or readiness. An unknown
+        response must not be treated as a failed commit or blindly retried.
+      tags: [Service]
+      security:
+        - serviceBearer: []
+      x-anas-permission: mail.outbound.configure
+      x-anas-scope: workspace
+      x-anas-listeners: [direct]
+      x-anas-state-access:
+        full: {authentication: service, transports: [tls]}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [actor, operation_id, provider]
+              properties:
+                actor: {type: string, minLength: 1, maxLength: 256}
+                operation_id: {type: string, pattern: '^cfg-[a-f0-9]{32}$'}
+                provider: {type: string, enum: [direct, resend, smtp]}
+                host: {type: string}
+                port: {type: integer, minimum: 0, maximum: 65535}
+                tls: {type: string, enum: ['', starttls, tls]}
+                username: {type: string}
+                password: {type: string, writeOnly: true}
+      responses:
+        "200":
+          description: Workspace configuration saved; not delivery readiness.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [state]
+                properties:
+                  state: {type: string, const: configured}
+        "400": {$ref: "#/components/responses/BadRequestProblem"}
+        "401": {$ref: "#/components/responses/UnauthorizedProblem"}
+        "403": {$ref: "#/components/responses/ForbiddenProblem"}
+        "404": {$ref: "#/components/responses/NotFoundProblem"}
+        "405": {$ref: "#/components/responses/PostMethodNotAllowedProblem"}
+        "408": {$ref: "#/components/responses/RequestCanceledProblem"}
+        "409": {$ref: "#/components/responses/ConflictProblem"}
+        "413": {$ref: "#/components/responses/PayloadTooLargeProblem"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaTypeProblem"}
+        "500": {$ref: "#/components/responses/InternalProblem"}
+        "503": {$ref: "#/components/responses/ServiceUnavailableProblem"}
+        "504": {$ref: "#/components/responses/DeadlineProblem"}
   /api/v1/workspaces/{ws}/host/actions/incus.status:
     parameters:
       - $ref: "#/components/parameters/WorkspaceID"

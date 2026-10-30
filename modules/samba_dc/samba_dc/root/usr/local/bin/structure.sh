@@ -47,8 +47,18 @@ remove_from_group() { # $1 group name, $2 object name
   fi
 }
 
-# waiting for samba startup
-sleep 20
+# Wait for the local LDAP listener instead of adding a fixed delay to every
+# restart. The remaining reconciliation and health checks still verify AD.
+for attempt in {1..60}; do
+  if nc -z 127.0.0.1 389 >/dev/null 2>&1; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo "Samba LDAP listener did not become ready" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 # A service account is always required by LDAP-integrated applications, even
 # when the optional organizational structure is disabled.
@@ -189,23 +199,22 @@ fi
 
 # samba password rule
 echo "Apply default user password rule"
-echo "Set Samba DC user min password age: $SAMBA_DC_USER_MIN_PASS_AGE"
-samba-tool domain passwordsettings set --min-pwd-age=$SAMBA_DC_USER_MIN_PASS_AGE
-samba-tool domain passwordsettings set --max-pwd-age=$SAMBA_DC_USER_MAX_PASS_AGE
-echo "Set Samba DC user max password age: $SAMBA_DC_USER_MAX_PASS_AGE"
-samba-tool domain passwordsettings set --min-pwd-length=$SAMBA_DC_USER_MIN_PASS_LENGTH
-echo "Set Samba DC user min password length: $SAMBA_DC_USER_MIN_PASS_LENGTH"
-samba-tool domain passwordsettings set --history-length=$SAMBA_DC_USER_PASSWORD_HISTORY
-echo "Set Samba DC user password history length: $SAMBA_DC_USER_PASSWORD_HISTORY"
-samba-tool domain passwordsettings set --account-lockout-threshold=$SAMBA_DC_USER_LOCKOUT_THRESHOLD
-samba-tool domain passwordsettings set --account-lockout-duration=$SAMBA_DC_USER_LOCKOUT_DURATION
-samba-tool domain passwordsettings set --reset-account-lockout-after=$SAMBA_DC_USER_LOCKOUT_RESET_AFTER
-if [ $SAMBA_DC_USER_COMPLEX_PASS == "true" ]; then
-  samba-tool domain passwordsettings set --complexity=on
+if [ "$SAMBA_DC_USER_COMPLEX_PASS" == "true" ]; then
+  user_complexity=on
 else
-  samba-tool domain passwordsettings set --complexity=off
+  user_complexity=off
 fi
-echo "Set Samba DC user password complex: $SAMBA_DC_USER_COMPLEX_PASS"
+# One native command applies the same eight settings. Repeated Python/Samba
+# startup is costly during recovery and exposes intermediate policy states.
+samba-tool domain passwordsettings set \
+  --min-pwd-age="$SAMBA_DC_USER_MIN_PASS_AGE" \
+  --max-pwd-age="$SAMBA_DC_USER_MAX_PASS_AGE" \
+  --min-pwd-length="$SAMBA_DC_USER_MIN_PASS_LENGTH" \
+  --history-length="$SAMBA_DC_USER_PASSWORD_HISTORY" \
+  --account-lockout-threshold="$SAMBA_DC_USER_LOCKOUT_THRESHOLD" \
+  --account-lockout-duration="$SAMBA_DC_USER_LOCKOUT_DURATION" \
+  --reset-account-lockout-after="$SAMBA_DC_USER_LOCKOUT_RESET_AFTER" \
+  --complexity="$user_complexity"
 
 # Separate policy object for privileged accounts.
 if [ "$SAMBA_DC_ADMIN_COMPLEX_PASS" = "true" ]; then

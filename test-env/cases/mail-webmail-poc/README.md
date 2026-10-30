@@ -1,0 +1,434 @@
+<!-- Generated from cases.yml by cmd/gen-test-case-docs. DO NOT EDIT. -->
+
+# DMS 与 Roundcube 组合验证
+
+> 需求来源：[`mail-webmail-poc.md`](../../../dev-docs/requirements/mail-webmail-poc.md)
+>
+> 实施计划：[`mail-webmail-poc.md`](../../../dev-docs/plans/archived/mail-webmail-poc.md)
+> 本文由同目录 `cases.yml` 生成；修改用例后运行 `go run ./cmd/gen-test-case-docs`。
+
+## 覆盖总览
+
+| 用例 ID | 级别 | 需求 ID | 实现 |
+| --- | --- | --- | --- |
+| `MAILPOC-T-001` | e2e | `MAILPOC-R-002`、`MAILPOC-R-003`、`MAILPOC-R-004` | test-env/scripts/mail-webmail-poc-prepare.py<br>test-env/scripts/mail-webmail-poc-protocol.py<br>test-env/scripts/mail-webmail-poc-server.py<br>test-env/playwright/mail-webmail-poc.mjs |
+| `MAILPOC-T-002` | e2e | `MAILPOC-R-005`、`MAILPOC-R-006` | test-env/scripts/mail-webmail-poc-prepare.py<br>test-env/scripts/mail-webmail-poc-protocol.py<br>test-env/scripts/mail-webmail-poc-server.py<br>test-env/playwright/mail-webmail-poc.mjs |
+| `MAILPOC-T-003` | e2e | `MAILPOC-R-001`、`MAILPOC-R-007`、`MAILPOC-R-008`、`MAILPOC-R-009` | test-env/scripts/mail-webmail-poc-prepare.py<br>test-env/scripts/mail-webmail-poc-protocol.py<br>test-env/scripts/mail-webmail-poc-server.py<br>test-env/playwright/mail-webmail-poc.mjs |
+| `MAILPOC-T-004` | e2e | `MAILPOC-R-001`、`MAILPOC-R-002`、`MAILPOC-R-003`、`MAILPOC-R-004`、`MAILPOC-R-005`、`MAILPOC-R-006`、`MAILPOC-R-011`、`MAILPOC-R-012`、`MAILPOC-R-013`、`MAILPOC-R-014`、`MAILPOC-R-015` | test-env/mail-go-poc/main.go<br>test-env/mail-go-poc/prepare.py<br>test-env/mail-go-poc/browser.mjs<br>test-env/mail-go-poc/protocol.py<br>test-env/mail-go-poc/server.py<br>test-env/mail-go-poc/directory.go<br>test-env/mail-go-poc/directory_prepare.py |
+| `MAILPOC-T-005` | e2e | `MAILPOC-R-001`、`MAILPOC-R-003`、`MAILPOC-R-016`、`MAILPOC-R-017`、`MAILPOC-R-018`、`MAILPOC-R-019`、`MAILPOC-R-020` | test-env/mail-go-poc/main.go<br>test-env/mail-go-poc/directory.go<br>test-env/mail-go-poc/prepare.py<br>test-env/mail-go-poc/directory_prepare.py<br>test-env/mail-go-poc/directory_server.py<br>test-env/mail-go-poc/directory_protocol.py<br>test-env/mail-go-poc/directory_browser.mjs |
+| `MAILPOC-T-006` | e2e | `MAILPOC-R-001`、`MAILPOC-R-005`、`MAILPOC-R-007`、`MAILPOC-R-008`、`MAILPOC-R-009` | test-env/mail-go-poc/recovery_server.py<br>test-env/mail-go-poc/recovery_protocol.py<br>test-env/mail-go-poc/browser.mjs<br>test-env/mail-go-poc/protocol.py<br>test-env/mail-go-poc/prepare.py<br>test-env/mail-go-poc/directory_prepare.py |
+
+## `MAILPOC-T-001` 真实统一登录与稳定身份
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-002`、`MAILPOC-R-003`、`MAILPOC-R-004`
+- 需求复核摘要：`sha256:e07deaf781c3dbe4705e8cd2c62cf84f91612e8bab76affd5461eb38bc8e8eb4`
+- 实现复核摘要：`sha256:1d8001217cb12cf19129bc4689f995a54c315f33c1e173ff7cb82e331155cdf5`
+- Fixture：finance 独立 Docker/namespace，固定 DMS 16.0.1、Roundcube 1.7.5、实际 Samba 与 LLNG，合成域 mailtest.invalid
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`counterexample`
+- 有效性证据：真实错误令牌、越权发信、主地址变更或停止全部服务并从空目录恢复；不模拟 IAM 与邮件服务器的决策。未通过断言保持失败，不以命令执行成功替代验收。
+- 超时：`30m`
+- 敏感数据：只使用合成邮件；密码、token、Cookie、邮件原文和截图放私有 Git 忽略目录，不打印授权值，不开启 trace。
+
+前置条件：
+
+- 用户逐次明确授权测试主机；只操作专用 socket 与目录
+- SSH 隧道 18883/19993/15887 已建立，容器主动外连已禁止
+- MAIL_POC_EVIDENCE 指向 Git 忽略的私有凭据/证据目录；MAIL_POC_WORKSPACE 为专用远程目录
+- 浏览器动作按计划设置 MAIL_POC_MODE；服务端脚本在 Linux 测试机运行
+
+执行步骤：
+
+- 浏览器先登录真实 AD/IAM，再打开 Roundcube；取得独立真实 PKCE token
+- 通过 IMAP/SMTP 验证有效、无效及跨用户 token
+- 手工更新测试主地址，重新登录并比较目录 anchor、邮件、Roundcube user_id 与偏好
+
+可观察断言：
+
+- IAM 会话复用且仅提交一次密码
+- 无效令牌与跨用户访问被拒绝
+- 主地址改变后同一 Roundcube 用户保有原偏好和身份
+
+反例与故障路径：
+
+- 无效令牌
+- Alice 令牌请求 Bob 邮箱
+- 主地址改变导致新建用户
+
+清理：
+
+- 关闭浏览器及专用 SSH 隧道
+- 使用本次 daemon.env 停止专用 Docker/containerd 与网络；保留私有测试数据和证据
+- 不得操作默认 Docker 或其他任务资源
+
+执行入口：
+
+```bash
+node test-env/playwright/mail-webmail-poc.mjs
+python3 test-env/scripts/mail-webmail-poc-protocol.py auth
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" rename
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" verify-rename
+```
+
+有效性验证入口：
+
+```bash
+node test-env/playwright/mail-webmail-poc.mjs
+python3 test-env/scripts/mail-webmail-poc-protocol.py auth
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" rename
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" verify-rename
+```
+
+## `MAILPOC-T-002` 别名共箱、界面发信与服务器拒绝
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-005`、`MAILPOC-R-006`
+- 需求复核摘要：`sha256:7a1ff8b5aa7f7a4272f7a02dd2017c3965e7ca1aff49797c697dd98577baef6d`
+- 实现复核摘要：`sha256:4c3375eefda189fb30584856eac0d085d1a8d6217aa8ce40fa53e32bf103ae0d`
+- Fixture：finance 独立 Docker/namespace，固定 DMS 16.0.1、Roundcube 1.7.5、实际 Samba 与 LLNG，合成域 mailtest.invalid
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`counterexample`
+- 有效性证据：真实错误令牌、越权发信、主地址变更或停止全部服务并从空目录恢复；不模拟 IAM 与邮件服务器的决策。未通过断言保持失败，不以命令执行成功替代验收。
+- 超时：`30m`
+- 敏感数据：只使用合成邮件；密码、token、Cookie、邮件原文和截图放私有 Git 忽略目录，不打印授权值，不开启 trace。
+
+前置条件：
+
+- 用户逐次明确授权测试主机；只操作专用 socket 与目录
+- SSH 隧道 18883/19993/15887 已建立，容器主动外连已禁止
+- MAIL_POC_EVIDENCE 指向 Git 忽略的私有凭据/证据目录；MAIL_POC_WORKSPACE 为专用远程目录
+- 浏览器动作按计划设置 MAIL_POC_MODE；服务端脚本在 Linux 测试机运行
+
+执行步骤：
+
+- 投递两个别名并检查同一收件箱
+- 在 Roundcube 界面创建两个发信身份并各发一封给 Bob
+- 独立 IMAP 核验 From 与 Return-Path
+- 移除一个别名并分别尝试伪造信封、可见 From，比较历史邮件
+
+可观察断言：
+
+- 两条别名共箱且 Roundcube 真正提交邮件
+- Bob 收到的 From 和信封地址分别对应所选别名
+- 他人或已移除地址的信封与可见 From 均被拒绝，旧邮件保留
+
+反例与故障路径：
+
+- 合法信封配他人 From
+- 被移除别名发信
+
+清理：
+
+- 关闭浏览器及专用 SSH 隧道
+- 使用本次 daemon.env 停止专用 Docker/containerd 与网络；保留私有测试数据和证据
+- 不得操作默认 Docker 或其他任务资源
+
+执行入口：
+
+```bash
+python3 test-env/scripts/mail-webmail-poc-protocol.py seed
+node test-env/playwright/mail-webmail-poc.mjs
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-ui
+python3 test-env/scripts/mail-webmail-poc-protocol.py alias-negative
+python3 test-env/scripts/mail-webmail-poc-protocol.py removed-alias
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-history
+```
+
+有效性验证入口：
+
+```bash
+python3 test-env/scripts/mail-webmail-poc-protocol.py seed
+node test-env/playwright/mail-webmail-poc.mjs
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-ui
+python3 test-env/scripts/mail-webmail-poc-protocol.py alias-negative
+python3 test-env/scripts/mail-webmail-poc-protocol.py removed-alias
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-history
+```
+
+## `MAILPOC-T-003` 隔离资源、data 保存与空目录恢复
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-001`、`MAILPOC-R-007`、`MAILPOC-R-008`、`MAILPOC-R-009`
+- 需求复核摘要：`sha256:9cccc58f2df036e1507feda654f29dc767e75b0b0d249d0ee716d4b601f1bc25`
+- 实现复核摘要：`sha256:1ff03c1af025ca3c6dfd4989246708a917f39c65db9ea668de22ed814b7b459a`
+- Fixture：finance 独立 Docker/namespace，固定 DMS 16.0.1、Roundcube 1.7.5、实际 Samba 与 LLNG，合成域 mailtest.invalid
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`fault-injection`
+- 有效性证据：真实错误令牌、越权发信、主地址变更或停止全部服务并从空目录恢复；不模拟 IAM 与邮件服务器的决策。未通过断言保持失败，不以命令执行成功替代验收。
+- 超时：`30m`
+- 敏感数据：只使用合成邮件；密码、token、Cookie、邮件原文和截图放私有 Git 忽略目录，不打印授权值，不开启 trace。
+
+前置条件：
+
+- 用户逐次明确授权测试主机；只操作专用 socket 与目录
+- SSH 隧道 18883/19993/15887 已建立，容器主动外连已禁止
+- MAIL_POC_EVIDENCE 指向 Git 忽略的私有凭据/证据目录；MAIL_POC_WORKSPACE 为专用远程目录
+- 浏览器动作按计划设置 MAIL_POC_MODE；服务端脚本在 Linux 测试机运行
+
+执行步骤：
+
+- 校验专用 Docker 数据根、Compose 标签、镜像和所有挂载
+- 保存正文/附件哈希、文件夹/标志与 Roundcube 非默认设置
+- 创建真实 hold 队列邮件，停止全部测试服务后归档
+- 从不存在的独立目录恢复并逐项比较，再释放恢复后的 hold 队列
+- 仅清理本次 Compose、daemon、网络与 SSH 隧道，保留私有证据
+
+可观察断言：
+
+- 无遗漏匿名持久卷，绑定路径均位于本次工作区
+- 空目录恢复后的正文/附件/文件夹/标志和 Webmail 用户状态一致
+- 原始待投递邮件在恢复后投递一次
+- 清理只影响本次独立资源
+
+反例与故障路径：
+
+- 恢复目标已存在时拒绝覆盖
+- 错误 Docker 数据根或项目标签拒绝执行
+- 遗漏任一内容哈希或用户偏好则比对失败
+
+清理：
+
+- 关闭浏览器及专用 SSH 隧道
+- 使用本次 daemon.env 停止专用 Docker/containerd 与网络；保留私有测试数据和证据
+- 不得操作默认 Docker 或其他任务资源
+
+执行入口：
+
+```bash
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" inventory
+python3 test-env/scripts/mail-webmail-poc-protocol.py snapshot
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" queue-filter
+python3 test-env/scripts/mail-webmail-poc-protocol.py queued
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" backup-restore
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" verify-webmail
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" queue-release
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-queued
+```
+
+有效性验证入口：
+
+```bash
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" inventory
+python3 test-env/scripts/mail-webmail-poc-protocol.py snapshot
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" queue-filter
+python3 test-env/scripts/mail-webmail-poc-protocol.py queued
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" backup-restore
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" verify-webmail
+python3 test-env/scripts/mail-webmail-poc-server.py --workspace "$MAIL_POC_WORKSPACE" queue-release
+python3 test-env/scripts/mail-webmail-poc-protocol.py verify-queued
+```
+
+## `MAILPOC-T-004` Go 统一认证、独立邮箱与 AD 别名管理
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-001`、`MAILPOC-R-002`、`MAILPOC-R-003`、`MAILPOC-R-004`、`MAILPOC-R-005`、`MAILPOC-R-006`、`MAILPOC-R-011`、`MAILPOC-R-012`、`MAILPOC-R-013`、`MAILPOC-R-014`、`MAILPOC-R-015`
+- 需求复核摘要：`sha256:aa6049fbb03f308276cc0ab61b5eaa7fb6d262d36ab7bc7610153e20b8ec5c66`
+- 实现复核摘要：`sha256:e2f5c71dd03d013a55ca0280f03a5ba0329e2ee0f12f6bafc4fb7563786478d9`
+- Fixture：finance 本次独立 Docker/namespace/目录，DMS 16.0.1、Roundcube 1.7.5、真实 Samba/LLNG、Go 与 PostgreSQL 18.4
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`fault-injection`
+- 有效性证据：真实协议拒绝与独立收件核验；Go 停机通过专用 Compose 注入；不能用本地模拟通过替代真实链路。
+- 超时：`45m`
+- 敏感数据：只使用合成域和合成邮件；秘密、会话、原始邮件与执行日志在私有 Git 忽略目录；不打印凭据。
+
+前置条件：
+
+- 逐次授权 finance，确认专用 socket、数据根、工作区标签及出站阻断
+- 先启动 prepare.py 生成的合成夹具，实际目录/IAM 就绪后启动 Go
+- 本机 18884/19994/15888/15254 隧道；MAIL_GO_EVIDENCE 为私有 Git 忽略目录
+
+执行步骤：
+
+- 真实 IAM 登录 Go，管理页增加别名，交接 Roundcube 并分别发送主箱别名及独立邮箱邮件
+- 独立 IMAP 核验邮件与 Sent 隔离，直接 SMTP 验证跨箱、跨人、已删除别名和伪造 From
+- 检验服务端一次性交接、续期、注销及 Go 故障拒绝，记录已有协议连接行为
+- 测试预配改变公开地址，比较固定登录标识、Roundcube user_id 与偏好
+
+可观察断言：
+
+- Go→Roundcube→DMS 真实链路复用 IAM 身份，无第二次密码
+- 同人不同箱、异人邮箱和别名发送均受服务器授权约束
+- Go 页面别名操作在 AD 可独立观察，删除不删除邮件
+- 失效/重放凭据拒绝新访问；Go 故障不放行 SMTP
+- 公开地址变化不重建 Webmail 用户、不丢偏好
+
+反例与故障路径：
+
+- 同人另一个邮箱与异人邮箱令牌误用
+- 错误 state 与一次性交接重放
+- 合法信封搭配未授权 MIME From
+- 别名删除、邮箱禁用、Go 停机、会话注销
+
+清理：
+
+- 仅停止本次 Compose 和专用 Docker/containerd/namespace
+- 关闭专用 SSH 隧道；保留私有证据与固定源码摘要
+
+执行入口：
+
+```bash
+node test-env/mail-go-poc/browser.mjs
+python3 test-env/mail-go-poc/protocol.py
+python3 test-env/mail-go-poc/server.py inventory
+python3 test-env/mail-go-poc/server.py rename-fixture
+python3 test-env/mail-go-poc/protocol.py lifecycle
+python3 test-env/mail-go-poc/protocol.py continuity-before
+python3 test-env/mail-go-poc/protocol.py continuity-after
+```
+
+有效性验证入口：
+
+```bash
+node test-env/mail-go-poc/browser.mjs
+python3 test-env/mail-go-poc/protocol.py
+python3 test-env/mail-go-poc/protocol.py lifecycle
+```
+
+## `MAILPOC-T-005` AD 公司通讯录、事件同步与既有邮件会话撤权
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-001`、`MAILPOC-R-003`、`MAILPOC-R-016`、`MAILPOC-R-017`、`MAILPOC-R-018`、`MAILPOC-R-019`、`MAILPOC-R-020`
+- 需求复核摘要：`sha256:ce27e9d7d7a940d0a0e788ac67d6b9032ebb4fb6273a85fe5f51327726787788`
+- 实现复核摘要：`sha256:9e6eee3a31d4acd95af9b6c0c426d7a35c1e97a4d60d79a0fc1bb5faa5e71a64`
+- Fixture：finance mail-test-directory 新建测试域；固定 DMS/Roundcube/LLNG/PostgreSQL，真实 AD 审计事件，独立 Docker/namespace
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`fault-injection`
+- 有效性证据：以真实 LDAPS、审计日志、浏览器旧 Cookie 和既有 IMAP/SMTP 连接作为反例，不以撤销 API 返回成功代替实际失效。
+- 超时：`60m`
+- 敏感数据：只使用合成目录和邮件；令牌、Cookie、凭据和原始记录仅保存到私有 Git 忽略目录，不输出授权值。
+
+前置条件：
+
+- 用户已确认一期公司目录和验证，组内/全局共享联系人延期二期
+- 使用专用 socket /run/anas-mail-test-1024.sock，检查工作区标签和容器出站阻断
+- MAIL_GO_EVIDENCE 指向私有 Git 忽略目录；本机专用隧道和实际 Chrome 可用
+
+执行步骤：
+
+- 真实 IAM 登录三个独立浏览器会话，包含同人两个会话和另一用户
+- 从 Roundcube 查询公司目录并验证真实 AD 资料/人员/组变化与收件人补全
+- 验证未启用共享来源、写接口、无服务认证和错误会话均拒绝
+- 保留已认证 IMAP/SMTP 连接，执行真实 AD 禁用/退组/嵌套退组/删除并核验撤权和无关会话保持
+- 分别执行 Go 本地退出及实际 IAM 后台登出，验证仅目标会话失效
+- 停止消费者或目录，注入日志保留缺口，恢复后验证持久状态与权威目录一致
+
+可观察断言：
+
+- 公司目录来自真实 AD、主地址可补全且别名不全量公开
+- 一期接口保持只读且拒绝未启用共享来源
+- 真实事件在 60 秒内撤销目标旧 Cookie 和邮件协议访问，重新启用不复活旧会话
+- 同人无关会话及另一用户保持有效
+- 读取失败不把全部用户删除，重启或日志缺口后收敛
+
+反例与故障路径：
+
+- SMTP 凭据用于 IMAP、IMAP 凭据用于 SMTP
+- 未知共享来源、通讯录写入与错误会话
+- 旧 SMTP 连接在禁用后重新启用时再次发信
+- 另一用户和同人另一会话被误撤销
+- 日志保留缺口和目录暂不可达
+
+清理：
+
+- 只清理新工作区对应 Compose 和本次专用 daemon/网络/SSH 隧道
+- 保留旧基线、新测试数据、失败记录和制品摘要
+
+执行入口：
+
+```bash
+node test-env/mail-go-poc/directory_browser.mjs directory
+node test-env/mail-go-poc/directory_browser.mjs logout
+node test-env/mail-go-poc/directory_browser.mjs disable
+node test-env/mail-go-poc/directory_browser.mjs direct
+node test-env/mail-go-poc/directory_browser.mjs nested
+node test-env/mail-go-poc/directory_browser.mjs iam
+node test-env/mail-go-poc/directory_browser.mjs recovery
+node test-env/mail-go-poc/directory_browser.mjs delete
+python3 test-env/mail-go-poc/directory_server.py inventory
+```
+
+有效性验证入口：
+
+```bash
+node test-env/mail-go-poc/directory_browser.mjs
+python3 test-env/mail-go-poc/directory_protocol.py disable
+```
+
+## `MAILPOC-T-006` Go 邮件栈界面发信回归与停机空目录恢复
+
+- 级别：`e2e`
+- 覆盖需求：`MAILPOC-R-001`、`MAILPOC-R-005`、`MAILPOC-R-007`、`MAILPOC-R-008`、`MAILPOC-R-009`
+- 需求复核摘要：`sha256:b6cb171780b1f92f19e2d3dd17f3d2c0caf89285e2430feb561ba88ee0f73eb5`
+- 实现复核摘要：`sha256:4b2e3e0af1e9d5d0d9e3a22e83138f921cc73503b3bd26cbcd2c6a3c63098a58`
+- Fixture：finance 全新 mail-test-recovery → mail-test-recovery-restored；复用固定 Go/DMS/Roundcube/Samba/LLNG/PostgreSQL 制品
+- 目标能力：`docker`、`ssh`、`browser`、`samba`、`llng`
+- Oracle 来源：`ui`、`network`、`database`、`filesystem`、`return-value`
+- 有效性证明：`fault-injection`
+- 有效性证据：真正停止服务、归档和空目录恢复，真实浏览器与独立 IMAP 比对；不把容器启动成功替代数据验收。
+- 超时：`45m`
+- 敏感数据：合成密码、Cookie、令牌、数据库、邮件及原始日志均保存于私有目录，不输出授权值。
+
+前置条件：
+
+- 确认专用 Docker socket、数据根、工作区标签、出站阻断及本机 SSH 隧道
+- 恢复目标必须不存在；原夹具和前两轮数据保留
+- 合成凭据与原始证据仅在私有 Git 忽略目录
+
+执行步骤：
+
+- 真实 IAM 登录后从 Roundcube 两个别名及独立邮箱发送，以独立 IMAP 核验 From、Return-Path 和 Sent 隔离
+- 在三个邮箱创建带正文、二进制附件、文件夹和持久标志的非空恢复基线，并保存 Roundcube 身份及非默认偏好
+- 保留真实 Postfix hold 队列邮件，停止全部服务后归档完整 data、fixture、compose
+- 从归档恢复至原本不存在的目录，以独立项目启动，重新登录并逐项比较邮件及应用状态
+- 从保留的源队列文件和恢复队列分别导出邮件原文并比较哈希，再释放恢复邮件并确认只投递一次
+
+可观察断言：
+
+- 两个个人别名共箱且 Roundcube 实际发送成功；独立邮箱 Sent 分开
+- 三个邮箱正文、附件哈希、全部文件夹及持久标志完全一致
+- Roundcube 用户 ID、发件身份和非默认偏好一致
+- PostgreSQL 人员归属、邮箱及别名、公司目录和订阅游标保留
+- 原始队列和恢复队列的邮件原文哈希、Message-ID、原始收件人及展开目标一致，恢复后可投递且无重复；队列 ID 允许因 inode 变化而更名
+
+反例与故障路径：
+
+- 错误 socket/数据根/项目/工作区或跨工作区挂载拒绝
+- 恢复目标已存在时拒绝覆盖
+- 跨邮箱凭据在恢复后仍然拒绝
+- 队列已提前投递、丢失或内容变化均导致失败
+
+清理：
+
+- 仅删除本轮项目容器与网络；停止专用 Docker/containerd/namespace 和 SSH 隧道
+- 保留源目录、恢复目录、停机归档及失败重试证据
+
+执行入口：
+
+```bash
+node test-env/mail-go-poc/browser.mjs
+python3 test-env/mail-go-poc/recovery_protocol.py seed
+python3 test-env/mail-go-poc/recovery_protocol.py snapshot
+python3 test-env/mail-go-poc/recovery_server.py snapshot
+python3 test-env/mail-go-poc/recovery_server.py backup-restore
+python3 test-env/mail-go-poc/recovery_server.py start --restored
+python3 test-env/mail-go-poc/recovery_server.py verify-state --restored
+python3 test-env/mail-go-poc/recovery_protocol.py verify
+python3 test-env/mail-go-poc/recovery_server.py queue-release --restored
+python3 test-env/mail-go-poc/recovery_protocol.py verify-queued
+```
+
+有效性验证入口：
+
+```bash
+python3 test-env/mail-go-poc/recovery_server.py backup-restore
+python3 test-env/mail-go-poc/recovery_protocol.py verify
+python3 test-env/mail-go-poc/recovery_protocol.py verify-queued
+```

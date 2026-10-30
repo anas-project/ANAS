@@ -6,14 +6,18 @@
 
 ## Dependencies, capabilities and contracts
 
-Native OIDC binding supplies the issuer; Casdoor self APIs supply current IAM facts; Samba AD supplies current users, groups and passwords. Casdoor only in this version; no SAML or database.
+Native OIDC binding supplies the issuer; provider self-account APIs supply current IAM facts; Samba AD supplies current users, groups and passwords. Casdoor and LLNG account schemas are supported. The portal uses neither SAML nor a database.
+
+The issuer remains byte-for-byte identical to the provider binding, including an optional root slash.
+Only endpoint URL construction removes that slash to avoid a doubled path separator; token and discovery
+issuer validation use the original value. Other issuer paths remain unsupported. The LLNG readiness plan records implementation and real-host acceptance status.
 
 ## Compose topology
 
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 5 |
+| `anas_user_portal` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-user-portal:0.1.0-r1` | `` | 6 |
 <!-- generated:compose-topology:end -->
 
 One Go process embeds UI/API. Traefik is the only ingress; no host ports or Docker socket. Root bootstrap initializes only the fixed audit mount through directory descriptors, then irreversibly switches to UID/GID 65532. Application rootfs is read-only.
@@ -58,7 +62,7 @@ Memory sessions and one-use state/nonce/verifier have capacity limits and TTL. C
 
 The directory reuses appcatalog language/BuildView. Policies must be enabled, Approved, Allow and match model/resource/Read/group sets, intersected with current AD groups. Native default allow/admin bypass is not used. Icon authorization precedes the no-link reader and digest check.
 
-LDAP actions are limited to the three name fields, password change/reset, pwdLastSet, lockoutTime and one member add/delete. Anchor resolution yields a current GUID; no arbitrary attribute/DN, full-member replacement or command endpoint exists. Audit has no password/token field; intent fsync precedes LDAP, unknown network results never replay, and result-storage failure closes writes.
+Base LDAP actions are limited to the three name fields, password change/reset, pwdLastSet, lockoutTime and one member add/delete; candidate mail-directory actions and permissions are described below. Anchor resolution yields a current GUID; no arbitrary attribute/DN, full-member replacement or command endpoint exists. Audit has no password/token field; intent fsync precedes LDAP, unknown non-idempotent operations do not automatically replay, and result-storage failure closes writes.
 
 
 ### Profiles and ANAS administration
@@ -101,7 +105,16 @@ Locked accounts or unconfirmed password state cannot use ordinary portal access.
 
 Pre-commit review fixed recovery identity-limit disclosure and missing actor attribution for invalid member requests. Local regressions pass; the historical 95/95 and 41/41 results apply to the earlier image. Rebuild and revalidate the current release image on finance before closing acceptance.
 
-The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1`. The portal checks this API contract rather than branching on IAM module names; it continues using existing native self-account APIs. The portal has a `no_prior_release` inventory baseline, with no earlier-version upgrade result claimed.
+The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA`, supporting
+`casdoor-account/v1` and `llng-account/v1` without branching on module names. Casdoor retains its native
+self-account APIs. LLNG uses native UserInfo and the restricted `/anas-account` plugin endpoint to
+check the token subject, current AD state and actual admission rules, then intersects these facts with
+the portal's directory and catalog. Missing fields, directory failures, inconsistent rules and duplicate
+application policies deny access. No IAM administrator credential is added to the portal. Real LLNG
+portal acceptance is still in progress in the readiness plan. The portal retains a `no_prior_release`
+inventory baseline, with no earlier-version upgrade result claimed.
+
+LLNG Passkey evidence comes from the verified ID token AMR: `webauthn` must be present and `pwd` absent, after signature, issuer, audience, nonce and time checks. Only these sessions can continue during AD mandatory password change or password expiry. Missing or malformed method evidence cannot grant this exception. Current directory disablement, lockout, account expiry, unknown state and stable identity checks still apply, including before writes. Self password changes still require the old password. Stale Passkey authentication uses a fresh native OIDC interaction; users resubmit the operation after returning. Password sessions retain the in-page password check. Domain-level operations continue to require the person’s AD password.
 
 Go dependencies use coreos/go-oidc for OIDC and signed logout verification, go-ldap for bounded directory requests, and x/net/publicsuffix for same-site origin checks. The shared catalog uses x/image to generate seven PNG sizes. These libraries add no runtime service.
 
@@ -109,12 +122,30 @@ Go dependencies use coreos/go-oidc for OIDC and signed logout verification, go-l
 
 `samba_dc.mail_domain` inherits the AD DNS domain when unset. The finance.hlong.wang admin receives `admin@finance.hlong.wang`; configuring hlong.wang reconciles personnel addresses to `username@hlong.wang`. AD domain, UPN, login names and identity anchors remain unchanged. The system owns `mail`; the UI accepts no manual primary address. An assigned address does not mean mail service is active.
 
-Enumeration, details, profile, password, group and domain operations are restricted to the provider user OU and its descendants. ANAS administrators can create ordinary people with “New user”. The backend uses the designated `create_bind_dn/password`, independently of the frontend operator's domain credentials. Prefer `svc_portal_create` with user-object creation rights only in that OU. An already authorized configured account is also supported; portal roles and directory permissions are separate checks. Configuring a domain administrator as the creation bind would store that account’s existing privileges in the portal process. Per-request domain verification does not isolate that credential; the dedicated scoped bind avoids it.
+Enumeration, details, profile, password, group and domain operations are restricted to the provider user OU and its descendants. ANAS administrators can create ordinary people with “New user”. The backend uses the designated `create_bind_dn/password`, independently of the frontend operator's domain credentials. Prefer `svc_portal_create` with user-object creation in that OU and creation/read/specific state-attribute writes for the two mail resource classes in the fixed Mail OU. It receives no extra writes to existing people or permission to change resource ACLs. Portal roles and directory permissions are separate checks. Configuring a domain administrator as the creation bind would store that account’s existing privileges in the portal process. Per-request domain verification does not isolate that credential; the dedicated scoped bind avoids it.
 
-`POST /api/users` accepts only `username`, the three `profile` fields and `force_change`. Login names allow up to 20 ASCII letters, digits, underscores, dots and hyphens and must form a valid system address. The server determines mail, UPN suffix, DN, random initial password and anchors and writes them in one native LDAP Add without administrator membership. Recent authentication, CSRF, current administrator authority and durable audit are required. Conflicts and unknown results must not be retried automatically. The temporary password appears only in the successful response; a change at next sign-in is required by default.
+`POST /api/users` accepts only `username`, the three `profile` fields and `force_change`. Login names allow up to 20 ASCII letters, digits, underscores, dots and hyphens and must form a valid system address. The server determines mail, UPN suffix, DN, random initial password and anchors. Candidate source first persists pending primary-mailbox intent and the unique address claim, then elects a creator with an atomic configuration-version update. One native LDAP Add creates the person without administrator membership. Readback verifies DN, binary/text anchors, objectGUID, profile/address and normal-user class before binding objectGUID and committing the claim and mailbox in separate steps. Directory commit does not establish DMS, cloud-route or Webmail readiness. Domain-wide collision preflight uses a critical current-domain search control and rejects unexpected referrals; partial results never establish a clear namespace.
+
+Recent authentication, CSRF, current administrator authority and durable audit are required. Conflicts and unknown results must not be retried automatically. Passwords never enter mail operation records. The response reveals a password only when this call's person Add was acknowledged and the full directory commit succeeded. Internal reconciliation neither resets it nor presents a newly generated password as the original. A started creation without a matching person remains `creating`/unknown; it neither recreates the person nor releases the address. Internal recovery has no administrator UI/API yet, and another HTTP creation does not reuse the old person identity.
+
+This candidate path requires the `anas.mail-directory/v1` schema, fixed OUs and scoped ACLs. Missing prerequisites close creation rather than falling back to preflight alone. The Samba development `install-mail-directory.py` explicitly prepares OUs/ACLs with separate reader, creator, address_writer and primary_writer roles; candidate creation uses only creator. Existing `tools/provision-directory.py` does not automatically invoke it or create the address-writer account. Automatic initialization, all primary-address writers and existing-address reconciliation remain in the mail integration plan; updating only the portal image is not a completed upgrade. The business domain has not received this change.
 
 Creation authorization limit: on finance Samba 4.23.6 the dedicated creator also owns its new user object and can edit that object’s DACL (access-control list). A temporary native Owner Rights rule did not remove this ability. Child-creation ACLs alone therefore do not prove strict isolation from later privileged accounts. The portal performs and verifies the ownership transfer below before domain-risk membership. Do not grant additional domain privileges to the default creation bind. No global Owner Rights policy or Casdoor patch has been applied.
 
+
+### Mailbox and personal-alias management candidate
+
+The development candidate adds `GET/POST /api/mail` and administrator `GET/POST /api/users/{anchor}/mail`. It is enabled only when the fixed private `/run/anas/mail-management/config.json` passes validation. The `anas.portal-mail/v1` document contains distinct `bind_dn`/`bind_password` and `policy`. The writer must be a direct Service Accounts child and differ from the reader, creator and password binds. The file must be owned by the process user, mode 0600, single-linked and not a symlink. Unknown fields, trailing JSON and missing/null limits are rejected. No manifest parameter or general environment variable was added. Formal Hook/Secret delivery and mounts remain unconnected; the default is disabled.
+
+Mail-address writes accept one JSON Content-Type and exact field names. Duplicate keys, including escaped duplicates, case variants, nulls, non-strings and trailing JSON are rejected. Operation ID, version, action and address are required; mailbox ID is checked against the action. Ambiguous requests are rejected before a directory write.
+
+Policy explicitly supplies `domains`, `protected_addresses`, `max_additional`, `max_aliases`, `capacity_bytes` and `send_per_minute`. Count limits are 0–1000, with zero disallowing additions; capacity is 1 MiB–1 TiB and sending is 1–1000000 per minute. Capacity/rate are stored on the additional mailbox; DMS enforcement and the formal Tutorial remain unconnected. Domains and addresses must be canonical. There are no unlimited defaults. Ordinary-user reads omit the protected-address list.
+
+POST accepts only `operation_id`, `version`, `action`, `mailbox_id` (required for alias actions) and `address`. Actions are `additional.create`, `alias.add` and `alias.remove`. Ownership comes from the current session or authorized administrator path, never browser-supplied owner/DN/attributes. Current IAM, personnel objectGUID, recent authentication, CSRF, managed scope and protected personnel are checked at admission and before every mutation. Role revocation or personnel replacement stops subsequent writes. Durable audit intent precedes execution and records stable personnel/mailbox/operation IDs without address payloads or bind secrets.
+
+Shared Go `directorymail.ManagementDirectory` reuses the two AD resource classes and strict atomic Modify. The primary mailbox's `anasMailQuotaState` holds one pending intent and the last receipt; its configuration version serializes quota decisions across requests. No database or resident service is added. An additional mailbox reserves its address before creating a random mailbox ID. Alias changes Add/Delete only the matching SMTP proxy, preserving all other values. The exact original request resumes interrupted or unacknowledged writes. A different operation/version/actor/policy cannot adopt a pending intent. Additional-box alias changes update that box version before and after writes, allowing the mail reader to detect a change crossing its lookup; the primary uses its existing operation-boundary version updates. Removal retains the claim and never deletes the mailbox, history or old messages. Primary/former-primary, protected and unmanaged historical aliases cannot be removed. System suffix changes share the primary version and wait while a personal operation is pending.
+
+The personal Mail page and administrator detail page show mailboxes, addresses, limits and pending recovery, with in-page removal confirmation, eight languages, stale-response isolation, immutable-request retry and long-address wrapping on phones. Successful AD commits return `mail_ready:false`; directory persistence and mail readiness are displayed separately. The personal page may open the authorized Go mail entry from the application catalog; Go determines mailbox readiness and Webmail handoff. Disable/address-transfer APIs, recovery by another actor and full production acceptance remain pending. Native tests and failure results belong in root mail integration plan §4.21.
 
 ### Ownership before domain-risk membership
 
@@ -187,3 +218,39 @@ The portal verifies anasd TLS with its existing CA bundle and calls `POST /api/v
 A durable intent precedes retrieval. Before returning credentials, the portal rechecks the session, directory role and IAM permissions and durably records the result. Failure at either step prevents disclosure. The `application.credentials.read` audit action records the actor, application, request ID and outcome only. Separate buttons copy username and password; passwords are masked by default. Close, in-page navigation and logout clear the inputs, and delayed responses cannot recreate the dialog. Copied clipboard values remain under the user's control.
 
 Local validation uses `go test ./modules/user_portal/portal ./modules/user_portal/hook` and `node --test test-env/playwright/user-portal-credentials.test.mjs`. The latter runs the production UI against mock APIs; it does not establish real-host, anasd or backend acceptance.
+
+LLNG portal logout uses the discovery `end_session_endpoint`. `POST /api/logout` first destroys
+the local session, then returns a browser navigation containing `client_id`, the original verified
+`id_token_hint`, the exactly registered `/oidc/logout-callback`, and a random state. The existing
+bounded one-time flow store binds state to a separate Secure/HttpOnly cookie. Expired, wrong-browser,
+wrong-purpose and replayed callbacks cannot confirm central logout. The callback never creates a
+login session. The UI displays the server-confirmed result; returning without a callback leaves a
+partial result that can be retried. IAM unavailability cannot prevent local logout. Casdoor retains
+its existing native browser logout API. ID tokens remain in memory and are used only as the standard
+logout hint; they do not enter persistent state, logs or audit records.
+
+The completion message confirms only the listed results; it does not claim logout for unlisted applications or applications without a notification receiver.
+
+Candidate managed mail wiring: after Samba explicitly enables directory mail with a complete limits policy and a separate creator identity, the Hook fixes portal account creation to the prepared creator and rejects conflicting custom bindings. The portal receives conflict-check policy only; the mail service receives the address writer in its private identity binding. Startup copies read-only host input into a current-owner 0600 file before configuration loading and the existing privilege drop. A private empty input clears the old runtime copy when disabled; runtime_restore reconstructs it. DAC_OVERRIDE permits root bootstrap to read the host 0600 input; requests still run as UID 65532. The portal depends on generic OIDC capability without a mandatory casdoor Module. Automatic Samba bootstrap, both actual providers, formal container wiring and business deployment remain unverified.
+
+
+Formal startup checks the fixed DATA mount through its opened descriptor. It accepts a root-owned directory without group/other write access or an existing UID 65532 directory with mode 0700, hands the root mount and private child stores to UID/GID 65532, then drops privileges. Core creates the mount as root:0700; handing over only the audit child leaves it unreachable after the drop. Foreign owners, shared-writable mounts and exposed existing stores fail closed. Unknown files are not recursively changed. Native startup and root-container permission results belong in the root plan.
+
+### Mail address conflicts during account creation
+
+With mail management enabled, the creation page uses the administrator-only `GET /api/users/mail-conflict?username=...` to inspect the complete derived address. It includes AD address claims and legacy `mail`/SMTP `proxyAddresses`; failed reads report an unknown result, never availability. This read does not reserve or release an address. Final account creation still performs the directory reservation election.
+
+
+
+The page shows the address type and permitted ownership details, offers another username or an authorized maintenance link in a new tab, and rereads occupancy on request and each submission. Primary, retained and protected addresses, pending operations and people outside the managed OU cannot obtain a maintenance choice. Removing an alias retains ownership. This lookup and its maintenance link do not implement the explicit administrator transfer required by MAILMOD-R-068.
+
+The personal mail-management view can expose the authorized mail Module's HTTPS Go entry from the existing application catalog. Current IAM/AD application access and module provenance are required; another person's administrative view does not receive the actor's own mail entry. Opening the service neither issues mailbox credentials nor changes directory mail_ready:false. Go remains responsible for current mailbox readiness and Webmail handoff. No new server credential, cross-service readiness cache or CORS surface is introduced.
+
+
+### Automatic IAM session check and mail ownership
+
+The 2026-10-30 candidate navigates anonymous visitors, including those whose portal session expires during in-page navigation (401), to `/login?check=1` using the existing authorization-code flow with `prompt=none`. State, browser binding, nonce, PKCE, token verification and live IAM/directory admission remain enforced. The original `auth_time` is retained. Login, consent or account-selection requirements return to a usable portal login page; other authorization failures show an explicit retry. Returning from a check does not automatically start another one. A per-tab pending marker allows retry after the visitor returns from an unreachable IAM page; the portal cannot replace browser/network errors on the IAM origin.
+
+Existing portal sessions, sign-out results and password recovery do not initiate this check. Target hashes use the existing per-tab return validation. Real browser session checks passed on ln with the fixed-source Casdoor runtime and the current LLNG 2.23.4 build on 2026-10-30. The paired [acceptance plan](../dev-docs/plans/archived/iam-session-check.md) records source baselines, retries and scope; complete Mail downstream and Core deployment acceptance remain in the Mail plan.
+
+Address management now belongs to the mail service. The portal no longer exposes `GET/POST /api/mail` or `GET/POST /api/users/{anchor}/mail`, and its account navigation has no mail-management tab. It retains the read-only primary address and administrator-only creation conflict checks. Conflict links open the mail service; creation still performs atomic directory ownership checks and never transfers addresses itself. Portal runtime configuration contains policy only and rejects address-writer credentials. Regenerate both module bindings together during upgrade; the mail service receives the restricted address writer in its private identity binding.

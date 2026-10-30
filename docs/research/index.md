@@ -53,3 +53,11 @@
 - “开源”默认采用 OSI/FSF 通常语义。Fair-code、Business Source License 等源码可见项目单列，不混入严格开源推荐。
 - 新选型文档必须说明与 ANAS 的 Module、IAM、数据库、Traefik、备份和升级契约如何衔接。
 - 新主题按[应用研究文档规范](/developer/research-document-standard)定义范围、证据和交付物。
+
+| [Webmail 界面与 DMS、ANAS 适配](./self-hosted-webmail-ui-research.md) | Roundcube、SOGo、Nextcloud Mail、MailFlow、SnappyMail 等的 UI、活跃度、别名、统一登录、技术栈与恢复边界 | 2026-10-23 | 2026-10-23 |
+| [LLNG 上线差距与方案评估](./llng-production-readiness.md) | Samba 事件复用、已确认策略、待确认完整上线范围与资源比较方法 | 2026-10-23 | 2026-10-23 |
+| [LLNG 与现有 Casdoor 集成、界面及免密码能力](./llng-casdoor-integration-comparison.md) | 当前 Module 差距、门户兼容、撤权、UI 定制及 Passkey/其他免密码边界 | 2026-10-23 | 2026-10-23 |
+| [Cloudflare Email Routing 与同类托管服务](./hosted-email-forwarding-services-research.md) | 云端持久暂存与独立 SMTP；补充 Reddit/Plunk 免费额度、公开注册条件、短信门槛与 +86 核验边界 | 2026-10-22 | 2026-10-26 |
+| [LLNG 与 Samba AD 原生强制改密](./llng-samba-password-change.md) | 2.23.2 原生改密、Module 两开关接入、持久配置收敛及真实 Vikunja OIDC 回跳 | 2026-10-22 | 2026-10-23 |
+| [邮件托管接入、个人别名与 Module 读取](./mail-routing-alias-and-module-access.md) | 收敛为 Worker/R2 与自管云持久中转；配置 Tutorial、双确认/去重与 60 秒拉取；已开始隔离验证，正式 Module 未实现 | 2026-10-23 | 2026-10-24 |
+| [邮件管理中间层与门户集成](./mail-management-layer-feasibility.md) | Go 统一认证与 Web 管理，主箱别名/独立附加箱并存；Roundcube 登录交接、DMS 单箱凭据及发件授权 | 2026-10-23 | 2026-10-24 |

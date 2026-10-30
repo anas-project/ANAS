@@ -38,6 +38,9 @@ func main() {
 	if len(os.Args) != 1 {
 		log.Fatal("unsupported portal command")
 	}
+	if err := prepareMailBinding("/run/anas/mail-management-input/config.json", mailManagementConfigPath); err != nil {
+		log.Fatal(err)
+	}
 	c, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -89,13 +92,14 @@ func main() {
 		peers = append(peers, a.Unmap())
 	}
 	policy, _ := json.Marshal(struct {
+		Mail                                         any
 		Rules                                        []Rule
 		Users, Groups, Names                         []string
 		Administration, DomainAdministration         bool
 		AdminGroup, AdminGUID, ProfileWriter         string
 		CreateWriter, UsersDN, MailDomain, UPNSuffix string
 		Managed                                      map[string]string
-	}{c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.CreateBindDN, c.UsersDN, c.MailDomain, c.UPNSuffix, c.ManagedGroups})
+	}{c.publicMailPolicy(), c.Rules, c.ProtectedUsers, c.ProtectedGroups, c.ProtectedGroupNames, c.Administration, c.DomainAdministration, c.AdminGroup, c.AdminGroupGUID, c.ProfileBindDN, c.CreateBindDN, c.UsersDN, c.MailDomain, c.UPNSuffix, c.ManagedGroups})
 	digest := sha256.Sum256(policy)
 	s := &Server{config: c, oidc: o, directory: directory, audit: journal, catalog: catalog, store: newStore(), limiter: newLimiter(), preferences: openPreferences(filepath.Join(filepath.Dir(c.AuditDir), "preferences")), peers: peers, digest: hex.EncodeToString(digest[:])}
 	s.themes = openThemes(filepath.Join(filepath.Dir(c.AuditDir), "themes"))

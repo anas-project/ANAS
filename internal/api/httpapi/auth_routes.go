@@ -874,12 +874,20 @@ func allowAuthAttempt(w http.ResponseWriter, limiter *attemptLimiter, key string
 }
 
 func decodeAuthJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	return decodeAuthJSONLimit(w, r, target, maximumAuthRequestBytes)
+}
+
+func decodeAuthJSONLimit(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
+	return decodeAuthJSONLimitChecked(w, r, target, limit, nil)
+}
+
+func decodeAuthJSONLimitChecked(w http.ResponseWriter, r *http.Request, target any, limit int64, check func([]byte) bool) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		writeProblem(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
 		return false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maximumAuthRequestBytes)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -891,7 +899,7 @@ func decodeAuthJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 		return false
 	}
 	defer clear(body)
-	if validateUniqueJSONKeys(body) != nil {
+	if validateUniqueJSONKeys(body) != nil || check != nil && !check(body) {
 		writeProblem(w, http.StatusBadRequest, "invalid_json", "request body must be one valid JSON object")
 		return false
 	}

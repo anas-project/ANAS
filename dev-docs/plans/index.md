@@ -10,6 +10,7 @@
 
 | 文档 | 范围 | 状态 |
 | --- | --- | --- |
+| [邮件 Module 与目录集成](mail-integration.md) | 六阶段正式实现、地址占用、统一认证、目录撤权、云端持久收件、配置 Tutorial 与恢复；原型子集已验证，M1/M2 内部基础及 M3 AD 资源/占用、主址、门户建号检测及邮件附加箱/别名候选实施中；正式引导、投影与建号冲突移交待完成 | 实施中 |
 | [应用目录](app-catalog.md) | 无旧协议兼容的新目录、用户与管理两级分组、中英文、共享资产、Casdoor/LLNG 原生适配、Authentik 移除、第二阶段独立门户，账号首版另按门户计划、全 Module 覆盖与外部条目 | 实施中 |
 | [应用域与 Samba AD 域分离](domain-separation.md) | 参数契约、DNS 模式、迁移与验收 | 实施中 |
 | [Samba 目录事件订阅与实时同步](directory-event-subscription.md) | IAM Provider 与所有 LDAP/LDAPS Module 的订阅接入、可靠消费、全量兜底、准入丧失会话撤销、双接入和 E2E | 实施中 |
@@ -41,6 +42,7 @@
 
 | 文档 | 结论去向 | 状态 |
 | --- | --- | --- |
+| [DMS 与 Roundcube 组合验证](archived/mail-webmail-poc.md) | [Go 邮件管理研究](../../docs/research/mail-management-layer-feasibility.md)、finance 固定制品的 20 项 PoC 验收与停机恢复 | 已完成（已归档） |
 | [anasd 服务授权与门户后台凭据](archived/service-api.md) | [服务 API](../../docs/architecture/service-api.md)、[Module 接入规范](../../docs/developer/module-development.md#门户后台凭据)、finance 13 项服务与 28 项浏览器验收 | 已完成（已归档） |
 | [应用图标与可导入主题](archived/application-themes.md) | [主题指南](../../docs/guide/application-themes.md)、[机制](../../docs/architecture/application-themes.md)、finance主题29项及IAM外观41项验收 | 已完成（已归档） |
 | [分组共享清单](archived/identity-group-catalog.md) | [Module开发规范](../../docs/developer/module-development.md#分组介绍与共享清单)、Samba/门户技术文档及finance验收 | 已完成（已归档） |

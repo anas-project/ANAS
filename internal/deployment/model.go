@@ -192,6 +192,7 @@ type ChangePolicy struct {
 	Apply       string `yaml:"apply" json:"apply"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Sensitive   bool   `yaml:"sensitive" json:"sensitive"`
+	StoreInput  bool   `yaml:"store_input,omitempty" json:"store_input,omitempty"`
 	Executor    string `yaml:"executor,omitempty" json:"executor,omitempty"`
 	Verify      string `yaml:"verify,omitempty" json:"verify,omitempty"`
 }

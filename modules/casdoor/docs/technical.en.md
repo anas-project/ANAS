@@ -2,6 +2,11 @@
 
 This document records the protocol contract, security boundaries, and verification points for maintainers.
 
+Consumers may request trusted directory-membership claims with the generic `CLAIM_GROUPS` JSON array.
+These join existing group/role projections and watcher inputs; application admission permissions still derive
+only from `ALLOW_GROUPS`. Directory groups must already exist, and user-reported membership is never trusted.
+Names containing comma, slash, or control characters fail before rendering because current IDs/watchers cannot represent them.
+
 <!-- generated:module-identity:start -->
 > Status: current implementation; based on `3.143.0-r12` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
@@ -52,7 +57,7 @@ restore the previous deployment, database value, and Store generation.
 
 The LDAP connection uses trusted LDAPS and a filter that excludes disabled accounts and requires the Samba anchor attribute. `anas_casdoor_dirwatch` follows `ANAS_DIRECTORY_EVENTS_DIR` read-only with its own durable cursor, filtering and debouncing changes before it calls local Casdoor APIs with this module's managed Application credential. Each batch reads directory and shadow users, correlates renames by permanent anchor, runs the upstream LDAP import, and then reconciles `externalId/name/ldap/properties/groups/isForbidden/isDeleted`. `externalId` stores the permanent Samba anchor while Casdoor's immutable `id` is left untouched. Directory properties are merged without deleting manual properties; `displayName,email` refresh for every currently synchronized user, and passwords or manual permissions are untouched.
 
-Because upstream preserves existing groups, the subscriber queries the declared `ALLOW_GROUPS` with the same restricted bind over trusted LDAPS. It uses AD matching rule `1.2.840.113556.1.4.1941` for direct and recursive membership, then authoritatively replaces managed user groups. Missing groups, duplicate or missing anchors, or any failed Casdoor patch fail the batch and preserve the cursor for retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is still a low-latency accelerator.
+Because upstream preserves existing groups, the subscriber queries the declared `ALLOW_GROUPS` with the same restricted bind over trusted LDAPS. It uses AD matching rule `1.2.840.113556.1.4.1941` for direct and recursive membership, then authoritatively replaces managed user groups. Missing groups, duplicate or missing anchors, or any failed Casdoor patch fail the batch and preserve the cursor for retry. Casdoor's default five-minute automatic sync remains enabled, so the subscriber is still a low-latency accelerator. Upstream import looks up existing users by LDAP UUID and then inserts the missing ones. When automatic sync and the subscriber's `sync-ldap-users` call overlap in the one Casdoor process, both see a new user as missing; the second insert takes `<uid>_` with the same anchor, and the subscriber then refuses to sync because of the anchor conflict. `0009-ldap-user-sync-serialization.patch` serializes every LDAP user import (automatic sync, the API and the admin UI share that entry point) with an in-process mutex, so a later import sees the users an earlier one created.
 
 The integration imports users and verifies passwords remotely but does not enable password writeback. Delete events forbid and soft-delete the shadow record, deactivation events forbid it, and both clear its groups; re-enable or a rename with the same anchor reuses and restores the record. Formal r10 builds for both architectures, OIDC subjects and revocation, real Nextcloud integration, backup restoration, credential rotation, and lifecycle acceptance pass; see the [2026-10-06 acceptance](../dev-docs/plans/archived/casdoor-iam.md). ARM64 validation runs the target helper under QEMU. SAML application sessions and SLO remain future work.
 
@@ -95,7 +100,7 @@ AD) and a Provider (to the applications).
   administrators retain their internal ID.
 - **SAML**: NameID in both versions uses `ExternalId`; 2.0 uses persistent format. Explicit anchor
   attributes remain available.
-- **Build**: the Dockerfile applies six pinned-source patches. The source probe first reproduces
+- **Build**: the Dockerfile applies nine pinned-source patches. The source probe first reproduces
   the historical configuration boundary, then checks the runtime subject and revocation patches.
   Deployment acceptance is recorded separately.
 
@@ -233,6 +238,10 @@ the target URL. Native IAM display limitations and end-to-end acceptance are tra
 [catalog design](/architecture/app-catalog-design).
 
 Public PKCE consumers register `PUBLIC_CLIENT=true` and receive no application API secret. Native import may generate a provider-side secret; the portal does not consume it. Native `tokenFields` includes `Groups` for current UserInfo groups. `REAUTHENTICATION_CLIENT_ID`/`REAUTHENTICATION_REDIRECT_URI` create a separate client with automatic sign-in and signin session disabled; the consumer still checks signed auth_time and identity consistency.
+
+Every ordinary OIDC Application enables native `enableAutoSignin` and `enableSigninSession`, allowing an existing IAM session to enter another application without account selection. This does not require a separate recent-authentication client. Without a valid IAM session, normal authentication remains required; application admission and the consumer's live directory checks still apply. The recent-authentication client explicitly disables both options.
+
+`0010-oidc-silent-authorization.patch` adds `prompt=none` for authorization-code requests with an exact registered callback and S256 PKCE, rejecting duplicate parameters. It returns state-bound `login_required` or `interaction_required` instead of a login form. Existing sessions still pass native admission, consent and code issuance, preserving their original `auth_time`. Ordinary login and separate reauthentication retain their existing flows. A provider-generated application secret does not make PKCE optional.
 
 The binding declares `ANAS_IAM_BINDING__USER_PORTAL__OIDC_SELF_ACCOUNT_API_SCHEMA=casdoor-account/v1`. The portal checks this API contract rather than branching on IAM module names; it continues using existing native self-account APIs. The portal has a `no_prior_release` inventory baseline, with no earlier-version upgrade result claimed.
 

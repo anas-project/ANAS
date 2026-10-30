@@ -1,3 +1,4 @@
+// TEST_CASES: MAILMOD-T-083
 package runner
 
 // Stopping services for a backup, and the guarantee that they come back.
@@ -23,11 +24,15 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/anas-project/ANAS/internal/application"
 )
@@ -89,12 +94,16 @@ func runningModules(a *app, modulesRoot string) []string {
 func checkedRunningModules(a *app, modulesRoot string) ([]string, error) {
 	running := []string{}
 	var failures []error
-	for _, name := range a.releaseModules(modulesRoot) {
+	names, err := backupReleaseModules(a, modulesRoot)
+	if err != nil {
+		return nil, fmt.Errorf("read backup release modules: %w", err)
+	}
+	for _, name := range names {
 		if a.reg[name].RuntimeType == "builtin" {
 			continue
 		}
 		dir := filepath.Join(modulesRoot, name)
-		out, err := a.outputCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "ps", "-q")
+		out, err := backupComposeObservation(a, dir, name, "ps", "-q")
 		if err != nil {
 			failures = append(failures, fmt.Errorf("query running containers for %s: %w", name, err))
 			continue
@@ -106,10 +115,117 @@ func checkedRunningModules(a *app, modulesRoot string) ([]string, error) {
 	return running, errors.Join(failures...)
 }
 
+func backupReleaseModules(a *app, modulesRoot string) ([]string, error) {
+	names, err := a.releaseModulesChecked(modulesRoot)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range a.order {
+		module, ok := a.reg[name]
+		if !ok {
+			return nil, fmt.Errorf("missing release module %s", name)
+		}
+		if module.RuntimeType == "compose" && !slices.Contains(names, name) {
+			return nil, fmt.Errorf("missing Compose artifact for %s", name)
+		}
+	}
+	return names, nil
+}
+
+// A missing frozen environment must not silently select another project.
+func backupModuleEnvironment(a *app, dir, name string) (map[string]string, error) {
+	env, err := parseEnvFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		return nil, fmt.Errorf("backup for %s requires its frozen environment", name)
+	}
+	return a.composeTemporaryEnvironment(name, a.relocateDeploymentEnv(env), true)
+}
+
+// Bound each daemon observation and preserve the frozen Compose endpoint.
+// Do not log container details or Compose diagnostic data.
+func backupComposeObservation(a *app, dir, name string, args ...string) (string, error) {
+	env, err := backupModuleEnvironment(a, dir, name)
+	if err != nil {
+		return "", err
+	}
+	project, err := composeProjectName(name, env)
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(a.subprocessContext(), 15*time.Second)
+	defer cancel()
+	return a.compose.OutputFileContext(ctx, dir, project, a.releaseComposeFile(name), a.commandEnvironment(env), true, args...)
+}
+
+func backupStopCompose(a *app, dir, name string) error {
+	env, err := backupModuleEnvironment(a, dir, name)
+	if err != nil {
+		return err
+	}
+	project, err := composeProjectName(name, env)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(a.subprocessContext(), 150*time.Second)
+	defer cancel()
+	if err := a.ensureComposeProjectOwnerBounded(ctx, project); err != nil {
+		return err
+	}
+	var output io.Writer = os.Stderr
+	if a.suppressSensitiveOutput || a.restrictedProcessEnvironment {
+		output = io.Discard
+	}
+	if err := a.compose.RunFileContext(ctx, dir, project, a.releaseComposeFile(name), a.commandEnvironment(env), output, output, "stop"); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	return ctx.Err()
+}
+
+// A successful Compose stop is not proof that every writer has stopped.
+// Inspect all declared/orphan containers, including non-running states, and
+// accept only states which cannot write or resume without a new start.
+func confirmBackupModulesStopped(a *app, modulesRoot string, expected []string) error {
+	names, err := backupReleaseModules(a, modulesRoot)
+	if err != nil {
+		return fmt.Errorf("read backup release modules after stop: %w", err)
+	}
+	if !slices.Equal(names, expected) {
+		return errors.New("backup release modules changed during stop")
+	}
+	for _, name := range names {
+		dir := filepath.Join(modulesRoot, name)
+		out, err := backupComposeObservation(a, dir, name, "ps", "--all", "--format", "json")
+		if err != nil {
+			return fmt.Errorf("confirm stopped containers for %s: %w", name, err)
+		}
+		body := strings.TrimSpace(out)
+		if strings.HasPrefix(body, "[") && !json.Valid([]byte(body)) {
+			return fmt.Errorf("parse stopped container status for %s: invalid JSON", name)
+		}
+		records, err := parseComposePSRecords([]byte(body))
+		if err != nil {
+			return fmt.Errorf("parse stopped container status for %s: %w", name, err)
+		}
+		for _, record := range records {
+			if strings.TrimSpace(record.Service) == "" || (record.State != "exited" && record.State != "created") {
+				return fmt.Errorf("containers for %s are not confirmed stopped", name)
+			}
+		}
+	}
+	return nil
+}
+
 // beginContainerTransaction records the intent and then stops the modules. The
 // order matters: the record has to be on disk before the first container goes
 // down, or a crash in between leaves services stopped with nothing to say so.
 func beginContainerTransaction(base string, a *app, modulesRoot, deploymentID string) (*containerTransaction, error) {
+	names, err := backupReleaseModules(a, modulesRoot)
+	if err != nil {
+		return nil, fmt.Errorf("read backup release modules: %w", err)
+	}
 	modules, err := checkedRunningModules(a, modulesRoot)
 	if err != nil {
 		return nil, err
@@ -132,6 +248,9 @@ func beginContainerTransaction(base string, a *app, modulesRoot, deploymentID st
 	if err := stopModulesWithCleanupMarker(a, modulesRoot, modules, markCleanup); err != nil {
 		// The transaction stays on disk. Some modules may already be down, and
 		// the compensating start is what puts them back.
+		return txn, err
+	}
+	if err := confirmBackupModulesStopped(a, modulesRoot, names); err != nil {
 		return txn, err
 	}
 	return txn, nil
@@ -172,7 +291,7 @@ func stopModulesWithCleanupMarker(a *app, modulesRoot string, modules []string, 
 			return fmt.Errorf("stop containers: %s", strings.Join(failures, "; "))
 		}
 		dir := filepath.Join(modulesRoot, name)
-		if err := a.runCompose(dir, name, a.releaseComposeFile(name), a.moduleEnv(dir), "stop"); err != nil {
+		if err := backupStopCompose(a, dir, name); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", name, err))
 		}
 		if guarded && mark != nil {

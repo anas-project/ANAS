@@ -181,6 +181,24 @@
     ]
   },
   {
+    "module": "mail",
+    "repository": "anas-module-mail",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "shared_contexts": [
+      "go.mod",
+      "go.sum",
+      "internal/directorymail",
+      "internal/configschema",
+      "internal/localization",
+      "internal/appcatalog",
+      "internal/apptheme",
+      "contracts"
+    ]
+  },
+  {
     "module": "mariadb",
     "repository": "anas-module-mariadb",
     "platforms": [

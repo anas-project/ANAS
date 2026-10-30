@@ -307,7 +307,7 @@ node test-env/playwright/application-themes-finance.mjs
 - 级别：`unit`
 - 覆盖需求：`APPTHEME-R-016`
 - 需求复核摘要：`sha256:56a68813510fb96b5fdb7740585ced0e17baad531ad14e74c7cc071ceca4f444`
-- 实现复核摘要：`sha256:3994c50edb392642462eeac1cc04fa7d23701f43311bfa89bb0057a817e7e817`
+- 实现复核摘要：`sha256:5e7cd9a248ac337a060c044f2654da048f8b9e6873d317cc6560ef6a46911067`
 - Fixture：生产代码、内置主题及隔离临时目录/模拟API；不修改线上数据
 - 目标能力：`node`、`browser`
 - Oracle 来源：`ui`

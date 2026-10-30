@@ -20,11 +20,12 @@ import (
 )
 
 type importedConfigSecret struct {
-	Path      string
-	Key       string
-	Value     string
-	Owner     string
-	Generated bool
+	Path         string
+	Key          string
+	Value        string
+	Owner        string
+	Generated    bool
+	ManagedInput bool
 }
 
 type configImportResult struct {
@@ -321,7 +322,7 @@ func normalizeImportedConfigWithTaint(source string, reg map[string]Module, priv
 	localEnv := map[string]importedConfigSecret{}
 	for _, mod := range reg {
 		for parameter, policy := range mod.Changes {
-			if policy.Effect != "credential_rotate" {
+			if policy.Effect != "credential_rotate" && !policy.StoreInput {
 				continue
 			}
 			key := moduleParamEnvKey(mod.Name, mod.EnvPrefix, mod.Exports, parameter)
@@ -340,8 +341,9 @@ func normalizeImportedConfigWithTaint(source string, reg map[string]Module, priv
 
 	// env: and secrets: are two input spellings for the same runtime key. Both
 	// must therefore use the same declaration lookup, schema normalization and
-	// lifecycle extraction. Ordinary secrets remain in desired config; only
-	// credential_rotate and managed-bootstrap values move to the Secret Store.
+	// lifecycle extraction. Ordinary secrets remain in desired config;
+	// credential_rotate, explicitly stored inputs and managed-bootstrap values
+	// move to the Secret Store.
 	extractLifecycleMapping := func(section string) error {
 		mapping := mappingValue(root, section)
 		if mapping == nil {
@@ -376,7 +378,7 @@ func normalizeImportedConfigWithTaint(source string, reg map[string]Module, priv
 			if err != nil {
 				return err
 			}
-			secret := importedConfigSecret{Path: path, Key: key, Value: value, Owner: module}
+			secret := importedConfigSecret{Path: path, Key: key, Value: value, Owner: module, ManagedInput: reg[module].Changes[parameter].StoreInput}
 			if isLocal {
 				secret.Key, secret.Owner, secret.Generated = local.Key, local.Owner, true
 			}
@@ -410,7 +412,7 @@ func normalizeImportedConfigWithTaint(source string, reg map[string]Module, priv
 					parameter := strings.ToLower(strings.TrimSpace(configNode.Content[j].Value))
 					policy, declared := mod.Changes[parameter]
 					isManagedBootstrap := parameter == "admin_password" && len(mod.LocalAccounts) == 1
-					if (!declared || policy.Effect != "credential_rotate") && !isManagedBootstrap {
+					if (!declared || policy.Effect != "credential_rotate" && !policy.StoreInput) && !isManagedBootstrap {
 						j += 2
 						continue
 					}
@@ -428,7 +430,7 @@ func normalizeImportedConfigWithTaint(source string, reg map[string]Module, priv
 					if isManagedBootstrap {
 						key, generated = localAdminSecretKey(name, mod.LocalAccounts[0].ID), true
 					}
-					if err := importedSecrets.add(importedConfigSecret{Path: path, Key: key, Value: value, Owner: name, Generated: generated}); err != nil {
+					if err := importedSecrets.add(importedConfigSecret{Path: path, Key: key, Value: value, Owner: name, Generated: generated, ManagedInput: policy.StoreInput && !generated}); err != nil {
 						return result, err
 					}
 					configNode.Content = append(configNode.Content[:j], configNode.Content[j+2:]...)
@@ -946,6 +948,9 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 		return result, err
 	}
 	for _, secret := range result.Secrets {
+		if secret.ManagedInput && store.values[secret.Key] != "" && (store.metadata[secret.Key].Kind != "managed_input" || store.metadata[secret.Key].Owner != secret.Owner) {
+			return result, fmt.Errorf("%s conflicts with an existing private credential", secret.Path)
+		}
 		if old := store.values[secret.Key]; old != "" && old != secret.Value {
 			command := "the declared credential rotation command"
 			if secret.Generated {
@@ -955,6 +960,8 @@ func importConfigIntoWorkspace(workspace, source string, reg map[string]Module) 
 		}
 		if secret.Generated {
 			store.SetWithMetadata(secret.Key, secret.Value, secretMetadata{Owner: secret.Owner, Kind: "local_admin", Provenance: "config-import:" + secret.Path})
+		} else if secret.ManagedInput {
+			store.SetWithMetadata(secret.Key, secret.Value, secretMetadata{Owner: secret.Owner, Kind: "managed_input", Provenance: "config-import:" + secret.Path})
 		} else {
 			store.SetWithMetadata(secret.Key, secret.Value, secretMetadata{Owner: secret.Owner, Kind: "lifecycle_managed", Provenance: "config-import:" + secret.Path})
 		}
@@ -1033,7 +1040,7 @@ func validateNormalizedImportedConfigWithLockAndTaintContext(ctx context.Context
 	for key := range loaded.Secrets {
 		sourceSensitive[config.EnvKey(key)] = true
 	}
-	// credential_rotate inputs were intentionally removed from normalized YAML.
+	// Rotating credentials and stored inputs were removed from normalized YAML.
 	// Restore only an in-memory validation view so input_required and constraints
 	// see the same value that will be committed to the lifecycle Secret Store.
 	allExtractedValues := make(map[string]string, len(extractedSecrets))

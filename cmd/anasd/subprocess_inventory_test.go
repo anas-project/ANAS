@@ -32,6 +32,10 @@ import (
 // not churn the inventory. Add one only with a reason that holds for the
 // daemon, never to make the test pass.
 var daemonReachableSubprocessInventory = map[string][]string{
+	// The mail ingress client imports shared DMS data types. PrepareRuntime is
+	// called only by modules/mail/dms/cmd at fixed container startup; no anasd
+	// route or installer path invokes it or accepts its output paths.
+	"modules/mail/dms/runtime.go": {"PrepareRuntime exec.Command"},
 	// Compose keeps a CLI pair and a daemon pair side by side. runCompose and
 	// outputCompose select between them; only the *Context variants take a
 	// context and an explicit environment.

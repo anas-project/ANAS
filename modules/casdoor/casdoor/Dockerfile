@@ -25,6 +25,8 @@ COPY patches/0005-directory-subject.patch /tmp/0005-directory-subject.patch
 COPY patches/0006-directory-revocation.patch /tmp/0006-directory-revocation.patch
 COPY patches/0007-trusted-role-policy-revocation.patch /tmp/0007-trusted-role-policy-revocation.patch
 COPY patches/0008-oidc-authentication-time.patch /tmp/0008-oidc-authentication-time.patch
+COPY patches/0009-ldap-user-sync-serialization.patch /tmp/0009-ldap-user-sync-serialization.patch
+COPY patches/0010-oidc-silent-authorization.patch /tmp/0010-oidc-silent-authorization.patch
 RUN patch -p1 < /tmp/0001-saml-directory-attributes.patch && \
     patch -p1 < /tmp/0002-oidc-session-logout.patch && \
     patch -p1 < /tmp/0003-oidc-logout-delivery-logging.patch && \
@@ -33,9 +35,12 @@ RUN patch -p1 < /tmp/0001-saml-directory-attributes.patch && \
     patch -p1 < /tmp/0006-directory-revocation.patch && \
     patch -p1 < /tmp/0007-trusted-role-policy-revocation.patch && \
     patch -p1 < /tmp/0008-oidc-authentication-time.patch && \
+    patch -p1 < /tmp/0009-ldap-user-sync-serialization.patch && \
+    patch -p1 < /tmp/0010-oidc-silent-authorization.patch && \
     if [ -n "$GOPROXY_URL" ]; then go env -w GOPROXY="$GOPROXY_URL"; fi && \
     go mod download && \
-    CGO_ENABLED=0 go test ./object -run TestAnasAuthenticationTime -count=1 && \
+    CGO_ENABLED=0 go test ./object -run 'TestAnasAuthenticationTime|TestAnasLdapUserSync' -count=1 && \
+    CGO_ENABLED=0 go test ./routers -run '^TestAnasSilentAuthorization$' -count=1 && \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
       go build -trimpath -ldflags='-s -w' -o /out/server .
 

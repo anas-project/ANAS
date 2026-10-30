@@ -373,10 +373,19 @@ func TestCalcSambaDCPublishesDirectoryEventJournal(t *testing.T) {
 		t.Fatalf("ANAS_DIRECTORY_EVENTS_DIR = %q, want %q", got, want)
 	}
 	if got := env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"]; !strings.Contains(got, "member") ||
-		!strings.Contains(got, "anasIdentityAnchor") {
+		!strings.Contains(got, "anasIdentityAnchor") || !strings.Contains(got, "primaryGroupID") {
 		t.Fatalf("published attribute set = %q", got)
 	}
 	if got := env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"]; strings.Contains(got, "logonCount") {
 		t.Fatalf("machine-account churn must not be publishable: %q", got)
+	}
+	// Upgrades must preserve the operator's extra fields while repairing an
+	// older persisted filter that predates primary-group event consumption.
+	env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"] = "customAttribute,member"
+	if err := calcSambaDC(env, "", &secretStore{values: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := env["SAMBA_DC_ANCHOR_EVENT_ATTRIBUTES"]; !strings.Contains(got, "customAttribute") || strings.Count(got, "primaryGroupID") != 1 {
+		t.Fatalf("persisted event filter not upgraded: %q", got)
 	}
 }

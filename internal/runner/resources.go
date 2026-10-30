@@ -73,6 +73,13 @@ func (a *app) ensureResourcesFor(consumer, modulesRoot string) error {
 		if request.Consumer != consumer {
 			continue
 		}
+		// Frozen deployments can bypass fresh configuration materialization.
+		// Recheck the durable engine binding before any Provider write.
+		if request.Contract == "relational_database" {
+			if err := a.validateDatabaseEngineBinding(consumer, request.ID, request.Interface); err != nil {
+				return err
+			}
+		}
 		providerModule, ok := a.reg[request.Provider]
 		if !ok {
 			return fmt.Errorf("resource %s.%s provider module %s is unavailable", consumer, request.ID, request.Provider)

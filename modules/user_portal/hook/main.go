@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"strings"
 
 	"github.com/anas-project/ANAS/internal/appcatalog"
 	"github.com/anas-project/ANAS/modules/user_portal/browserlogout"
@@ -18,7 +17,8 @@ type request struct {
 	Env                map[string]string `json:"env"`
 }
 type response struct {
-	Env map[string]string `json:"env"`
+	Env          map[string]string `json:"env"`
+	RuntimeFiles map[string]string `json:"runtime_files,omitempty"`
 }
 
 func main() {
@@ -38,10 +38,26 @@ func main() {
 func fail(err error) { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
 func handle(r request) (response, error) {
 	out := response{Env: map[string]string{}}
+	if r.Phase == "runtime_restore" {
+		files, projected, err := mailManagementBinding(r.Env)
+		return response{Env: projected, RuntimeFiles: files}, err
+	}
 	if r.Phase != "calculate" && r.Phase != "render_env" && r.Phase != "validate" {
 		return out, nil
 	}
 	e := r.Env
+	var mailFiles, mailEnv map[string]string
+	if r.Phase == "validate" {
+		if _, _, err := mailManagementPolicy(e); err != nil {
+			return out, err
+		}
+	} else {
+		var err error
+		mailFiles, mailEnv, err = mailManagementBinding(e)
+		if err != nil {
+			return out, err
+		}
+	}
 	if err := validateServiceAPI(e); err != nil {
 		return out, err
 	}
@@ -63,7 +79,8 @@ func handle(r request) (response, error) {
 	if e[b+"INTERFACE"] != "oidc" {
 		return out, errors.New("user portal requires OIDC")
 	}
-	if e[b+"OIDC_SELF_ACCOUNT_API_SCHEMA"] != "casdoor-account/v1" {
+	schema := e[b+"OIDC_SELF_ACCOUNT_API_SCHEMA"]
+	if schema != "casdoor-account/v1" && schema != "llng-account/v1" {
 		return out, errors.New("user portal requires the supported self-account API schema")
 	}
 	domain := e["USER_PORTAL_DOMAIN_PREFIX"] + "." + e["BASE_DOMAIN"]
@@ -71,20 +88,22 @@ func handle(r request) (response, error) {
 	if e["TRAEFIK_BASE_PORT"] == "443" {
 		base = "https://" + domain
 	}
-	issuer := strings.TrimSuffix(e[b+"OIDC_ISSUER_URL"], "/")
+	issuer := e[b+"OIDC_ISSUER_URL"]
 	u, err := url.Parse(issuer)
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return out, errors.New("missing verified OIDC issuer")
 	}
 	out.Env = map[string]string{
 		"USER_PORTAL_DOMAIN": domain, "USER_PORTAL_URL": base, "USER_PORTAL_ISSUER": issuer,
-		"USER_PORTAL_CLIENT_ID": "user-portal", "USER_PORTAL_REAUTH_CLIENT_ID": "user-portal-reauth",
+		"USER_PORTAL_ACCOUNT_SCHEMA": schema,
+		"USER_PORTAL_CLIENT_ID":      "user-portal", "USER_PORTAL_REAUTH_CLIENT_ID": "user-portal-reauth",
 		p + "CLIENT_ID": "user-portal", p + "PUBLIC_CLIENT": "true", p + "REDIRECT_URIS": base + "/oidc/callback",
 		p + "SCOPES": "openid,profile,email", p + "ATTRIBUTES": "preferred_username:sAMAccountName:1,email:email:1,groups:groups:1",
 		p + "DOMAIN": domain, p + "REAUTHENTICATION_CLIENT_ID": "user-portal-reauth", p + "REAUTHENTICATION_REDIRECT_URI": base + "/oidc/reauth-callback",
 		p + "OIDC_LOGOUT_URI": base + "/oidc/backchannel-logout", p + "OIDC_LOGOUT_METHODS": "backchannel", p + "OIDC_LOGOUT_SESSION_REQUIRED": "false",
-		"USER_PORTAL_LDAP_URL":     e["SAMBA_DC_LDAPS_SERVER_URL_PORT"],
-		"USER_PORTAL_LDAP_BIND_DN": e["SAMBA_DC_LDAP_BIND_DN"], "USER_PORTAL_LDAP_BIND_PASSWORD": e["SAMBA_DC_LDAP_BIND_PASSWORD"],
+		p + "POST_LOGOUT_REDIRECT_URIS": base + "/oidc/logout-callback",
+		"USER_PORTAL_LDAP_URL":          e["SAMBA_DC_LDAPS_SERVER_URL_PORT"],
+		"USER_PORTAL_LDAP_BIND_DN":      e["SAMBA_DC_LDAP_BIND_DN"], "USER_PORTAL_LDAP_BIND_PASSWORD": e["SAMBA_DC_LDAP_BIND_PASSWORD"],
 		"USER_PORTAL_BASE_DN": e["SAMBA_DC_BASE_DN"], "USER_PORTAL_USERS_DN": e["SAMBA_DC_BASE_USERS_DN"], "USER_PORTAL_GROUPS_DN": e["SAMBA_DC_BASE_GROUPS_DN"],
 		"USER_PORTAL_ANCHOR_ATTRIBUTE": e["SAMBA_DC_IDENTITY_ANCHOR_ATTRIBUTE"],
 		"USER_PORTAL_MAIL_DOMAIN":      e["SAMBA_DC_MAIL_DOMAIN"],
@@ -105,6 +124,7 @@ func handle(r request) (response, error) {
 		out.Env["USER_PORTAL_"+key] = e["USER_PORTAL_"+key]
 	}
 	if r.Phase == "render_env" {
+		out.RuntimeFiles = mailFiles
 		if err := prepareDisabledServiceAPIDirectory(e); err != nil {
 			return out, err
 		}
@@ -117,6 +137,9 @@ func handle(r request) (response, error) {
 			return out, err
 		}
 		out.Env["USER_PORTAL_LOGOUT_HOST_RULE"] = browserlogout.Rule(targets, base)
+	}
+	for key, value := range mailEnv {
+		out.Env[key] = value
 	}
 	return out, nil
 }

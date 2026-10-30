@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -73,11 +75,12 @@ func publishIAMEndpoints(e map[string]string) error {
 		p := iamBindingPrefix + envName(app) + "__"
 		switch iface := e[p+"INTERFACE"]; iface {
 		case "oidc":
-			// LLNG 2.23.2 advertises the portal root with a trailing slash in
+			// LLNG advertises the portal root with a trailing slash in
 			// discovery. OIDC issuer comparison is byte-for-byte, so publish
 			// that exact value rather than the route's slashless base URL.
 			e[p+"OIDC_ISSUER_URL"] = base + "/"
 			e[p+"OIDC_DISCOVERY_URL"] = base + "/.well-known/openid-configuration"
+			e[p+"OIDC_SELF_ACCOUNT_API_SCHEMA"] = "llng-account/v1"
 		case "saml":
 			e[p+"SAML_METADATA_URL"] = base + "/saml/metadata"
 			e[p+"SAML_ENTITY_ID"] = base + "/saml/metadata"
@@ -101,15 +104,47 @@ func applyClientRegistrations(e map[string]string) error {
 	if err := validateSubjectConsumers(e); err != nil {
 		return err
 	}
+	e["OIDC_RP_APPS"], e["SAML_SP_APPS"] = "", ""
+	e["LLNG_REAUTH_CLIENT_IDS"] = ""
+	e["LLNG_ACCOUNT_CLIENT_IDS"] = ""
+	e["LLNG_REAUTH_PARENT_CLIENTS"] = "{}"
+	reauthParents := map[string]string{}
+	clientIDs := map[string]bool{}
+	rpNames := map[string]bool{}
+	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
+		name := envName(app)
+		if rpNames[name] {
+			return fmt.Errorf("duplicate OIDC registration name for %s", app)
+		}
+		rpNames[name] = true
+	}
 	for _, app := range splitCSV(e["ANAS_IDENTITY_OIDC_CLIENTS"]) {
 		src := iamClientPrefix + envName(app) + "__"
 		dst := "OIDC_RP__" + envName(app) + "__"
 		if e[src+"CLIENT_ID"] == "" {
 			return fmt.Errorf("oidc client %s published no %sCLIENT_ID", app, src)
 		}
+		public := e[src+"PUBLIC_CLIENT"]
+		if public != "" && public != "true" && public != "false" {
+			return fmt.Errorf("invalid public client flag for %s", app)
+		}
+		if public == "true" && e[src+"CLIENT_SECRET"] != "" {
+			return fmt.Errorf("public client %s must not publish a secret", app)
+		}
+		if public != "true" && e[src+"CLIENT_SECRET"] == "" {
+			return fmt.Errorf("confidential client %s must publish a secret", app)
+		}
+		if clientIDs[e[src+"CLIENT_ID"]] {
+			return fmt.Errorf("duplicate OIDC client ID for %s", app)
+		}
+		clientIDs[e[src+"CLIENT_ID"]] = true
 		e["OIDC_RP_APPS"] = addCSV(e["OIDC_RP_APPS"], app)
 		e[dst+"CLIENT_ID"] = e[src+"CLIENT_ID"]
 		e[dst+"CLIENT_SECRET"] = e[src+"CLIENT_SECRET"]
+		e[dst+"PUBLIC_CLIENT"] = "0"
+		if public == "true" {
+			e[dst+"PUBLIC_CLIENT"] = "1"
+		}
 		e[dst+"REDIRECT_URI"] = e[src+"REDIRECT_URIS"]
 		e[dst+"LOGOUT_REDIRECT_URI"] = e[src+"POST_LOGOUT_REDIRECT_URIS"]
 		e[dst+"LOGOUT_URI"] = e[src+"OIDC_LOGOUT_URI"]
@@ -120,8 +155,43 @@ func applyClientRegistrations(e map[string]string) error {
 			e[dst+"LOGOUT_SESSION_REQUIRED"] = "0"
 		}
 		e[dst+"ALLOW_GROUPS"] = e[src+"ALLOW_GROUPS"]
+		e[dst+"RULE"] = clientAdmissionRule(e[src+"ALLOW_GROUPS"], e["SAMBA_DC_ADMIN_GROUP_NAME"])
+		if app == "user_portal" {
+			e["LLNG_ACCOUNT_CLIENT_IDS"] = addCSV(e["LLNG_ACCOUNT_CLIENT_IDS"], e[src+"CLIENT_ID"])
+		}
 		e[dst+"DOMAIN"] = e[src+"DOMAIN"]
 		applyClientAttributes(e, src, dst)
+		if id, uri := e[src+"REAUTHENTICATION_CLIENT_ID"], e[src+"REAUTHENTICATION_REDIRECT_URI"]; id != "" || uri != "" {
+			u, err := url.Parse(uri)
+			if public != "true" || id == "" || clientIDs[id] || err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
+				return fmt.Errorf("invalid public reauthentication registration for %s", app)
+			}
+			clientIDs[id] = true
+			if e[src+"OIDC_LOGOUT_SESSION_REQUIRED"] == "true" {
+				return fmt.Errorf("reauthentication client %s requires subject-scoped parent logout", app)
+			}
+			reauthParents[id] = e[src+"CLIENT_ID"]
+			e["LLNG_REAUTH_CLIENT_IDS"] = addCSV(e["LLNG_REAUTH_CLIENT_IDS"], id)
+			name := app + "_reauth"
+			if rpNames[envName(name)] {
+				return fmt.Errorf("reauthentication registration name conflicts for %s", app)
+			}
+			rpNames[envName(name)] = true
+			rp := "OIDC_RP__" + envName(name) + "__"
+			e["OIDC_RP_APPS"] = addCSV(e["OIDC_RP_APPS"], name)
+			for _, key := range []string{"PUBLIC_CLIENT", "ALLOW_GROUPS", "DOMAIN", "RULE"} {
+				e[rp+key] = e[dst+key]
+			}
+			e[rp+"CLIENT_ID"], e[rp+"CLIENT_SECRET"], e[rp+"REDIRECT_URI"] = id, "", uri
+			for _, key := range []string{"LOGOUT_URI", "LOGOUT_TYPE", "LOGOUT_REDIRECT_URI"} {
+				e[rp+key] = ""
+			}
+			e[rp+"LOGOUT_SESSION_REQUIRED"] = "0"
+			applyClientAttributes(e, src, rp)
+			if app == "user_portal" {
+				e["LLNG_ACCOUNT_CLIENT_IDS"] = addCSV(e["LLNG_ACCOUNT_CLIENT_IDS"], id)
+			}
+		}
 	}
 	for _, app := range splitCSV(e["ANAS_IDENTITY_SAML_CLIENTS"]) {
 		src := iamClientPrefix + envName(app) + "__"
@@ -131,11 +201,30 @@ func applyClientRegistrations(e map[string]string) error {
 		}
 		e["SAML_SP_APPS"] = addCSV(e["SAML_SP_APPS"], app)
 		e[dst+"METADATA_URL"] = e[src+"SP_METADATA_URL"]
-		e[dst+"NAMEID_FORMAT"] = e[src+"NAME_ID_FORMAT"]
+		format := defaultValue(e[src+"NAME_ID_FORMAT"], "persistent")
+		switch format {
+		case "persistent", "unspecified", "windows", "kerberos", "email", "x509":
+		default:
+			return fmt.Errorf("SAML client %s requests a NameID format incompatible with stable directory identity", app)
+		}
+		e[dst+"NAMEID_FORMAT"] = format
 		e[dst+"ALLOW_GROUPS"] = e[src+"ALLOW_GROUPS"]
+		e[dst+"RULE"] = clientAdmissionRule(e[src+"ALLOW_GROUPS"], e["SAMBA_DC_ADMIN_GROUP_NAME"])
 		e[dst+"DOMAIN"] = e[src+"DOMAIN"]
 		applyClientAttributes(e, src, dst)
 	}
+	parents, err := json.Marshal(reauthParents)
+	if err != nil {
+		return err
+	}
+	e["LLNG_REAUTH_PARENT_CLIENTS"] = string(parents)
+	accepted := splitCSV(e["LLNG_BACKGROUND_LOGOUT_EXCEPTIONS"])
+	for _, id := range accepted {
+		if !clientIDs[id] || reauthParents[id] != "" {
+			return fmt.Errorf("LLNG_BACKGROUND_LOGOUT_EXCEPTIONS must name a registered primary OIDC client: %s", id)
+		}
+	}
+	e["LLNG_BACKGROUND_LOGOUT_EXCEPTIONS"] = strings.Join(accepted, ",")
 	return nil
 }
 

@@ -200,6 +200,20 @@ class Directory:
             attributes += ['mail', 'proxyAddresses', 'sAMAccountName', 'userAccountControl', 'objectSid']
         return attributes
 
+    def mail_resources(self):
+        from mail_resource_ldap import LDAPResources
+        from mail_resources import PrimaryCoordinator, values as resource_values
+        backend = LDAPResources(self)
+        if not backend.installed():
+            return None
+        dn = 'OU=Mail,' + self.settings.mail_search_base
+        row = backend.read(dn)
+        if row is None:
+            raise ValueError('mail primary resource preparation required')
+        if resource_values(row, 'description') != [b'ANAS mail directory/v1']:
+            raise ValueError('mail primary unmanaged resource directory')
+        return PrimaryCoordinator(backend, self.settings.mail_search_base, self.settings.mail_domain)
+
     def mail_in_scope(self, dn: str) -> bool:
         def parsed(value):
             return [frozenset((name.casefold(), text.casefold()) for name, text, _flags in rdn) for rdn in ldap.dn.str2dn(value)]
@@ -242,6 +256,9 @@ class Directory:
             dn, attributes = row
         if not self.mail_in_scope(dn):
             return False
+        coordinator = self.mail_resources()
+        if coordinator is not None:
+            return coordinator.reconcile(dn, attributes)
         address = desired_mail(attributes, self.settings.mail_domain)
         if address is None or values(attributes, 'mail') == [address]:
             return False
@@ -263,6 +280,11 @@ class Directory:
         namespace = self.iter_entries(self.settings.mail_search_base, '(|(mail=*)(proxyAddresses=*))')
         # Validate every target and collision before changing any mailbox field.
         planned = plan_mail(people, namespace, self.settings.mail_domain)
+        coordinator = self.mail_resources()
+        if coordinator is not None:
+            # Unchanged mail can still have interrupted resource work. A full
+            # scan must verify it, rather than relying on a field-change event.
+            return sum(coordinator.reconcile(dn, attrs) for dn, attrs in people)
         return sum(self.save_mail(dn, attrs, address) for dn, attrs, address in planned)
 
     def read_target(self, dn: str):
@@ -285,10 +307,14 @@ class Directory:
         )
         yield from self.iter_entries(base, missing_filter)
 
-    def iter_entries(self, base: str, search_filter: str) -> Iterable[tuple[str, dict]]:
+    def iter_entries(self, base: str, search_filter: str, domain_scope=False) -> Iterable[tuple[str, dict]]:
         cookie = b""
         while True:
             control = SimplePagedResultsControl(True, size=self.settings.page_size, cookie=cookie)
+            controls = [control]
+            if domain_scope:
+                from ldap.controls import LDAPControl
+                controls.append(LDAPControl('1.2.840.113556.1.4.1339', criticality=True))
 
             def search(connection):
                 msgid = connection.search_ext(
@@ -296,7 +322,7 @@ class Directory:
                     ldap.SCOPE_SUBTREE,
                     search_filter,
                     self.attributes,
-                    serverctrls=[control],
+                    serverctrls=controls,
                 )
                 return connection.result3(msgid)
 
@@ -399,14 +425,14 @@ class AuditFollower:
         if self.handle is None:
             self.open_at_end()
             return []
-        lines = self.handle.readlines()
+        lines = self.complete_lines()
         try:
             current = self.path.stat()
         except FileNotFoundError:
             current = None
         if current is None or current.st_ino != self.inode:
             # Drain the renamed file before opening the replacement at offset 0.
-            lines.extend(self.handle.readlines())
+            lines.extend(self.complete_lines())
             self.close()
             if current is not None and stat.S_ISREG(current.st_mode):
                 self.handle = self.path.open("r", encoding="utf-8", errors="replace")
@@ -414,6 +440,20 @@ class AuditFollower:
         elif self.handle.tell() > current.st_size:
             self.handle.seek(0)
         return lines
+
+    def complete_lines(self) -> list[str]:
+        lines = []
+        while True:
+            offset = self.handle.tell()
+            line = self.handle.readline()
+            if not line:
+                return lines
+            if not line.endswith("\n"):
+                # The DC may still be writing this JSON record. Re-read its
+                # entire line on the next poll instead of losing both pieces.
+                self.handle.seek(offset)
+                return lines
+            lines.append(line)
 
 
 class Worker:
@@ -560,11 +600,12 @@ class Worker:
                     self.directory.ensure_mail(change['dn'])
         if self.journal is None:
             return None
-        event = normalize_change(record, self.settings.event_attributes, self.dn_in_scope)
+        event = normalize_change(record, self.settings.event_attributes, self.event_dn_in_scope)
         if event is None:
             return None
         published = self.journal.append(event)
         self.health["last_published_seq"] = published["seq"]
+        self.write_health()
         return published
 
     def dn_in_scope(self, dn: str) -> bool:
@@ -574,6 +615,19 @@ class Worker:
             if normalized == normalized_base or normalized.endswith("," + normalized_base):
                 return True
         return False
+
+    def event_dn_in_scope(self, dn: str) -> bool:
+        if self.dn_in_scope(dn):
+            return True
+        # Non-login resources are event sources, never candidates for anchor
+        # stamping. Keeping these scopes separate avoids Add-event retries for
+        # resources that can never match the user/group identity filter.
+        base = getattr(self.settings, 'mail_search_base', '')
+        if not self.settings.mail_domain or not base:
+            return False
+        lowered = dn.casefold()
+        return any(lowered.endswith(',ou=' + ou + ',ou=mail,' + base.casefold())
+                   for ou in ('mailboxes', 'addresses'))
 
     def run(self) -> None:
         # Establish the audit cursor before scanning, so creates concurrent with
