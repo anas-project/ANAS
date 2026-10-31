@@ -121,6 +121,9 @@ func networkCreateArgs(name string, env map[string]string) []string {
 		"--subnet", env["HOST_SEGMENT"],
 		"--gateway", env["VLAN_GATEWAY_IP"],
 	}
+	if address := env["HOST_LAN_IP"]; address != "" {
+		args = append(args, "--label", "dev.anas.host-lan-ip="+address)
+	}
 	if segment := env["VLAN_SEGMENT"]; segment != "" {
 		args = append(args, "--ip-range", segment)
 	}

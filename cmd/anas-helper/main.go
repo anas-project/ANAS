@@ -34,6 +34,9 @@ const usage = `anas-helper performs the operations anas cannot do unprivileged.
               Create the macvlan bridge if absent, give it exactly --address,
               bring it up, and route each --route through it.
 
+  restore-macvlan
+              Restore anas_bridge from the local Docker network after reboot (root).
+
   bridge down --name <bridge>
               Delete the bridge.
 
@@ -44,6 +47,11 @@ func run(args []string) error {
 		return fmt.Errorf("no operation given\n\n%s", usage)
 	}
 	switch args[0] {
+	case "restore-macvlan":
+		if len(args) != 1 {
+			return fmt.Errorf("restore-macvlan takes no arguments")
+		}
+		return restoreMacvlan()
 	case "bridge":
 		return runBridge(args[1:])
 	case "help", "-h", "--help":

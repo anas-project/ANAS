@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-19
-updated: 2026-09-13
+updated: 2026-10-31
 ---
 
 # `BASE_DOMAIN` 与 `SAMBA_DC_DOMAIN` 分离实施计划
@@ -1088,3 +1088,73 @@ WP1-WP4 完成后可以支持全新分离部署，包括父子域的 `ad_zone` �
 | [部署与配置命令 JSON 契约](../../docs/reference/contracts/commands.md)与英文镜像、上述运维文档 | WP5 的 `migrate-service-domain`、`migrate-application-dns-zone` 命令、错误码与迁移步骤 | 未开始 |
 | 升级说明与不支持拓扑（WP7） | 正式发布说明，等 WP4 真实运行与 WP5/WP6 范围决策后写 | 未开始 |
 | `samba_dc` 技术文档（中英文） | WP6 的 canonical DC 独立证书 | 未开始 |
+
+## 2026-10-31：WP3 Samba FS 宿主桥重启恢复修复
+
+本节记录 WP3 既有 Samba FS 可用性路径的缺陷修复，不变更域分离验收范围。
+本计划尚未采用稳定需求 ID，因此以下结果按既有 WP3/WP4 工作包记录，不代表整个主题通过。
+
+- **故障确认**：ln 的 DC healthy，宿主到 `172.16.1.1` 的 TCP 53/88/389/445 全部成功，
+  `_kerberos._tcp.lnnj.com.cn` 返回正确 canonical DC；FS 命名空间中同一 DNS 查询超时、
+  同一组端口失败、宿主邻居状态 FAILED。宿主缺失 `anas_bridge`；Docker 网络仍保留
+  `172.16.255.241` 桥地址与 `172.16.255.240/28` 地址池，FS 地址为 `172.16.255.242`。
+  FS 仍为 `4.23.6-r5`，没有仓库 r7 已有的 transport hosts 映射与 DNS `/32` 路由。
+- **源码基线**：`37121d17cf5a048c62390d1a4297175f74b6efed` 加本轮未提交差异；
+  `cmd/anas-helper/restore.go` 从本机 Docker socket 恢复既有网络桥及路由，复用原有 bridge
+  校验与执行；`internal/runner/network.go` 在新建网络 label 保存固定成员地址；
+  `install.sh` 安装 Docker 启动后恢复配置并在卸载时清理。没有新增依赖或配置副本。
+- **WP3 单元回归通过**：helper 重建/重复执行计划、旧地址池与固定地址路由、非法范围拒绝；
+  Samba FS 域接线、既有信任复用、join 后验证及 DNS 注册；runner 桥参数与网络创建回归。
+  安装器安装/升级/卸载测试、helper/Samba FS 完整包测试及 `docs:build` 通过。
+  `docs:check-plan-status`、`docs:check-requirement-status` 通过；`docs:check-requirements`
+  被既有 `auth-entry-and-signout` 的 `AUTHUX-R-001/002/003` 缺少 E2E 执行记录阻断，
+  后续用例 catalog 子命令因此未运行；未改动该无关计划。首次受限环境中的 Go 测试无法访问工具链与
+  缓存，使用正常本机权限重跑通过；安装器测试开发中暴露的卸载分支和断言位置问题已修复并重跑通过。
+- **WP3 Linux 隔离实测通过**：Linux amd64 helper SHA-256 为
+  `93267398f079929ddb91ac78f18dec60c8a4247116e2c5fda93b79a3a0a482bf`。
+  在 ln 的 `sudo unshare -n` 临时网络空间内创建同名 dummy 父接口，读取真实 Docker 网络，
+  连续执行两次恢复，再删除桥并恢复：`anas_bridge` 均为 UP、地址 `172.16.255.241/32`，
+  地址池与 FS `/32` 路由均正确。隔离空间退出后自动销毁，临时上传二进制已删除。
+- **证据与限制**：本机编译制品 `/tmp/anas-helper-dns-recovery`；文档构建日志
+  `/tmp/anas-dns-docs-build.log`，均为本机临时证据，不是共享持久档案。Linux 实测输出与
+  远端只读诊断保留在本次聊天的工具回执；未执行生产升级、真实主机重启或 SMB 客户端读写，
+  不把隔离建桥成功当成生产验收。
+- **剩余阻塞/下一步**：生产需同时更新 helper/安装启动恢复配置、部署包含 r7 接线的 FS，
+  再验证 DNS、Kerberos、`net ads testjoin`、`wbinfo -t` 和共享访问。WP4 fresh apply 等
+  既有未完成项保持原状态；本轮不标记主题验收成功或归档。
+
+
+### 同日补充：ln Samba FS 定向部署与真实 SMB 验证
+
+用户明确授权部署到 ln、验证 healthy/入域/共享，并要求主要修复 FS、不要修改其他容器。
+仅在现有 FS deployment 中替换镜像与增加 `SAMBA_FS_DC_TRANSPORT_IP`；没有执行全局
+`anas apply`、没有重启 Docker/DC 或其他应用。宿主仅更新 `anas-helper`、恢复桥和路由，
+安装 `docker.service.d/anas-macvlan.conf` 并 daemon-reload。
+
+- **制品**：以线上 `4.23.6-r5` 为基础，仅覆盖源码中的 `11-samba_fs.sh`、`join_ad.sh`、
+  `register_ad_dns.sh`、`krb5.conf.envsubst`；不替换其他启动/权限脚本或系统软件包。
+  这是本机修复镜像 `anas-local/anas-samba-fs:4.23.6-r7-network-20261031`，不是官方 r7 镜像。
+  image ID：`sha256:138a79a6a2db8506b0967967e2b1c91f4ed18208e4d7a268b991afe698e50cfa`；
+  helper 仍为上一节记录的 SHA-256。FS 新容器为
+  `b20d12286dbdb7b3a9a784e38c875a216aa3e1403f461d92f7d4f19db22476a1`。
+- **WP3 生产子集通过**：2026-10-31 19:31:26—19:33:00 UTC+08:00 连续 4 次健康检查通过，
+  `healthy`、FailingStreak=0；`net ads testjoin` 返回 `Join is OK`，`wbinfo -t` 与
+  `wbinfo --ping-dc` 成功。启动日志为 `Existing AD membership is valid`，没有 join/leave，
+  保留了原机器信任。容器访问域控 53/88/389/445 成功，Kerberos SRV 和 FS A 记录正确。
+- **WP3 共享访问通过**：独立的临时 SMB 客户端使用宿主网络与现有目录管理员账号连接
+  `172.16.255.242`，列出 Home/Share；Share 列目录、SMB3 写入/下载、内容校验和删除均成功。
+  测试内容 SHA-256：`6037524434cc57eeebb9eadf8568e8dacdae0d644d37a859472758a671ebbf92`。
+  临时测试文件和客户端容器已删除，凭据通过标准输入传入，临时认证文件随客户端清理；未新增账户。
+  这证明该账号经宿主网络访问 Share 成功，不扩大为全部用户 ACL、Home 读写或物理客户端验收。
+- **范围核对通过**：只重建 FS；39 个其他容器的 ID、StartedAt、RestartCount 与部署前一致。
+  `ln-mesh-v2fly` 在操作前已经处于 Restarting，RestartCount 从 599 自动增长到 601，
+  本轮没有对它执行变更或重启。
+- **远端回退与证据**：ln 的 `/home/whl/anas-fs-recovery-20261031/` 为受限目录，保存原 compose、
+  `.env`、helper、停容器后的 `/var/lib/samba` tar 备份、修复构建上下文/日志、SMB 实测日志、
+  前后容器基线、`verification-summary.json` 和 `fs-startup.log`。这是远端本机保存，未声明
+  独立的共享持久档案；`.env`/inspect 含敏感配置，不纳入 Git。部署中 compose 首次写入因目录
+  为 root 所有被拒，随后用正常 sudo 权限完成，没有扩大容器范围。
+- **后续边界**：Docker 的启动恢复配置已加载，但未为验证而重启生产 Docker 或宿主机；
+  开机恢复的 Linux 实测边界仍以上一节隔离验证为准。下次全量 apply/升级必须从包含本修复的
+  发布源码和 FS 接线生成 deployment，避免旧部署源覆盖本次定向修复。WP4 等未完成项仍未完成，
+  不能把本次单机 FS 修复写为整个域分离计划验收成功。

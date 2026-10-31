@@ -152,6 +152,9 @@ func TestNetworkCreateArgsOmitsRangeWhenAddressIsPinned(t *testing.T) {
 		"VLAN_BRIDGE_IP":  "192.168.1.50", "HOST_LAN_IP": "192.168.1.51",
 	}
 	args = strings.Join(networkCreateArgs("anas_macvlan", pinned), " ")
+	if !strings.Contains(args, "--label dev.anas.host-lan-ip=192.168.1.51") {
+		t.Errorf("pinned address missing from reboot recovery metadata: %s", args)
+	}
 	if strings.Contains(args, "--ip-range") {
 		t.Errorf("pinned address must not be constrained by a range: %s", args)
 	}

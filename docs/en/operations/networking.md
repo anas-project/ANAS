@@ -15,6 +15,27 @@ Normal services communicate through module-declared Docker networks. Services th
 
 A common macvlan property is that the host cannot directly reach containers on the same macvlan. Do not solve this by granting an arbitrary root shell to ANAS; use a constrained helper and sudoers policy.
 
+### Restoring the host bridge after reboot
+
+Linux macvlan links and routes do not survive a host reboot. The service installer adds
+`docker.service.d/anas-macvlan.conf`, running `anas-helper restore-macvlan` after Docker starts.
+The helper reads the existing `anas_macvlan` network from the local Docker socket and restores
+`anas_bridge`, its reserved address, and member routes without a second configuration store.
+New networks preserve the pinned member address in the `dev.anas.host-lan-ip` label, allowing
+recovery before containers start. Legacy networks use their IPAM pool and visible endpoints.
+The recovered bridge uses a `/32` address to avoid redirecting the entire LAN subnet.
+
+An absent network is a no-op. Recovery failures appear in Docker's systemd journal without
+blocking other Docker services. Installing does not restart Docker; initial deployment still
+creates the bridge through `anas apply`. A `--no-service` installation must arrange this root
+recovery command separately.
+
+When Samba FS uses macvlan and the DC uses host networking, the FS image also needs its
+canonical DC name mapped to the bridge address and a `/32` route to the original DNS listener
+through that bridge. Restoring the host bridge alone cannot fix an older image missing this
+wiring. Compare host and container DNS SRV queries, ports 53/88/389/445, and `wbinfo -t`;
+a healthy DC alone does not establish FS connectivity.
+
 ### LAN addresses must be excluded from the DHCP pool
 
 Addresses on the macvlan are allocated by Docker's own IPAM. No DHCP request is made and no duplicate-address detection happens. The defaults come from the top of the host segment (bridge `.241`, container `.242`), which relies on the convention that a router's DHCP pool does not reach that far — not on any agreement.

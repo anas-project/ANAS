@@ -196,6 +196,11 @@ main() {
         run_as_root rm -f "$hostd_socket_unit" "$hostd_service_unit"
         run_as_root "$systemctl_command" daemon-reload
       fi
+      docker_dropin="$(dirname "$systemd_unit")/docker.service.d/anas-macvlan.conf"
+      if [ -e "$docker_dropin" ]; then
+        run_as_root rm -f "$docker_dropin"
+        run_as_root "$systemctl_command" daemon-reload
+      fi
       remove_legacy_relay
       if [ -e "$hostd_config" ]; then run_as_root rm -f "$hostd_config"; fi
       if [ -e "$hostd_target" ]; then run_as_root rm -f "$hostd_target"; fi
@@ -400,6 +405,14 @@ main() {
     run_as_root install -m 0644 "$rendered_unit" "$systemd_unit"
     run_as_root install -m 0644 "$rendered_hostd_socket" "$hostd_socket_unit"
     run_as_root install -m 0644 "$rendered_hostd_service" "$hostd_service_unit"
+    # Docker persists networks/containers, but Linux macvlan links disappear on
+    # reboot. Restore only ANAS' bridge after Docker has loaded its networks.
+    # A recovery error is logged without preventing unrelated Docker services.
+    docker_dropin_dir="$(dirname "$systemd_unit")/docker.service.d"
+    rendered_docker_dropin="$work_dir/anas-macvlan.conf"
+    printf '[Service]\nExecStartPost=-%s restore-macvlan\n' "$helper_target" >"$rendered_docker_dropin"
+    run_as_root install -d -m 0755 "$docker_dropin_dir"
+    run_as_root install -m 0644 "$rendered_docker_dropin" "$docker_dropin_dir/anas-macvlan.conf"
     remove_legacy_relay
     run_as_root "$systemctl_command" daemon-reload
     run_as_root "$systemctl_command" enable "$hostd_socket_name" >/dev/null

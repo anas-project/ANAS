@@ -261,6 +261,8 @@ grep -qx 'port: 7788' "$service_config"
 grep -Fqx "console_store: $console_store" "$service_config"
 grep -Fqx "ExecStart=$service_target/anasd --config $service_config" "$service_unit"
 grep -Fqx "ReadWritePaths=-$console_store -/srv/anas -/srv/anas-backups" "$service_unit"
+# Reboot recovery is installed without restarting Docker.
+grep -Fqx "ExecStartPost=-$fixture/service/helper/anas-helper restore-macvlan" "$fixture/service/systemd/docker.service.d/anas-macvlan.conf"
 grep -qx 'User=root' "$service_unit"
 grep -qx 'ProtectSystem=strict' "$service_unit"
 grep -qx 'RuntimeDirectory=anas/confirmations' "$service_unit"
@@ -297,6 +299,7 @@ grep -qx 'enable anasd-fixture.service' "$systemctl_log"
 grep -qx 'restart anasd-fixture.service' "$systemctl_log"
 
 service_install --uninstall
+[[ ! -e "$fixture/service/systemd/docker.service.d/anas-macvlan.conf" ]]
 [[ ! -e "$service_target/anas" && ! -e "$service_target/anasd" && ! -e "$service_unit" && ! -e "$hostd_socket_unit" && ! -e "$hostd_service_unit" && ! -e "$relay_service_unit" && ! -e "$hostd_config" && ! -e "$fixture/service/helper/anas-helper" && ! -e "$fixture/service/helper/anas-hostd" && ! -e "$fixture/service/helper/anas-incus-control-relay" ]]
 [[ -e "$service_config" && -e "$console_store/preserve-me" ]]
 grep -qx 'disable --now anasd-fixture.service' "$systemctl_log"

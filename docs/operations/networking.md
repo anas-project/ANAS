@@ -17,6 +17,24 @@ Traefik 是公开 HTTP/HTTPS 入口，证书由所选 ACME/DNS 能力提供。�
 
 macvlan 常见限制是宿主机不能直接访问同一 macvlan 上的容器。ANAS 用一个只持有 `CAP_NET_ADMIN` 的独立二进制 `anas-helper` 建立桥接口来解决，不需要 sudoers 规则，也不需要任何 root shell。参考 [特权 helper Runbook](runbooks/privileged-helper.md)。
 
+### 重启后恢复宿主桥
+
+Linux macvlan 桥接口和路由不会跨宿主重启保留。服务安装器为 `docker.service` 安装
+`docker.service.d/anas-macvlan.conf`，在 Docker 启动后执行
+`anas-helper restore-macvlan`。helper 从本机 Docker socket 读取现存的 `anas_macvlan`，
+恢复 `anas_bridge`、预留桥地址和成员路由，不另存一份网络配置。新建网络在
+`dev.anas.host-lan-ip` label 中保存固定成员地址，即使容器还没启动也能恢复路由；
+旧网络使用已有 IPAM 地址池及可见成员地址。恢复桥使用 `/32` 地址，避免接管整个 LAN 网段。
+
+没有该网络时直接返回。恢复失败会记录在 Docker 的 systemd 日志中，其他 Docker 服务仍可启动。
+安装后无需重启 Docker；首次部署仍由 `anas apply` 建桥，后续 Docker 启动使用恢复入口。
+`--no-service` 安装不配置自动恢复，需自行安排启动时执行该 root 命令。
+
+若 Samba FS 使用 macvlan、DC 使用宿主网络，FS 还必须包含容器侧接线：canonical DC
+名称映射到桥地址，原始 DNS 地址通过桥作为下一跳的 `/32` 路由访问。仅恢复宿主桥不能
+修复缺少这些接线的旧镜像。检查时应对照宿主与容器的 DNS SRV 查询、53/88/389/445
+端口及 `wbinfo -t`，不能仅依据 DC healthy 判断 FS 可用。
+
 ### 局域网地址必须排除出 DHCP 池
 
 macvlan 上的地址由 Docker 自己的 IPAM 分配，**不走 DHCP**，也不做重复地址检测。默认从宿主网段顶部取（桥 `.241`、容器 `.242` 之类），这只是"路由器的 DHCP 池通常不发到段顶"这个约定，不是任何协议保证。
