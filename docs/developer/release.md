@@ -98,6 +98,22 @@ Core release 不内嵌 Module。Module 有自己的版本、OCI digest 和更新
 写入用户级源偏好，新建或导入配置再把它固化到 config/lock；本地 `modules/` + `contracts/`
 只保留为源码开发覆盖。
 
+## 发布状态与依赖审查
+
+Module 制品及其派生镜像、mirror 的新发布只选择 `status: release` 的 Module；`developing` 不因进入
+发布分支自动取得发布资格。`workflow_dispatch module=<name>` 同样受此过滤，不能用手工入口绕过。
+发现目录中的已有版本不因这次过滤被删除或改指向未发布版本。
+
+发布分支在计算 revision 和上传制品前执行 `go run ./cmd/check-release-modules`。它检查 release Module
+的直接和间接依赖、备选依赖、Capability 及兼容版本/interface 的 Contract Provider；条件依赖保留
+`enabled_by` 信息，Provider 候选不冒充某个实际部署已选择的唯一 Provider。`run_after` 只表示排序，
+不作为必需 Module 依赖。`--list` 仅查询符合状态的名字，不是依赖验收结果。
+
+遇到 developing 或其他非 release 依赖，日志和 GitHub Actions summary 明确提醒并阻止该发布批次。
+随后由维护者核对该依赖的配对需求、计划、实测源码/制品及未完成项，并向用户报告是否达到发布标准。
+计划标为 done 或上层已标 release 都不能代替这一核对；没有自动豁免，也不静默扩大本批发布范围。
+Core 不嵌入 Module，仍按独立 Core 门禁结算。
+
 ## Module 与容器整体流程
 
 工作流 `.github/workflows/container-images.yml` 从专用 `image-release` 分支同时处理：
