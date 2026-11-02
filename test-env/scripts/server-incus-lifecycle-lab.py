@@ -92,6 +92,24 @@ def host_baseline(root, phase):
             raise RuntimeError('physical host baseline changed')
 
 
+
+def require_memory_budget(memory_mib):
+    """Reject swapping an oversized lab VM into an otherwise busy host."""
+    try:
+        values = {}
+        for line in Path('/proc/meminfo').read_text().splitlines():
+            fields = line.split()
+            if fields and fields[0] in ('MemTotal:', 'MemAvailable:'):
+                values[fields[0]] = int(fields[1])
+        total, available = values['MemTotal:'], values['MemAvailable:']
+    except (OSError, KeyError, ValueError, IndexError) as error:
+        raise RuntimeError('available RAM could not be verified') from error
+    if (type(memory_mib) is not int or memory_mib <= 0 or not 0 < available <= total
+            or (memory_mib + 512) * 1024 > available):
+        raise RuntimeError('insufficient available RAM for the disposable VM; swap is not counted')
+    return {'vm_memory_mib': memory_mib, 'available_kib': available, 'hypervisor_reserve_mib': 512}
+
+
 def prepare(name, base, base_sha, port, install):
     root = round_dir(name)
     root.mkdir(mode=0o700)
@@ -168,6 +186,8 @@ def run(name, generation):
     if subprocess.run(['pgrep', '-x', 'qemu-system-x86'], stdout=subprocess.DEVNULL).returncode == 0:
         raise SystemExit('another QEMU is running; one lab VM at a time')
     os.umask(0o077)
+    memory = require_memory_budget(lab['memory_mib'])
+    (reports/'memory-admission.json').write_text(json.dumps(memory, sort_keys=True) + '\n')
     host_baseline(root, 'before')
     with socket.socket() as probe:
         probe.bind(('127.0.0.1', lab['port']))

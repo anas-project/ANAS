@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"crypto/sha256"
-	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/anas-project/ANAS/internal/consolejobs"
 	"github.com/anas-project/ANAS/internal/hostaction"
 	"github.com/anas-project/ANAS/internal/incusprovision"
 	"github.com/anas-project/ANAS/internal/runtimeissues"
@@ -88,7 +86,7 @@ func (w *portBindingWatch) Run(ctx context.Context) {
 	for _, ws := range w.workspaces {
 		seen[ws.ID] = w.activation(ws.Path)
 	}
-	w.sync(ctx)
+	pending := !w.sync(ctx)
 	starts, failed := w.events(ctx)
 	ticker := time.NewTicker(w.poll)
 	defer ticker.Stop()
@@ -99,14 +97,17 @@ func (w *portBindingWatch) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			changed := false
+			observed := map[string]string{}
+			changed := pending
 			for _, ws := range w.workspaces {
-				if identity := w.activation(ws.Path); identity != seen[ws.ID] {
-					seen[ws.ID], changed = identity, true
-				}
+				observed[ws.ID] = w.activation(ws.Path)
+				changed = changed || observed[ws.ID] != seen[ws.ID]
 			}
 			if changed {
-				w.sync(ctx)
+				pending = !w.sync(ctx)
+				if !pending {
+					seen = observed
+				}
 			}
 			if time.Since(lastCheck) >= w.interval {
 				w.checkOnce(ctx)
@@ -135,14 +136,16 @@ func (w *portBindingWatch) Run(ctx context.Context) {
 	}
 }
 
-func (w *portBindingWatch) sync(ctx context.Context) {
+func (w *portBindingWatch) sync(ctx context.Context) bool {
 	if ctx.Err() != nil || !w.approved() {
-		return
+		return false
 	}
 	// The port maps are host-wide; one registered workspace scopes the job.
-	if _, err := w.host.InvokeSync(ctx, w.workspaces[0].ID, hostaction.ActionPortsSync); err != nil && !errors.Is(err, consolejobs.ErrConflict) {
+	if _, err := w.host.InvokeSync(ctx, w.workspaces[0].ID, hostaction.ActionPortsSync); err != nil {
 		w.log("port binding sync could not be queued: %v", err)
+		return false
 	}
+	return true
 }
 
 // checkOnce records each workspace's current findings and resolves those it

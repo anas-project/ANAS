@@ -127,7 +127,8 @@ class SharedBuildSafety(unittest.TestCase):
             result = lab.parse_probe_output(module, ('c'*64+'  /usr/local/bin/'+lab.MODULES[module][1]+'\n').encode())
             self.assertEqual(result, {'binary_sha256': 'c'*64})
         dockerfile = Path(__file__).resolve().parents[2]/'modules/forgejo/actions-controller/Dockerfile'
-        self.assertIn('go install github.com/lxc/incus/v7/cmd/incus@'+lab.INCUS_MODULE_VERSION, dockerfile.read_text())
+        self.assertIn('go get github.com/lxc/incus/v7/cmd/incus@'+lab.INCUS_MODULE_VERSION, dockerfile.read_text())
+        self.assertIn('golang.org/x/net@v0.60.0 golang.org/x/crypto@v0.57.0', dockerfile.read_text())
 
     def test_complete_result_rejects_missing_or_different_cli_evidence(self):
         results = []

@@ -7,6 +7,57 @@ import (
 	"testing"
 )
 
+func TestCreatedDisabledControllerRunsCleanupBeforeStopIsAuthorized(t *testing.T) {
+	for _, failure := range []string{"", "start-failed", "cleanup-failed", "replaced"} {
+		t.Run(failure, func(t *testing.T) {
+			old := runContainerHelper
+			t.Cleanup(func() { runContainerHelper = old })
+			id, other := strings.Repeat("a", 64), strings.Repeat("b", 64)
+			started, terminalReads := false, 0
+			runContainerHelper = func(ctx context.Context, payload []byte, name string, args ...string) ([]byte, error) {
+				if name != "docker" || len(payload) != 0 || ctx == nil {
+					t.Fatal("unexpected operation")
+				}
+				switch args[0] {
+				case "container":
+					return []byte(id), nil
+				case "inspect":
+					if !started {
+						return controllerObservation(id, "created", 0), nil
+					}
+					terminalReads++
+					if failure == "cleanup-failed" {
+						return controllerObservation(id, "exited", 1), nil
+					}
+					if failure == "replaced" {
+						return controllerObservation(other, "exited", 0), nil
+					}
+					return controllerObservation(id, "exited", 0), nil
+				case "start":
+					if len(args) != 2 || args[1] != id || started {
+						t.Fatal("cleanup start is not ID-bound", args)
+					}
+					started = true
+					if failure == "start-failed" {
+						return nil, errors.New("private failure")
+					}
+					return []byte(id), nil
+				default:
+					t.Fatal("created cleanup was stopped or unrelated state was changed", args)
+				}
+				return nil, errors.New("unexpected operation")
+			}
+			err := drainActionsController(context.Background(), map[string]string{"CONTAINER_PREFIX": "anas_", "FORGEJO_ACTIONS_ENABLED": "false"})
+			if !started || (failure == "" && (err != nil || terminalReads < 2)) || (failure != "" && err == nil) {
+				t.Fatal("created cleanup result not independently confirmed", started, terminalReads, err)
+			}
+			if err != nil && strings.Contains(err.Error(), "private") {
+				t.Fatal("private error leaked")
+			}
+		})
+	}
+}
+
 func TestStopBarrierSignalsOnlyTheObservedControllerAndChecksExit(t *testing.T) {
 	for _, mode := range []string{"true", "false"} {
 		t.Run(mode, func(t *testing.T) {

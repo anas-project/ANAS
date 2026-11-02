@@ -82,7 +82,7 @@ func TestActionsDisableWaitsForSameProcessCleanupNotReplacement(t *testing.T) {
 			return body, nil
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		err := waitDisabledController(ctx, "anas_", time.Nanosecond)
+		err := waitDisabledController(ctx, "anas_", "", time.Nanosecond)
 		cancel()
 		if (!replaced && (err != nil || calls != 3)) || (replaced && (err == nil || calls != 2)) {
 			t.Fatal("cleanup did not await the same container or accepted replacement", err, calls)
@@ -104,7 +104,7 @@ func TestControllerWaitCancellationDoesNotAuthorizeCredentialMutation(t *testing
 		cancel()
 		return controllerObservation(strings.Repeat("a", 64), "running", 0), nil
 	}
-	if err := waitDisabledController(ctx, "anas_", time.Nanosecond); err == nil || calls != 1 {
+	if err := waitDisabledController(ctx, "anas_", "", time.Nanosecond); err == nil || calls != 1 {
 		t.Fatal("cancellation authorized a credential change", err, calls)
 	}
 }
@@ -121,7 +121,7 @@ func TestControllerObservationReceivesTheWaitDeadline(t *testing.T) {
 		<-got.Done()
 		return nil, got.Err()
 	}
-	if err := waitDisabledController(ctx, "anas_", time.Nanosecond); err == nil {
+	if err := waitDisabledController(ctx, "anas_", "", time.Nanosecond); err == nil {
 		t.Fatal("canceled observation granted mutation permission")
 	}
 }
@@ -138,7 +138,7 @@ func TestControllerObservationRejectsDuplicateAndAliasedFacts(t *testing.T) {
 		t.Cleanup(func() { runContainerHelper = old })
 		runContainerHelper = func(context.Context, []byte, string, ...string) ([]byte, error) { return []byte(body), nil }
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		err := waitDisabledController(ctx, "anas_", time.Nanosecond)
+		err := waitDisabledController(ctx, "anas_", "", time.Nanosecond)
 		cancel()
 		if err == nil {
 			t.Fatal("ambiguous process facts authorized credential revocation")

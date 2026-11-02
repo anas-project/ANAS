@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -81,6 +82,9 @@ func (c *Client) writeCredentialsContext(ctx context.Context, configDir string) 
 		"remotes": map[string]any{remoteName: map[string]any{
 			"addr": c.lease.Endpoint, "auth_type": "tls", "project": c.lease.Sandbox,
 			"protocol": "incus", "public": false,
+			// Incus records this after connecting and otherwise rewrites the
+			// whole config. The lease already pins this sole permitted address.
+			"last_working_address": strings.TrimSuffix(c.lease.Endpoint, "/"),
 		}},
 	})
 	if err != nil {

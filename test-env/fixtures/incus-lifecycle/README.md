@@ -5,6 +5,8 @@
 
 ## 前置条件
 
+实验 owner 启动前要求实际 `MemAvailable` 覆盖 VM 内存及 512 MiB hypervisor 余量；不把 swap 计入可用 RAM。内存不足会在 QEMU 启动前拒绝，不降低 guest 配额或时延门槛。
+
 使用独立、可删除的系统盘和新的 cloud-init `instance-id`，形如 `anas-incus-lifecycle-abc123`。
 在 VM 内安装匹配发行版的官方 `incus`、`incus-client`、`btrfs-progs`、`nftables` 和
 `dnsmasq-base`。`--no-install-recommends` 不会自动安装最后一项。VM 必须没有 Docker，
@@ -55,6 +57,8 @@ ensure/inspect。两份消费者证书不更换；运行中实例的 UUID、gene
 
 正常与失败路径均只清理固定的测试对象，未知名称拒绝自动删除。测试 runtime、TLS 文件
 保存在 VM 私有 `/run/anas-incus-lifecycle`，报告根保存失败记录、逐事件 JSONL 和镜像摘要。
+VM 失败时额外保留有界串口 console 与内层执行宿主 kernel journal，以区分 agent、启动和内存故障；不收集 runtime TLS 私钥。
+
 失败后先保存报告和实际清理结果，不能把未知副作用计为已清理。重跑必须使用新的报告目录，
 并由实验所有者先核实旧资源；不自动覆盖旧私有配置或旧证据。
 

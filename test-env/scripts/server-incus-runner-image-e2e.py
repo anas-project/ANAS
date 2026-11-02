@@ -92,19 +92,23 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
-def verify_export(directory, expected):
+def verify_export(directory, expected, isolation="container"):
     if not re.fullmatch('[a-f0-9]{64}', expected):
         raise RuntimeError('independently recorded bake fingerprint is required')
     release = json.loads((directory / 'artifact.json').read_text())
     artifact, entry = release['artifact'], release['entry']
-    target = {'architecture': 'amd64', 'interface': 'incus_container'}
+    if isolation not in ('container', 'vm'):
+        raise RuntimeError('fixed container or vm isolation required')
+    interface = 'incus_vm' if isolation == 'vm' else 'incus_container'
+    rootfs = 'disk.qcow2' if isolation == 'vm' else 'rootfs.squashfs'
+    target = {'architecture': 'amd64', 'interface': interface}
     if (artifact['format'] != 'split' or artifact['target'] != target
             or artifact['fingerprint'] != expected or entry['fingerprint'] != expected
-            or entry['architecture'] != 'amd64' or entry['interface'] != 'incus_container'
+            or entry['architecture'] != 'amd64' or entry['interface'] != interface
             or entry['name'] != 'forgejo-runner' or len(artifact['parts']) != 2):
         raise RuntimeError('export does not match the independently recorded Runner bake')
     combined = hashlib.sha256()
-    for part, name, role in zip(artifact['parts'], ('incus.tar.xz', 'rootfs.squashfs'), ('metadata', 'rootfs')):
+    for part, name, role in zip(artifact['parts'], ('incus.tar.xz', rootfs), ('metadata', 'rootfs')):
         path = directory / name
         info = path.lstat()
         if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or part['role'] != role
@@ -128,7 +132,7 @@ def require_staging_space(release):
     if len(sizes) != 2 or any(type(size) is not int or size <= 0 for size in sizes):
         raise RuntimeError('positive measured split artifact sizes required')
     try:
-        fs = os.statvfs('/run')
+        fs = os.statvfs(SUPPLY.parent if SUPPLY.parent.exists() else Path('/run'))
     except OSError:
         raise RuntimeError('private image staging capacity is unavailable') from None
     if fs.f_frsize <= 0 or fs.f_bavail < 0 or fs.f_bavail * fs.f_frsize < sum(sizes) + STAGING_HEADROOM:
@@ -149,16 +153,35 @@ def emit(name, **fields):
     print(json.dumps({'check': name, 'passed': True, **fields}), flush=True)
 
 
+def provider_confirmed(result, operation):
+    """Ensure reports the current lease network as well as readiness flags."""
+    if not isinstance(result, dict):
+        return False
+    flags = ('exists', 'ready', 'restricted', 'quota_enforced')
+    expected = set(flags)
+    if operation == 'ensure':
+        expected.add('network')
+        network = result.get('network')
+        if not isinstance(network, dict) or any(not isinstance(network.get(k), str) or not network[k]
+                                                for k in ('bridge', 'ipv4_subnet')):
+            return False
+    return set(result) == expected and all(result[k] is True for k in flags)
+
+
 def main(args):
     require_vm(args.vm_id)
+    isolation = getattr(args, 'isolation', 'container')
+    interface = 'incus_vm' if isolation == 'vm' else 'incus_container'
+    rootfs = 'disk.qcow2' if isolation == 'vm' else 'rootfs.squashfs'
+    memory, cpu, disk = (4096, 2, 20) if isolation == 'vm' else (768, 1, 8)
     exported, report = Path(args.exported_image), Path(args.report_root)
-    if not exported.is_absolute() or not report.is_absolute() or report.exists() or ROOT.exists() or SUPPLY.parent.exists():
+    if not exported.is_absolute() or not report.is_absolute() or report.exists() or ROOT.exists() or (SUPPLY.parent.exists() and any(SUPPLY.parent.iterdir())):
         raise RuntimeError('fresh private runtime, supply and report locations required')
     for value in (args.provider, args.tests, args.test2json):
         path = Path(value)
         if not path.is_absolute() or path.is_symlink() or not path.is_file():
             raise RuntimeError('absolute regular precompiled test programs required')
-    release = verify_export(exported, args.expected_fingerprint)
+    release = verify_export(exported, args.expected_fingerprint, isolation)
     require_staging_space(release)
     pin = args.expected_fingerprint
     os.umask(0o077)
@@ -183,18 +206,18 @@ def main(args):
         raise RuntimeError('unexpected trusted client in image test daemon')
     try:
         SUPPLY.mkdir(mode=0o700, parents=True)
-        for name in ('incus.tar.xz', 'rootfs.squashfs'):
+        for name in ('incus.tar.xz', rootfs):
             shutil.copyfile(exported/name, SUPPLY/name)
             (SUPPLY/name).chmod(0o400)
         # Exercise the supported explicit-fingerprint branch, not a invented
         # catalog signature. The product validates the full canonical descriptor.
         resolution = {'reference': {'fingerprint': pin}, 'target': release['artifact']['target'], 'fingerprint': pin}
         image = {'resolution': resolution, 'release': release,
-                 'metadata_path': str(SUPPLY/'incus.tar.xz'), 'rootfs_path': str(SUPPLY/'rootfs.squashfs')}
+                 'metadata_path': str(SUPPLY/'incus.tar.xz'), 'rootfs_path': str(SUPPLY/rootfs)}
         descriptor = SUPPLY.parent/'compute-image-supply.json'
         descriptor.write_text(json.dumps({'version': 'anas.compute-image-supply/v1', 'images': [image]}, separators=(',', ':'))+'\n')
         descriptor.chmod(0o400)
-        cli('storage', 'create', POOL, 'btrfs', 'size=12GiB')
+        cli('storage', 'create', POOL, 'btrfs', 'size=32GiB' if isolation == 'vm' else 'size=12GiB')
         for name in ('manager', 'consumer'):
             call(['/usr/bin/openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(ROOT/(name+'.key')),
                   '-out', str(ROOT/(name+'.crt')), '-days', '1', '-subj', '/CN=anas-runner-image-'+name], timeout=20)
@@ -207,19 +230,24 @@ def main(args):
                         'ANAS_RESOURCE_CLIENT_CERT': encode(ROOT/'consumer.crt'), 'INCUS_STORAGE_POOL': POOL,
                         'INCUS_NETWORK_IPV6': 'false', 'ANAS_RESOURCE_CONSUMER': 'runner_image', 'ANAS_RESOURCE_SANDBOX': PROJECT,
                         'ANAS_RESOURCE_INSTANCE_PREFIX': 'anas-bake-', 'ANAS_RESOURCE_IMAGE_ARCHITECTURE': 'amd64',
-                        'ANAS_RESOURCE_MAX_INSTANCES': '1', 'ANAS_RESOURCE_CPU': '1', 'ANAS_RESOURCE_MEMORY_MIB': '768',
-                        'ANAS_RESOURCE_DISK_GIB': '8', 'ANAS_RESOURCE_IMAGE_ALLOWLIST': pin}
+                        'ANAS_RESOURCE_MAX_INSTANCES': '1', 'ANAS_RESOURCE_CPU': str(cpu), 'ANAS_RESOURCE_MEMORY_MIB': str(memory),
+                        'ANAS_RESOURCE_DISK_GIB': str(disk), 'ANAS_RESOURCE_IMAGE_ALLOWLIST': pin}
         for index, operation in enumerate(('ensure', 'ensure', 'inspect')):
-            result = call([args.provider, operation, '--isolation', 'container'], provider_env, timeout=300, check=False)
+            result = call([args.provider, operation, '--isolation', isolation], provider_env, timeout=300, check=False)
             (report/('provider-'+str(index)+'.error')).write_bytes(result.stderr)
-            if result.returncode or json.loads(result.stdout) != {'exists': True, 'ready': True, 'restricted': True, 'quota_enforced': True}:
+            response = json.loads(result.stdout) if result.stdout else None
+            # Structural, non-secret diagnostics; never dump credentials.
+            (report/('provider-'+str(index)+'.response.json')).write_text(json.dumps({
+                'exit_code': result.returncode, 'keys': sorted(response) if isinstance(response, dict) else [],
+                'confirmed': provider_confirmed(response, operation)}))
+            if result.returncode or not provider_confirmed(response, operation):
                 raise RuntimeError('Provider did not confirm baked image supply and complete lease')
         emit('provider_imports_baked_bytes_and_reuses_frozen_image', fingerprint=pin)
         der = base64.b64decode(b''.join(x for x in server.read_bytes().splitlines() if not x.startswith(b'-----')))
-        lease = {'Interface': 'incus_container', 'Endpoint': provider_env['INCUS_ENDPOINT'], 'Sandbox': PROJECT,
+        lease = {'Interface': interface, 'Endpoint': provider_env['INCUS_ENDPOINT'], 'Sandbox': PROJECT,
                  'InstancePrefix': 'anas-bake-', 'Profile': 'anas-lease', 'ServerCertFingerprint': hashlib.sha256(der).hexdigest(),
                  'ServerCertB64': encode(server), 'ClientCertB64': encode(ROOT/'consumer.crt'), 'ClientKeyB64': encode(ROOT/'consumer.key'),
-                 'ImageAllowlist': [pin], 'MaxInstances': 1, 'CPU': 1, 'MemoryMiB': 768, 'DiskGiB': 8}
+                 'ImageAllowlist': [pin], 'MaxInstances': 1, 'CPU': cpu, 'MemoryMiB': memory, 'DiskGiB': disk}
         (ROOT/'lease.json').write_text(json.dumps(lease))
         package = RUNNER_PACKAGE
         with (report/'runner-image.jsonl').open('x') as output:
@@ -230,7 +258,7 @@ def main(args):
         events = [json.loads(line) for line in (report/'runner-image.jsonl').read_text().splitlines()]
         if not runner_events_passed(events, result.returncode):
             raise RuntimeError('baked Runner smoke failed, skipped or omitted a required check')
-        emit('baked_runner_boot_and_engine_smoke', real_forgejo_job=False)
+        emit('baked_runner_boot_and_engine_smoke', real_forgejo_job=False, isolation=interface, runner_memory_mib=memory)
     finally:
         # Only the fixed objects in this new, initially empty daemon are ours.
         if cli('project', 'show', PROJECT, check=False).returncode == 0:
@@ -248,12 +276,12 @@ def main(args):
             if cli('profile', 'show', 'anas-lease', '--project', PROJECT, check=False).returncode == 0:
                 cli('profile', 'delete', 'anas-lease', '--project', PROJECT)
             cli('project', 'delete', PROJECT)
-        bridge = 'anas'+hashlib.sha256(PROJECT.encode()).hexdigest()[:10]
-        if cli('network', 'show', bridge, check=False).returncode == 0:
-            cli('network', 'delete', bridge)
-        # The lease source fence ACL shares the bridge name; free it after the bridge.
-        if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
-            cli('network', 'acl', 'delete', bridge)
+        for prefix in ('lease', 'anas'):
+            bridge = prefix+hashlib.sha256(PROJECT.encode()).hexdigest()[:10]
+            if cli('network', 'show', bridge, check=False).returncode == 0:
+                cli('network', 'delete', bridge)
+            if cli('network', 'acl', 'show', bridge, check=False).returncode == 0:
+                cli('network', 'acl', 'delete', bridge)
         if cli('storage', 'show', POOL, check=False).returncode == 0:
             cli('storage', 'delete', POOL)
         for certificate in json.loads(cli('config', 'trust', 'list', '--format=json').stdout):
@@ -267,6 +295,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--isolation', choices=('container', 'vm'), default='container')
     for name in ('vm-id', 'provider', 'tests', 'test2json', 'exported-image', 'expected-fingerprint', 'report-root'):
         parser.add_argument('--'+name, required=True)
     try:

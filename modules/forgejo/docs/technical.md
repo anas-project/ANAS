@@ -35,11 +35,18 @@ userns，并不保证未加载内层策略的Debian guest程序可创建它。�
 
 ## 停止前清理
 
+OIDC 的固定容器 helper 需要依次运行上游 CLI 的读取、添加/更新、复核，整体执行预算为
+180 秒；其他普通容器命令仍为 45 秒。更短的调用方 deadline 优先，失败输出不向外透传。
+该预算不改变 readiness、OIDC 校验或失败补偿规则。失败仅公开 helper 固定的读取、配置、复核
+阶段原因；原生 CLI、Docker 或发现端点的任意响应文本仍不透传。
+
 停止前清理显式接入 `before_stop`。Core 从原 deployment 的冻结 Hook 与私有环境执行，
 先验证 workspace 对 Compose 项目的归属。该阶段的 secrets 映射为空，不把当前 Secret
 Store 中的新代凭据追加给旧 Hook；清理只使用原私有投影。Hook 只向精确观测的旧 controller 容器 ID
 发送有界 SIGTERM 停止，API 与控制网桥保持到清理结束，随后两次读取固定入口、运行
 模式与 exit 0；未知、替换、异常退出或未完成清理均阻止后续拆除。此阶段不修改账号。
+应用启动失败后，禁用的 controller 若仍为 Created，Hook 会启动这个精确 ID 的清理进程，
+再确认同一 ID 成功退出。启用模式的 Created 和已失败退出仍保持拒绝，不重试失败进程。
 新禁用部署中的 `local_account_apply` 再按既有归属规则使管理口令失效；重启/重新启用
 不由任意退出状态或同名容器授权。真实联合验收与完整业务栈验收分别记录。
 
@@ -80,14 +87,21 @@ Actions controller 与 preflight 只读挂载固定的公开 `anas-internal-ca.c
 
 ## 计算控制器镜像的共享构建输入
 
+Forgejo entrypoint、controller 与镜像内 Incus CLI 的 Go 构建层固定为 `1.26.10-alpine`，
+避免复用缺少标准库安全修复的浮动旧层。仓库 Go 最低版本同步为 1.26.10；
+HTTP/SSH 依赖采用 `x/net v0.60.0` 与其要求的 `x/crypto v0.57.0`。
+
+
 Actions controller 与一次性 compute 初始化服务共用同一 Dockerfile。源码 checkout 的
 `shared` 上下文默认指向 `../..`；构建已复制到 staging 的 Module 时，必须通过
 `ANAS_SHARED_BUILD_CONTEXT` 指向版本匹配的绝对 ANAS 源码根，不把运行数据目录当源码。
 
 Go 构建层和 Alpine 运行层均使用 `DOCKER_HUB_REGISTRY`，显式 `GO_BUILDER_REGISTRY`
-只覆盖 Go 层。控制器的共享仓库代码保持 `GOPROXY=off`；独立固定的上游 Incus CLI
-`v7.3.0` 使用 `GO_MODULE_PROXY`，依次回退到 `GOPROXY_URL` 与官方源。CLI 自报版本为
-`7.3`，不能把这个展示值与 Go 模块 tag 的末尾 `.0` 混淆。传输设置不进入业务环境，不关闭
+只覆盖 Go 层。先用 `GO_MODULE_PROXY` 下载 go.mod/go.sum 固定的外部依赖 `golang.org/x/sys`，
+再以 `GOPROXY=off` 编译来自 shared 的控制器代码，禁止回退到已发布的仓库副本。
+独立固定的上游 Incus CLI `v7.3.0` 也使用 `GO_MODULE_PROXY`，依次回退到 `GOPROXY_URL` 与官方源。CLI 自报版本为
+`7.3`，不能把这个展示值与 Go 模块 tag 的末尾 `.0` 混淆。CLI 在独立构建模块中保留
+该上游版本，并将 HTTP/SSH 依赖固定到上述安全版本；这些工具依赖不进入 ANAS 模块。传输设置不进入业务环境，不关闭
 Go checksum database，也不传入代理凭据。
 
 `check-shared-build --json` 只校验和描述构建输入，不执行 Docker，不读取运行时 `.env`。
@@ -157,7 +171,7 @@ Rootless engine 还依赖 guest 内 UID 1002 的真实 systemd 用户会话：�
 [Forgejo 设计](/architecture/forgejo-module-design#_4-3-单作业执行实例)。
 
 <!-- generated:module-identity:start -->
-> 状态：当前实现；对应 `15.0.7-r3` / `anas.module/v1`.
+> 状态：当前实现；对应 `17.0.1-r1` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose 拓扑
@@ -170,18 +184,19 @@ Compose 2.33.1+。这是连接配置，不是 mTLS、隔离或 one-job 实机验
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r3` | `actions-control, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 2 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 1 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:17.0.1-r1` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:17.0.1-r1` | `actions-control, compute-control` | 2 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:17.0.1-r1` | `actions-control, compute-control` | 1 |
 <!-- generated:compose-topology:end -->
 
 Web/API 仅在 Traefik network 暴露 `3000/tcp`；内置 SSH server 的容器端口 `2222/tcp` 直接发布为
-`FORGEJO_SSH_PORT`。`db` 是数据库 Resource 绑定的 PostgreSQL 或 MariaDB external network。rootfs read-only，
+`FORGEJO_SSH_PORT`。`db` 是数据库 Resource 绑定的 PostgreSQL external network。rootfs read-only，
 `/tmp` 是 tmpfs，完整 `/var/lib/gitea` 是唯一应用数据 bind mount。
 
-自定义 image 基于 `codeberg.org/forgejo/forgejo:15.0.7-rootless`。静态入口仅在 mount 根目录不是
+自定义 image 基于 `codeberg.org/forgejo/forgejo:17.0.1-rootless`。静态入口仅在 mount 根目录不是
 `1000:1000` 时用不跟随 symlink 的 `WalkDir`/`Lchown` 修正树，再不可逆降权并 `exec` 上游
-entrypoint。健康检查同样降权后请求 `/-/healthcheck`。
+entrypoint。健康检查同样降权后请求 `/api/healthz`，要求 HTTP 200 且 JSON `status=pass`，
+由 Forgejo 的数据库和 cache 检查确认就绪；旧 `/-/healthcheck` 路径返回 404。
 
 ## 配置契约
 
@@ -193,11 +208,12 @@ entrypoint。健康检查同样降权后请求 `/-/healthcheck`。
 | `forgejo.actions_runner_image` | string | `format: json_object` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | 否 | 否 | 否 | 是 | `container_recreate` | 结构化镜像引用；Core 在渲染前冻结摘要 |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许仓库自定义 Git Hooks；Hook 会以 Forgejo 用户身份执行服务端代码 |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 应用数据库名 |
-| `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `forgejo.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议；仅支持 OIDC |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 默认 UI 语言；浏览器和用户偏好优先 |
 | `forgejo.local_path_import_enabled` | bool | — | `false` | `static` | `FORGEJO_LOCAL_PATH_IMPORT_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许从 Forgejo 容器内已可见的本地路径导入；不会增加宿主路径挂载 |
+| `forgejo.oidc_group_team_map` | string | `max length: 65536`; `format: json_object` | `{}` | `static` | `FORGEJO_OIDC_GROUP_TEAM_MAP` | 否 | 否 | 否 | 是 | `reconcile` | IAM 组到已有 Forgejo 组织和 team 的 JSON 映射；登录时增加及移除成员 |
 | `forgejo.ssh_port` | int | `1..65535` | `2222` | `static` | `FORGEJO_SSH_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外 SSH Git 端口 |
 
 Hook 把固定版本支持的 31 个 locale 与 `DEFAULT_LANGUAGE` 做 BCP 47 匹配，并把匹配项移到完整
@@ -208,7 +224,7 @@ Hook 把固定版本支持的 31 个 locale 与 `DEFAULT_LANGUAGE` 做 BCP 47 �
 ## 数据库与持久状态
 
 Module 是 `relational_database` Consumer，申请 retained `primary_database` Resource。PostgreSQL 映射
-上游 `postgres`，MariaDB 映射 `mysql`。连接使用 provider internal network，`SSL_MODE=disable`。
+上游 `postgres`；其他数据库类型明确拒绝，不自动迁移或删除旧数据。连接使用 provider internal network，`SSL_MODE=disable`。
 数据库保存用户、组织、仓库元数据、Issue、权限和 session；数据目录保存 repository、LFS、Package、
 附件、SSH state、索引及应用配置。`db_type`/`db_name` 为显式数据迁移边界。
 
@@ -243,12 +259,14 @@ SAML。固定版本没有"按不可变 ID 把 OIDC 身份关联到预配 LDAP �
 | --- | --- |
 | 账号停用、删除、移出 `APP_forgejo` | **无自动路径**：管理员必须在 Forgejo 停用或删除该账号 |
 | 组成员变更 | 该用户下次 OIDC 登录时随 groups 声明到达 team |
-| 改名、邮箱变更 | **同一个账号**：按 `sub` 匹配，用户名与邮箱只在建号时写一次，改名后用户名冻结在旧值（`推断`，待探针） |
+| 改名、邮箱变更 | **同一个账号**：按 `sub` 匹配，用户名与邮箱只在建号时写一次，改名后用户名冻结在旧值（17.0.1 测试 OIDC Provider 已验证；真实 IAM 目录改名另验） |
 
 access token 与 SSH key 不经过登录，所以"下次登录才收敛"对它们不成立。撤权动作必须落到账号本身。
 
-**尚未复核**：固定版本的 `prohibit_login` 是否同时关闭 access token 与 Git over SSH。在有探针结论之前，
-撤权流程按"停用账号并显式吊销其 token 与 SSH key"执行，见[互操作基线](/developer/forgejo-interop) §4。
+**17.0.1 实测**：管理员 PATCH 只带 `prohibit_login` 可停用测试 OIDC 用户；API token 返回 403，
+Git HTTP/SSH push 均失败，已有 Web 会话只能得到 HTTP 200 的停用提示页，无法读取私有文件。
+这是停用期间的访问阻断，不是凭据删除；永久撤权仍显式吊销 token 与 SSH key。
+新版管理员 token 创建/删除 API 已实测，独立认证源/会话 API 未发现；见[互操作基线](/developer/forgejo-interop) §1.1。
 
 ### 目录属性变更的实现侧
 
@@ -261,17 +279,17 @@ access token 与 SSH key 不经过登录，所以"下次登录才收敛"对它�
   固定；固定版本没有"按 anchor claim 绑定既有账号"的配置项，这就是 §2.2 里双链路不成立的原因。
 - **每次登录刷新什么**：groups 声明 → team 与站点管理员映射。**不刷新**用户名、邮箱和显示名。
 - **撤权经哪个接口**：没有。Module 不注册目录事件 watcher，固定版本也没有 IAM 主动 logout
-  receiver，因此没有任何自动撤权接口。撤权只能由管理员经 Forgejo 管理端或 CLI 执行。
+  receiver，因此没有任何自动撤权接口。撤权由管理员经 Forgejo 管理端或 API 执行；CLI 不提供 `prohibit_login` 子命令。
 - **对账路径**：当前没有。可解开的入口见下一条。
 - **技术阻碍**：上游 OAuth2 source 不接受可配置的身份字段，`ACCOUNT_LINKING` 只能按用户名或
   邮箱回退绑定。这是 `DIRKEY-R-004` 意义上的缺口，按 `DIRKEY-R-005` 在每次变更固定版本时复核
   （复核触发点即 `FORGEJO-R-066`）。
 
-**`DIRKEY-R-013` 投影结论：不受影响（`推断`）。** Forgejo 把 `sub` 存进 `login_name`，这是一个
+**`DIRKEY-R-013` 投影结论：Forgejo 侧已由 17.0.1 协议探针验证，真实 IAM 迁移另验。** Forgejo 把 `sub` 存进 `login_name`，这是一个
 只对站点管理员可见的内部字段；应用内用户名取 `preferred_username`，URL 与仓库路径用的是这个
 用户名，不是 `sub`。因此 M2 把主体标识符切成 anchor 之后，界面上不会出现 UUID，Forgejo 无需先
-改造。**尚未探针复核**：`login_name` 是否确实收 `sub` 原值、管理端用户列表是否回显它。复核入口
-应加进 `test-env/scripts/forgejo-agent-api-probe.sh`，在 M2 切换前执行。
+改造。探针已确认管理端用户列表的 `login_name` 与固定 `sub` 一致；不把这一结果当成 M2 的
+真实 Provider 切换验收。
 
 切换完成后这里会多出一条现在没有的能力：`login_name` 里的值将直接是 anchor，列出 Forgejo 的外部
 账号、与目录准入集合取差、对差集撤权即可精确对账，不会误伤改过名的在职者。这条路不需要 LDAP
@@ -310,10 +328,9 @@ QEMU/KVM，有独立 guest kernel 但要求宿主具备 KVM。默认取容器档
 disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.containers.privilege=unprivileged`。
 差别只在内核边界，因此跨信任域或执行不受信输入的 scope 应显式选 `incus_vm`（`FORGEJO-R-025`）。
 
-`TestModuleIsolationTierDefaultsToTheContainerTier` 钉住 manifest 的两档集合与
-`default: incus_container`（`R-024`）。**当前缺口**：没有校验固定 fingerprint 与所选档、目标架构一致
-（`R-026`）——`runner-image/` 要求按 amd64/arm64 × 容器/VM 各出一份镜像，而 `actions_runner_image`
-只有一个值且只校验 hex 形状。
+`TestModuleIsolationTierDefaultsToTheContainerTier` 钉住两档集合与默认容器档（`R-024`）。
+Core 冻结结构化镜像引用；Incus Provider 在发放租约凭据前验证 fingerprint、实例档位和目标架构
+（`R-026`）。这不等同于四份 amd64/arm64 × 容器/VM guest image 均已完成真实验收。
 
 ### 控制面账号
 
@@ -322,11 +339,11 @@ disk/physical NIC/任意 device；容器档另由 project 强制 `restricted.con
 controller 口令与恢复管理员口令不进入宿主 argv、容器环境或公开输出。创建的固定账号
 `anas_actions_controller` 仍是**站点管理员**；该既有权限偏差没有借停用流程被隐藏。
 
-controller 的调用集合只有三个端点，全部限定在获批 scope：`GET .../actions/runners/jobs`、
+controller 的调用集合有四个端点，全部限定在获批 scope：`GET .../actions/runners`、`GET .../actions/runners/jobs`、
 `POST .../actions/runners`、`DELETE .../actions/runners/{id}`（`orgs/{owner}` 或
-`repos/{owner}/{repo}`），使用 basic auth。这三个端点要的是组织 owner 或仓库 admin，不是全站权限；
+`repos/{owner}/{repo}`），使用 basic auth。这些端点要的是组织 owner 或仓库 admin，不是全站权限；
 站点管理员是"没有按 scope 授权的调和路径"的后果，属于已登记偏差（`FORGEJO-R-069`）。调用集合本身由
-`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI` 钉住：org 与 repo 两种 scope 各三条请求，全部
+`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI` 钉住：org 与 repo 两种 scope 各四条请求，全部
 落在该 scope 的 `actions/runners` 子树内，不含 `/admin/`（`FORGEJO-R-068`）。
 
 关闭 Actions 时，先限时等待同一不可变 Docker 容器 ID 的禁用 controller 退出，连续两次
@@ -335,7 +352,7 @@ controller 的调用集合只有三个端点，全部限定在获批 scope：`GE
 controller 没有租约却仍有未完成 workload 时失败并保留状态，不以缺少连接代替清理。
 状态读取必须是私有目录内当前用户所有的单链接 0600 普通文件，4 MiB 有界、前后身份不变；
 不跟随链接，拒绝缺少 workload 清单、重复 JSON 字段和不支持的状态。真正缺失的全新状态
-不产生写操作；这不解决整个状态卷丢失后的孤儿重建问题。
+不产生写操作。启用状态下的孤儿回收另由下述周期性核对负责。
 
 账号 helper 仅连接固定回环 API，并验证独立恢复管理员及目标账号的数值 ID。私有回执
 以管理口令的 HMAC 绑定 ID、固定用户名/邮箱与 pending/final 状态；历史账号首次纳管还须
@@ -361,16 +378,19 @@ registration 和一个固定指纹实例，token 只通过 Incus exec stdin 进�
 `--wait` 运行 `one-job`。全局并发上限 4、每 scope 上限 2、waiting TTL 10 分钟、job timeout 1 小时。
 state 只持久化 handle、scope、registration/实例 identity 和时间，不含 token；正常结束、取消、超时、
 关闭和重启残留均走同一 cleanup/janitor。state 存在 named volume `forgejo_actions_state`，不在 `R-003` 的备份
-一致点内，但**也不能随手丢弃**：`ListManaged` 只在 `CleanupAll`（关闭开关）里调用，周期性
-`Reconcile` 完全依据 state；孤立的 Forgejo runner registration 更是没有兜底路径——注销依赖 state 里
-的 `RunnerID`，而 `ForgejoAPI` 没有列举 runner 的方法。丢失 state 的后果：Actions 仍开着时孤立实例
-要等到下次关闭才回收，崩在创建 registration 与作业开始之间的 registration 则永远留着。收敛要求见
-`FORGEJO-R-046`。
+一致点内，重建部署时仍须保留。周期性 `Reconcile` 和 `CleanupAll` 均核对实际实例及分页 Runner
+清单，带 scope/租约归属签名的 registration 可以在 state 丢失后安全收敛。无法证明归属的对象保留，
+不自动认领；变更 scope/租约/口令前先排空，详见下文孤儿回收边界及 `FORGEJO-R-046`。
 
 guest image 资产位于 `runner-image/`：`runner-agent` 运行 Runner，`runner-engine` 运行 rootless Podman；
 capacity=1、`privileged=false`、`valid_volumes=[]`，并设置 CPU/memory/PID/no-new-privileges。镜像不启动
 daemon Runner，也不提供 `host` label。独立 Incus 宿主、真实防火墙/egress 和两档各一遍的 one-job E2E
 仍是发布门禁。
+
+工作流引擎连接使用两个路径：Runner 进程的 `container.docker_host` 和启动环境连接 guest 内
+`unix:///run/anas-podman/podman.sock`；Runner 将该 socket 映射到工作流容器的 `/var/run/docker.sock`，
+因此 `runner.envs.DOCKER_HOST` 必须使用 `unix:///var/run/docker.sock`。仅暴露单次任务 guest 的
+rootless 引擎，不连接 ANAS 宿主 Docker。配方变更须重烘焙，并用真实无 Secret 容器构建验收。
 
 ## Actions 取消、未确认创建与持久退役
 
@@ -415,8 +435,10 @@ daemon 取消/迟到创建及 one-job 仍需独立验收，不由本机适配器
 设计决策见[Forgejo Module 设计](/architecture/forgejo-module-design)，剩余工作与明确排除项见
 [Forgejo Module 实施计划](../dev-docs/plans/forgejo-module.md)。
 
-提升 `release` 前还需完成 PostgreSQL/MariaDB、amd64/arm64、LLNG/Authentik 浏览器登录、IAM-down、
-HTTP/SSH clone/push、LFS、Package、备份恢复和前一 LTS patch/minor 升级回滚 E2E。
+本轮 `release` 验收范围为 PostgreSQL、amd64、LLNG/Casdoor 浏览器登录、IAM-down、
+HTTP/SSH clone/push、LFS、Package 和备份恢复。首发基线为 17.0.1，不要求未发布开发版本兼容；
+存在已发布旧版本后，再执行相应升级回滚 E2E。ARM64 经用户确认延期，不阻止本轮 amd64 结算，
+也不能据此宣称 ARM64 已实测。纯代码托管与 Actions 按 R-054 分组结算，当前证据见实施计划。
 
 ## compute 镜像配置冻结
 
@@ -488,3 +510,30 @@ Runner 生成七档 PNG 和 deployment 目录制品，只有显式消费目录�
 ### 应用图标来源
 
 应用入口的512px PNG由 `applications.icons.source` 声明。`assets/icon-source.json` 保存官方出处、原件摘要、是否重绘及生成输入；官方原件一同保留。`node scripts/application-themes.mjs --check` 校验来源与原始/简约两套包；修改矢量后用 `--render` 重新生成，不在运行时加载SVG或下载外部图片。全站主题沿用共享应用目录，个人主题只影响门户。
+
+## 2026-10-30：PostgreSQL、组映射与状态丢失恢复
+
+当前候选为 `17.0.1-r1`，数据库只支持 PostgreSQL；旧 MySQL/MariaDB 明确拒绝且保留数据。
+Hook 将 team 映射组及管理员组以通用 `CLAIM_GROUPS` JSON 数组交给 IAM，供 Casdoor 注册受信成员
+投射。它与 `ALLOW_GROUPS` 分离，不授予应用准入，不创建目录组。LLNG 已返回实际目录组集合。
+旧 `auto` 配置若已绑定 MariaDB，Core 也会依据 Resource state 或当前部署记录拒绝引擎变更，
+不会把同一应用指向新建的 PostgreSQL 空库。
+`oidc_group_team_map` 使用 `{"IAM组":{"组织":["team"]}}`，经 Hook stdin 传给 helper，再显式设置
+`--group-team-map` 和 `--group-team-map-removal=true`。空对象清除配置；不会自动撤销已从映射中删掉
+的旧 team 成员。组织/team 必须预先存在，变更在登录时发生；没有目录同步或即时撤权承诺。
+
+常规 `Reconcile` 和 `CleanupAll` 都核对租约内 `ListManaged` 与获批 scope 的分页 Runner 列表。
+实例名必须与 workload ID 的确定性名称一致；Runner 名附带由既有托管口令计算的 HMAC，绑定
+scope 和租约 sandbox。已登记 workload 始终受保护，不能用孤儿扫描绕过失败的归属校验。
+列表失败阻止新供给，但不阻塞已超时 workload 的回收；分页会读到空页，重复身份或超限均报错。
+
+这一恢复路径适用于首发基线创建的 Runner；未发布实验版本不属于兼容验收范围。
+未带有效归属签名的 registration 无法安全认领，保留原状；正常升级前必须保留 state 并关闭/排空 Actions。
+迁移 controller 口令、sandbox 或授权 scope 前同样先排空。不要把删除 state 当成日常操作。
+
+Forgejo Module 只调和自己的 OIDC source、恢复账号及 controller 账号，不注册业务 webhook，
+不清理外部消费者的账号、token、SSH key 或 hook。消费者负责自身管理凭据的保管、审计和撤销。
+
+## VM Runner 的 EFI 引导
+
+VM 专用包由生成器按目标架构直接选择，不再依赖易混淆的构建器架构过滤，避免内核和引导包被静默跳过。VM 配方显式安装 Debian 签名 GRUB 和 shim，在 post-files 阶段安装 EFI/BOOT fallback 与 EFI/debian 引导文件，并按 distrobuilder 提供的根文件系统 UUID 写入 GRUB 配置。仅安装 EFI 软件包不会自动填充镜像 EFI 分区，本轮真实开机及只读分区检查已复现空引导分区。新增的签名引导依赖只用于 VM，配合现有 compute client 的 Secure Boot=true；不通过关闭 Secure Boot 绕过失败。变更必须生成新的配方和不可变制品修订，容器配方不受影响。

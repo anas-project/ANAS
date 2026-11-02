@@ -72,6 +72,7 @@ func TestExecutorCancellationTerminatesLifecycleProcessGroupAndCompensates(t *te
 		t.Fatal(err)
 	}
 	daemonContext, stopDaemon := context.WithCancel(context.Background())
+	defer stopDaemon()
 	done := make(chan error, 1)
 	go func() { done <- executor.Run(daemonContext) }()
 	executor.Notify("main")
@@ -106,8 +107,18 @@ func TestExecutorCancellationTerminatesLifecycleProcessGroupAndCompensates(t *te
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	if err := syscall.Kill(-pid, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Fatalf("lifecycle process group %d survived cancellation: %v", pid, err)
+	// Wait reaps the direct child; the kernel/init may still be reaping killed
+	// descendants. Require the whole group to disappear within a bounded wait.
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		err := syscall.Kill(-pid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("lifecycle process group %d survived cancellation: %v", pid, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 	stopDaemon()
 	if err := <-done; err != nil {

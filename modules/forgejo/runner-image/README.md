@@ -1,5 +1,25 @@
 # Forgejo one-job Runner guest image
 
+The accepted amd64 pending-publication bundle contains the byte-identical
+`native-20261031-r2` container image and `native-20261101-vm-r4` VM image. Both
+have real workflow and repo/org container-build evidence; ARM64 remains deferred.
+The delivery manifest, native baselines and checksums are recorded in the paired
+[implementation plan](../dev-docs/plans/forgejo-module.md).
+These are pending-publication artifacts, not an uploaded registry or GitHub release.
+The tooling verifies immutable bytes and history; it does not create a catalog
+cryptographic signature. Stage the accepted `images/` tree into the matching
+Incus Module packaging source before using `package-module`, and verify the
+unpacked Module payload and image descriptors. Keep the release archive and
+trusted provenance separately. Do not add catalog entries without their bytes.
+
+The Runner process connects to the guest-only rootless engine at
+`unix:///run/anas-podman/podman.sock`. Forgejo Runner maps that socket into each job
+container at `/var/run/docker.sock`, so `runner.envs.DOCKER_HOST` uses
+`unix:///var/run/docker.sock`. These paths differ intentionally. This exposes only
+the disposable one-job guest engine, never the ANAS host Docker socket. Recipe
+changes require a fresh immutable revision and a real container-build workflow;
+a successful shell workflow cannot validate the job-side engine endpoint.
+
 For mainland package downloads, set `CHINESE_BUILD_SPEEDUP=true` when running the Incus image
 release build script, or pass `--chinese-build-speedup` to `incus-image-artifacts recipe`.
 This freezes the fixed Aliyun Debian bootstrap URL and the pre-package APT mirror transform in the
@@ -98,6 +118,17 @@ The release builder must stage a pinned `forgejo-runner` binary as the recipe's
 release-owned `forgejo-runner` file, run `incus-image-artifacts build` on an
 isolated native Linux builder, publish the resulting catalog entry, and keep the
 artifact archive. Repeat for `amd64`/`arm64` and `incus_container`/`incus_vm`.
+
+VM package sets are selected directly for the target, without redundant raw
+architecture filters that can be skipped after Debian architecture mapping.
+VM recipes explicitly install Debian-signed GRUB and shim, then populate both
+`EFI/BOOT` (the firmware fallback path) and `EFI/debian` in the post-files phase.
+The GRUB root argument uses distrobuilder's image root UUID; no build-host device
+path or firmware NVRAM entry is retained. Installing EFI packages alone leaves
+the partition without a loader and cannot boot the exported image. These packages
+are required only by the VM tier because the compute client retains Secure Boot.
+An existing artifact is immutable: regenerate the recipe and build a new revision
+after this change. Container recipe bytes remain unchanged.
 
 The Debian/debootstrap recipe also requires the distribution-provided
 `debian-archive-keyring` on the **isolated build machine**, including when that

@@ -21,6 +21,24 @@ for name in $(printf '%s\n' "$bind_variables" | grep -o '[A-Z][A-Z0-9_]*'); do
     exit 1
   fi
 done
+# A host-network BIND must not claim a new Incus bridge's IPv6 DNS address
+# before its dnsmasq starts. Bind only the declared service address and loopback,
+# preserving the configured address's family instead of listening on every NIC.
+export SAMBA_DC_DNS_LISTEN_IPV4='127.0.0.1;'
+export SAMBA_DC_DNS_LISTEN_IPV6='::1;'
+case "$SAMBA_DC_DNS_SERVER" in
+  *:*)
+    if [[ "$SAMBA_DC_DNS_SERVER" != ::1 ]]; then
+      SAMBA_DC_DNS_LISTEN_IPV6+=" ${SAMBA_DC_DNS_SERVER};"
+    fi
+    ;;
+  *)
+    if [[ "$SAMBA_DC_DNS_SERVER" != 127.0.0.1 ]]; then
+      SAMBA_DC_DNS_LISTEN_IPV4+=" ${SAMBA_DC_DNS_SERVER};"
+    fi
+    ;;
+esac
+bind_variables+=' ${SAMBA_DC_DNS_LISTEN_IPV4} ${SAMBA_DC_DNS_LISTEN_IPV6}'
 envsubst "$bind_variables" < /etc/bind/named.conf.envsubst > /etc/bind/named.conf.tmp
 if grep -n '\${[A-Z][A-Z0-9_]*}' /etc/bind/named.conf.tmp; then
   echo "unresolved variables in named.conf" >&2

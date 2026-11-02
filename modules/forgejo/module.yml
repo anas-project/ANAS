@@ -1,9 +1,9 @@
 api_version: anas.module/v1
 kind: Module
 name: forgejo
-version: 15.0.7
-revision: 3
-app_version: 15.0.7
+version: 17.0.1
+revision: 1
+app_version: 17.0.1
 abi:
   supports:
     - anas.module-hook/v1
@@ -57,7 +57,6 @@ dependencies:
       selected_by: db_type
       interfaces:
         - postgres
-        - mariadb
       default: postgres
     # Only while Actions is on. Without the condition every Forgejo deployment
     # would need an Incus host, including the great majority that never run a
@@ -123,8 +122,8 @@ resources:
           policy: generated
         deletion_policy: retain
 upgrade:
-  # No pinned release through 15.0.7 declares an ANAS-owned on-disk break.
-  # Restore and rollback E2E remains a release gate while this module develops.
+  # First public baseline; unpublished development versions are not supported.
+  from: ">=17.0.1 <18.0.0"
   data_breaking: []
 config:
   must_resolve:
@@ -139,6 +138,7 @@ config:
     db_name: forgejo
     db_type: auto
     iam_protocol: auto
+    oidc_group_team_map: "{}"
     local_path_import_enabled: false
     ssh_port: "2222"
   types:
@@ -159,12 +159,17 @@ config:
         pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'
     db_name: string
     db_type:
-      enum: [auto, postgres, mariadb]
+      enum: [auto, postgres]
     iam_protocol:
       enum: [auto, oidc]
     language:
       kind: string
       default_source: inherited
+    oidc_group_team_map:
+      kind: string
+      constraints:
+        format: json_object
+        max_length: 65536
     local_path_import_enabled: bool
     ssh_port:
       kind: int
@@ -221,6 +226,10 @@ config:
       effect: reconcile
       apply: reconcile-forgejo-localization
       description: Sets the default UI language without overriding browser or saved user preferences.
+    oidc_group_team_map:
+      effect: reconcile
+      apply: reconcile-forgejo-oidc
+      description: JSON mapping of IAM group names to existing Forgejo organization/team names; membership is added and removed at OIDC login.
     local_path_import_enabled:
       effect: container_recreate
       apply: recreate-forgejo

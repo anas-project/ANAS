@@ -1,7 +1,7 @@
 ARG DOCKER_HUB_REGISTRY=docker.io
 ARG GO_BUILDER_REGISTRY=${DOCKER_HUB_REGISTRY}
 
-FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS controller-build
+FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26.10-alpine AS controller-build
 WORKDIR /src
 # The controller compiles against the repository's shared compute client, which
 # lives outside this image's own Docker context. `shared` is a named build
@@ -11,6 +11,10 @@ WORKDIR /src
 # GOFLAGS/GOPROXY make that explicit: a build that reaches the network fails
 # here instead of silently compiling someone else's copy of the code.
 COPY --from=shared go.mod go.sum ./
+# Fetch the checksum-pinned third-party dependency before offline compilation.
+# Repository packages below still come exclusively from the named context.
+ARG GO_MODULE_PROXY=https://proxy.golang.org,direct
+RUN GOPROXY="$GO_MODULE_PROXY" go mod download golang.org/x/sys
 COPY --from=shared internal/computeclient ./internal/computeclient
 COPY --from=shared internal/securefs ./internal/securefs
 COPY --from=shared internal/computeingress ./internal/computeingress
@@ -21,15 +25,22 @@ ENV GOFLAGS=-mod=mod GOPROXY=off
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" -o /out/anas-forgejo-actions-controller ./modules/forgejo/actions-controller
 
-FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS incus-build
+FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26.10-alpine AS incus-build
 ARG TARGETOS
 ARG TARGETARCH
-# Only the separately pinned upstream CLI may use this operator-selected
-# module proxy. The controller's shared repository code stays GOPROXY=off.
+# The pinned upstream CLI also uses this operator-selected module proxy.
+# The controller's shared repository compilation stays GOPROXY=off.
 # Keep Go's default checksum verification; never pass credentials here.
 ARG GO_MODULE_PROXY=https://proxy.golang.org,direct
-RUN GOBIN=/out CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOPROXY="$GO_MODULE_PROXY" \
-    go install github.com/lxc/incus/v7/cmd/incus@v7.3.0
+WORKDIR /incus-cli
+# Keep the upstream CLI version while applying its HTTP/SSH dependency fixes.
+# A separate module prevents these build-tool dependencies entering ANAS.
+RUN export GOPROXY="$GO_MODULE_PROXY" \
+    && go mod init anas.local/incus-cli-build \
+    && go get github.com/lxc/incus/v7/cmd/incus@v7.3.0 \
+        golang.org/x/net@v0.60.0 golang.org/x/crypto@v0.57.0 \
+    && GOBIN=/out CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+        go install github.com/lxc/incus/v7/cmd/incus
 
 FROM ${DOCKER_HUB_REGISTRY}/library/alpine:3.22.1
 RUN apk add --no-cache ca-certificates \

@@ -1,7 +1,7 @@
 ARG DOCKER_HUB_REGISTRY=docker.io
 ARG GO_BUILDER_REGISTRY=${DOCKER_HUB_REGISTRY}
 
-FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS build
+FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26.10-alpine AS build
 WORKDIR /src
 # The provisioner shares the contract's fixed names with the consumer-side
 # client, so both sides cannot drift apart on what a lease's profile and

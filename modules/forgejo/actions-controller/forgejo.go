@@ -15,6 +15,7 @@ import (
 
 type ForgejoAPI interface {
 	ListJobs(context.Context, Scope, string) ([]ActionJob, error)
+	ListRunners(context.Context, Scope) ([]ActionRunner, error)
 	CreateRunner(context.Context, Scope, string) (RunnerRegistration, error)
 	DeleteRunner(context.Context, Scope, int64) error
 }
@@ -27,6 +28,12 @@ type ActionJob struct {
 	RunsOn  []string `json:"runs_on"`
 	TaskID  int64    `json:"task_id"`
 	Status  string   `json:"status"`
+}
+
+// ActionRunner contains only the non-secret fields needed for orphan recovery.
+type ActionRunner struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 type RunnerRegistration struct {
@@ -70,6 +77,32 @@ func (c *forgejoClient) ListJobs(ctx context.Context, scope Scope, label string)
 		jobs = []ActionJob{}
 	}
 	return jobs, nil
+}
+
+// ListRunners intentionally omits visible=true: inherited runners belong to a
+// different scope. Continue until an empty page because the server may clamp
+// the requested limit. A broken/repeating page fails closed before deletion.
+func (c *forgejoClient) ListRunners(ctx context.Context, scope Scope) ([]ActionRunner, error) {
+	var runners []ActionRunner
+	seen := map[int64]bool{}
+	for page := 1; page <= 1000; page++ {
+		query := url.Values{"page": {strconv.Itoa(page)}, "limit": {"100"}}
+		var batch []ActionRunner
+		if err := c.do(ctx, http.MethodGet, scope.runnersPath("")+"?"+query.Encode(), nil, &batch, http.StatusOK); err != nil {
+			return nil, fmt.Errorf("list Runners for scope %s: %w", scope, err)
+		}
+		if len(batch) == 0 {
+			return runners, nil
+		}
+		for _, runner := range batch {
+			if runner.ID < 1 || seen[runner.ID] || len(runner.Name) > 255 || hasControl(runner.Name) {
+				return nil, fmt.Errorf("Forgejo returned an invalid or repeated Runner")
+			}
+			seen[runner.ID] = true
+			runners = append(runners, runner)
+		}
+	}
+	return nil, fmt.Errorf("Forgejo Runner listing exceeded its page limit")
 }
 
 func (c *forgejoClient) CreateRunner(ctx context.Context, scope Scope, name string) (RunnerRegistration, error) {

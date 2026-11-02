@@ -60,13 +60,15 @@ func TestComposeExternalModuleProxyIsExplicitAndBoundToBuildArgs(t *testing.T) {
 
 func TestDockerfileProxyDoesNotWeakenOfflineSharedCodeOrChecksums(t *testing.T) {
 	for _, item := range []struct {
-		path, stage string
-		external    bool
+		path, stage                  string
+		external, offlineCompilation bool
 	}{
-		{"modules/incus/provisioner/Dockerfile", "build", false},
-		{"modules/forgejo/actions-controller/Dockerfile", "controller-build", false},
-		{"modules/forgejo/actions-controller/Dockerfile", "incus-build", true},
-		{"modules/ai_agent/orchestrator/Dockerfile", "build", true},
+		{"modules/incus/provisioner/Dockerfile", "build", false, true},
+		// The controller downloads checksum-pinned x/sys first; compiling
+		// shared repository packages must still prohibit module lookup.
+		{"modules/forgejo/actions-controller/Dockerfile", "controller-build", true, true},
+		{"modules/forgejo/actions-controller/Dockerfile", "incus-build", true, false},
+		{"modules/ai_agent/orchestrator/Dockerfile", "build", true, false},
 	} {
 		t.Run(item.path+"/"+item.stage, func(t *testing.T) {
 			body, err := os.ReadFile(filepath.Join("..", "..", item.path))
@@ -95,11 +97,14 @@ func TestDockerfileProxyDoesNotWeakenOfflineSharedCodeOrChecksums(t *testing.T) 
 			if strings.Contains(stage, "GOSUMDB=") || strings.Contains(stage, "GONOSUMDB=") || strings.Contains(stage, "GOPRIVATE=") {
 				t.Fatal("build stage overrides the default checksum verification boundary")
 			}
+			if item.offlineCompilation && !strings.Contains(stage, "ENV GOFLAGS=-mod=mod GOPROXY=off") {
+				t.Fatal("shared repository compilation must prohibit module lookup")
+			}
 			if item.external {
 				if !strings.Contains(stage, "ARG GO_MODULE_PROXY=https://proxy.golang.org,direct") || !strings.Contains(stage, `GOPROXY="$GO_MODULE_PROXY"`) {
 					t.Fatal("external dependency stage does not explicitly consume its proxy argument")
 				}
-			} else if !strings.Contains(stage, "GOPROXY=off") || strings.Contains(stage, "GO_MODULE_PROXY") {
+			} else if strings.Contains(stage, "GO_MODULE_PROXY") {
 				t.Fatal("shared repository-only build stage no longer stays offline")
 			}
 		})

@@ -89,6 +89,7 @@
     "forgejo.iam_protocol",
     "forgejo.language",
     "forgejo.local_path_import_enabled",
+    "forgejo.oidc_group_team_map",
     "forgejo.ssh_port",
     "global.base_domain",
     "global.chinese_build_speedup",

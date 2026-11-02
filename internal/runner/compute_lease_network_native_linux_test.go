@@ -52,6 +52,10 @@ const (
 	lnetStateFile  = coreNativeReports + "/private/lease-network-state.json"
 	lnetAgent      = coreNativeInputs + "/lease-net-agent"
 	lnetAuthHook   = coreNativeInputs + "/lnet-auth-hook"
+	// lnetTiersInput, when delivered, names the consumers whose leases run on
+	// the VM tier this round: {"vm_consumers": ["lnlan", "lnhost"]}. The others
+	// stay containers, so one round fits a few nested VMs.
+	lnetTiersInput = coreNativeInputs + "/lease-tiers.json"
 	lnetGuestAgent = "/usr/local/bin/lease-net-agent"
 	lnetRunDir     = "/run/lnet"
 
@@ -105,6 +109,8 @@ type lnetState struct {
 	NetworkPrefix   string                   `json:"network_prefix"`
 	AgentImage      string                   `json:"agent_image"`
 	Pin             string                   `json:"pin"`
+	PinVM           string                   `json:"pin_vm,omitempty"`
+	VMConsumers     []string                 `json:"vm_consumers,omitempty"`
 	Deployment      string                   `json:"deployment"`
 	HostUplink      string                   `json:"host_uplink"`
 	Leases          map[string]*lnetLease    `json:"leases"`
@@ -118,6 +124,14 @@ type lnetState struct {
 	SquatPort       int                      `json:"squat_port,omitempty"`
 	ConsoleRoutes   []string                 `json:"console_routes,omitempty"`
 	DockerForward   map[string][]string      `json:"docker_forward,omitempty"`
+}
+
+// interfaceOf is the compute interface a consumer's leases use this round.
+func (s *lnetState) interfaceOf(consumer string) string {
+	if slices.Contains(s.VMConsumers, consumer) {
+		return "incus_vm"
+	}
+	return "incus_container"
 }
 
 func lnetLoad(t *testing.T) *lnetState {
@@ -495,14 +509,14 @@ func lnetResource(r lnetResourceSpec) map[string]any {
 	return out
 }
 
-func lnetManifest(t *testing.T, name string, resources ...lnetResourceSpec) []byte {
+func lnetManifest(t *testing.T, name, iface string, resources ...lnetResourceSpec) []byte {
 	t.Helper()
 	var required []any
 	dependencies := map[string]any{"contracts": []any{map[string]any{
 		"name": "compute", "version": ">=1.0.0 <2.0.0", "selected_by": "isolation",
-		"interfaces": []string{"incus_container"}, "default": "incus_container"}}}
+		"interfaces": []string{iface}, "default": iface}}}
 	defaults := map[string]any{"isolation": "auto"}
-	types := map[string]any{"isolation": map[string]any{"enum": []string{"auto", "incus_container"}}}
+	types := map[string]any{"isolation": map[string]any{"enum": []string{"auto", iface}}}
 	for _, r := range resources {
 		required = append(required, lnetResource(r))
 		if http, _ := r.publish["http"].(map[string]any); http["auth"] == "forward_auth" {
@@ -605,7 +619,8 @@ type lnetVariant struct {
 	extraBindingFor string
 }
 
-func lnetWriteSources(t *testing.T, moduleRoot, id string, v lnetVariant) {
+func lnetWriteSources(t *testing.T, state *lnetState, moduleRoot string, v lnetVariant) {
+	id := state.ID
 	t.Helper()
 	sideEgress := "internet"
 	if v.sideLAN {
@@ -652,7 +667,7 @@ func lnetWriteSources(t *testing.T, moduleRoot, id string, v lnetVariant) {
 			network: map[string]any{"egress": "modules_only"}}},
 	}
 	for name, resources := range modules {
-		lnetWrite(t, filepath.Join(moduleRoot, name, "module.yml"), lnetManifest(t, name, resources...), 0600)
+		lnetWrite(t, filepath.Join(moduleRoot, name, "module.yml"), lnetManifest(t, name, state.interfaceOf(name), resources...), 0600)
 		lnetWrite(t, filepath.Join(moduleRoot, name, "docker-compose.yml"), lnetCompose(name, id), 0600)
 	}
 	lnetWriteAuthModule(t, moduleRoot, id)
@@ -683,7 +698,7 @@ func lnetModuleRoot() string { return filepath.Join(coreNativeRoot, "source", "m
 // lnetImport writes the variant's sources and config and imports the config.
 func lnetImport(t *testing.T, state *lnetState, label string, v lnetVariant) {
 	t.Helper()
-	lnetWriteSources(t, lnetModuleRoot(), state.ID, v)
+	lnetWriteSources(t, state, lnetModuleRoot(), v)
 	path := filepath.Join(coreNativeRoot, "config-"+label+".yml")
 	lnetWrite(t, path, lnetConfig(state, v), 0600)
 	// Later variants edit Module sources, and import validates against the
@@ -801,7 +816,17 @@ func lnetInstanceAddresses(t *testing.T, project, name string, prefer ...string)
 		t.Fatalf("instance %s state unreadable", name)
 	}
 	v4, v6 := "", ""
-	for _, address := range state.Network["eth0"].Addresses {
+	// A container's NIC is eth0; a VM's is named by its guest (enp5s0), and the
+	// lease profile gives every instance exactly one NIC.
+	var addresses []struct{ Family, Address, Scope string }
+	for name, nic := range state.Network {
+		if name != "lo" {
+			for _, address := range nic.Addresses {
+				addresses = append(addresses, struct{ Family, Address, Scope string }{address.Family, address.Address, address.Scope})
+			}
+		}
+	}
+	for _, address := range addresses {
 		if address.Scope != "global" {
 			continue
 		}
@@ -826,6 +851,18 @@ func lnetIncus(t *testing.T, label string, input []byte, args ...string) []byte 
 // inside a guest. The unit is enabled, so it returns after a host reboot.
 func lnetGuestService(t *testing.T, instance *lnetInstance) {
 	t.Helper()
+	// A VM accepts file and exec requests only once its incus-agent runs.
+	deadline := time.Now().Add(5 * time.Minute)
+	for {
+		if _, err := lnetTry("agent-"+instance.Name, 30*time.Second, nil, "/usr/bin/incus", "exec", "--force-noninteractive",
+			"--project", instance.Project, instance.Name, "--", "/bin/true"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s accepts no exec requests", instance.Name)
+		}
+		time.Sleep(3 * time.Second)
+	}
 	lnetIncus(t, "push-agent-"+instance.Name, nil, "file", "push", "--project", instance.Project, "--mode", "0755",
 		lnetAgent, instance.Name+lnetGuestAgent)
 	unit := "[Unit]\nDescription=lease network acceptance listener\nAfter=network-online.target\n\n[Service]\nExecStart=" +
@@ -1117,6 +1154,24 @@ func TestNativeLeaseNetworkDeploy(t *testing.T) {
 	state := &lnetState{ID: id, Registry: "anas-lnet-" + suffix, ContainerPrefix: "lnet" + suffix + "_", NetworkPrefix: "lnet" + suffix + "_",
 		Leases: map[string]*lnetLease{}, Instances: map[string]*lnetInstance{}, Ports: map[string]int{}, Hosts: map[string]string{},
 		Snapshots: map[string]lnetSnapshot{}}
+	if body, err := os.ReadFile(lnetTiersInput); err == nil {
+		var tiers struct {
+			VMConsumers []string `json:"vm_consumers"`
+		}
+		if json.Unmarshal(body, &tiers) != nil {
+			t.Fatal("lease tier input unreadable")
+		}
+		for _, consumer := range tiers.VMConsumers {
+			if !slices.Contains([]string{"lninet", "lnlan", "lnhost", "lnmods"}, consumer) || slices.Contains(state.VMConsumers, consumer) {
+				t.Fatalf("lease tier input names %q", consumer)
+			}
+			state.VMConsumers = append(state.VMConsumers, consumer)
+		}
+		slices.Sort(state.VMConsumers)
+		lnetWrite(t, filepath.Join(coreNativeReports, "reports", "lease-tiers.json"), body, 0600)
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
 	var bundle incusprovision.ConnectionBundle
 
 	lnetStep(t, "approved_host_and_dedicated_docker", func(t *testing.T) {
@@ -1184,7 +1239,13 @@ func TestNativeLeaseNetworkDeploy(t *testing.T) {
 		}
 		entry = lnetGuestImage(t, provider)
 		state.Pin = entry.Fingerprint
-		catalog, _ := json.Marshal([]computeimage.Entry{entry})
+		entries := []computeimage.Entry{entry}
+		if len(state.VMConsumers) > 0 {
+			vm := lnetGuestVMImage(t, provider)
+			state.PinVM = vm.Fingerprint
+			entries = append(entries, vm)
+		}
+		catalog, _ := json.Marshal(entries)
 		lnetWrite(t, filepath.Join(provider, "images", "catalog.json"), catalog, 0600)
 	})
 
@@ -1259,13 +1320,17 @@ func TestNativeLeaseNetworkDeploy(t *testing.T) {
 			"lninet.workers": {"anas-lninet-a", "anas-lninet-b"}, "lninet.side": {"anas-lnside-a"},
 			"lnlan.workers": {"anas-lnlan-a", "anas-lnlan-b"}, "lnhost.workers": {"anas-lnhost-web"}, "lnmods.workers": {"anas-lnmods-a"},
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 		defer cancel()
 		for key, names := range plan {
 			lease := state.Leases[key]
 			client, _, _ := lnetClient(t, state, lease.Consumer, lease.Resource)
+			pin := state.Pin
+			if state.interfaceOf(lease.Consumer) == "incus_vm" {
+				pin = state.PinVM
+			}
 			for _, name := range names {
-				if err := client.Create(ctx, computeclient.InstanceSpec{ID: name, Image: state.Pin, WorkloadID: name, CPU: 1, MemoryMiB: 512, DiskGiB: 4}); err != nil {
+				if err := client.Create(ctx, computeclient.InstanceSpec{ID: name, Image: pin, WorkloadID: name, CPU: 1, MemoryMiB: 512, DiskGiB: 4}); err != nil {
 					t.Fatalf("create %s: %v", name, err)
 				}
 				if err := client.Start(ctx, name); err != nil {
@@ -1276,7 +1341,8 @@ func TestNativeLeaseNetworkDeploy(t *testing.T) {
 				}
 			}
 		}
-		deadline := time.Now().Add(3 * time.Minute)
+		// A nested VM takes about a minute before its agent reports addresses.
+		deadline := time.Now().Add(10 * time.Minute)
 		for _, instance := range state.Instances {
 			lease := state.Leases[instance.Lease]
 			for {
@@ -1332,6 +1398,26 @@ func TestNativeLeaseNetworkDeploy(t *testing.T) {
 // lnetGuestImage turns the delivered Debian container image (metadata and
 // rootfs tarballs from images.linuxcontainers.org) into the split squashfs
 // form Core supplies, and places it in the Provider's artifact tree.
+// lnetGuestVMImage is the same Debian trixie build as a VM image
+// (images.linuxcontainers.org, `20260926_05:24`), supplied unchanged.
+func lnetGuestVMImage(t *testing.T, provider string) computeimage.Entry {
+	t.Helper()
+	metadata, err := os.ReadFile(coreNativeInputs + "/guest-vm-incus.tar.xz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk, err := os.ReadFile(coreNativeInputs + "/guest-vm.qcow2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := computeimage.Entry{Catalog: "anas", Name: "native-core", Revision: "lab-r1",
+		Target:       computeimage.Target{Architecture: "amd64", Interface: "incus_vm"},
+		Fingerprint:  sha256Hex(append(append([]byte{}, metadata...), disk...)),
+		RecipeDigest: sha256Hex([]byte("images.linuxcontainers.org debian/trixie default VM image for the lease network fixture"))}
+	writeProviderArtifactFixture(t, provider, entry, metadata, disk)
+	return entry
+}
+
 func lnetGuestImage(t *testing.T, provider string) computeimage.Entry {
 	t.Helper()
 	dir := filepath.Join(coreNativeRoot, "guest-image")
@@ -2020,7 +2106,7 @@ func lnetRevoked(t *testing.T, state *lnetState, key string, guests []string, ol
 	// refuses every new connection it opens.
 	guest := guests[0]
 	lnetIncus(t, "admin-start-"+guest, nil, "start", "--project", lease.Project, guest)
-	deadline := time.Now().Add(2 * time.Minute)
+	deadline := time.Now().Add(6 * time.Minute)
 	for {
 		status, v4, _ := lnetInstanceAddresses(t, lease.Project, guest)
 		if status == "Running" && v4 != "" {
@@ -2651,7 +2737,7 @@ func TestNativeLeaseNetworkAfterReboot(t *testing.T) {
 	port := state.SquatPort
 	lnetStep(t, "services_back_after_restart", func(t *testing.T) {
 		lnetTopology(t)
-		deadline := time.Now().Add(5 * time.Minute)
+		deadline := time.Now().Add(10 * time.Minute)
 		for _, guest := range []string{"anas-lnlan-a", "anas-lnlan-b", "anas-lnhost-web", "anas-lnmods-a"} {
 			instance := state.Instances[guest]
 			for {

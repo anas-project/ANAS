@@ -29,6 +29,16 @@ package), `nftables`, `iptables`, `squashfs-tools` and
 mainland Docker Hub mirror `m.daocloud.io` and `mirrors.aliyun.com`: the real
 Traefik and lego Modules are built from their own Dockerfiles inside the VM.
 
+VM tier: when `/opt/anas-core-inputs/lease-tiers.json` names consumers
+(`{"vm_consumers": ["lnlan", "lnhost"]}`), their leases declare `incus_vm`
+and their guests are VMs from the same Debian build
+(`guest-vm-incus.tar.xz`, `guest-vm.qcow2`, disk SHA-256 `2daf656f…91cb`); the
+others stay containers, and the host is approved for `incus_vm`, whose
+preflight requires KVM. All of a consumer's leases share one interface. Each
+guest needs at least 512 MiB, so a round runs at most three VM guests in a
+3 vCPU / 3.5 GiB VM with nested KVM; cover the four consumers over several
+rounds (lnlan with lnhost, lninet, lnmods).
+
 Run it on Ubuntu 26.04 (distribution Docker 29) and on Debian 13 (docker.io 26,
 which neither drops unpublished container ports itself nor writes IPv6 rules
 by default). On Debian also install `chromium` and `fonts-dejavu-core`: the

@@ -1,15 +1,16 @@
 # 与 Forgejo 互操作基线
 
-> 状态：**当前模型**。事实由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定
+> 状态：**17.0.1 Module 探针、16.0.5 AI Agent 设计与 15.0.7 历史实测分列**。§1.1 是本轮 Module 实测，不能替代 AI Agent 全套验收。
+> §1—§2 的历史事实由 `test-env/scripts/forgejo-agent-api-probe.sh` 对固定
 > `codeberg.org/forgejo/forgejo:15.0.7-rootless`（`15.0.7+gitea-1.22.0`）实测得出，逐条结论与通过
 > 数记录在 [`ai_agent` 要求 §15](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/dev-docs/requirements/ai-agent.md)。
 > 表单相关的几条来自 `TestFormRenderingAgainstLiveForgejo`（同一固定镜像）而不是探针脚本；标 `CLI`
 > 的几条来自 2026-09-20 对同一镜像跑 `--help` 的实测，报告在
 > `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库）。三者都是实测，但要重跑的是不同
 > 的东西。**探针里被 SKIP 的用例不算事实**，仍未有结论的列在 §1 末尾。
-> 升级固定版本时必须重跑探针再改这一页，并同时执行
+> 升级固定版本后必须重跑探针，才能补记新版实测结论，并同时执行
 > [Forgejo Module 设计](/architecture/forgejo-module-design) §2.3 的身份复核（`FORGEJO-R-066`）：LDAP 与
-> OIDC 能否按不可变 ID 同时接入，只能由探针回答，不能凭 changelog。更新：2026-09-20。
+> OIDC 能否按不可变 ID 同时接入，只能由探针回答，不能凭 changelog。文档更新：2026-10-30；历史实测：2026-09-20。
 
 ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/forgejo-module-design) 自己，
 以及 `ai_agent` 的编排器。这一页是它们**共用的底座**——上游在固定版本上到底怎么表现，以及由此
@@ -18,7 +19,24 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
 各自的内部纪律不在这里：编排器的 outbox、评论纪律与授权判定见
 [编排器与 Forgejo 互操作的规则](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/forgejo-interop.md)。
 
-## 1. 上游会咬人的事实
+## 0. Forgejo 16.0.5 的新设计基线（2026-10-12）
+
+AI Agent 本节设计/验收基线为 **16.0.5**。Module manifest 当前为 17.0.1；以下
+§1—§2 的探针事实与旧客户端规则保留其原版本归属，尤其不能把“管理员 token 端点不存在”继续用于新版。
+
+| 调用面 | 16.0.5 规则与证据边界 |
+| --- | --- |
+| 管理用户 token | `GET/POST /admin/users/{u}/tokens`、`DELETE .../{token}`；管理员 API token 可调用，不要求 basic auth + Sudo；路由/handler 已核验，真实最小 scope 未验收 |
+| 仓库限定 | token payload 保留 repositories 对象数组与 scopes；需要重做真实跨仓库访问和 scope 组合测试 |
+| 系统 hook | 固定 handler 提供分页列表，不把旧版“恒空”现象推广为新版事实；已有 hook id 可继续用于精确查证 |
+| 文件发布 | contents 新增 force_overwrite_new_branch；本设计不启用，冲突用最新 SHA 和隔离工作区处理，不用强推覆盖 |
+| 标签 / 评论 | 保留 color 和 page/limit；语义颜色规范化，重建上下文必须读取全部评论页 |
+| 真实验收 | 旧版 token、表单、hook、OIDC 实测不自动覆盖 16.0.5；后续在选定镜像重跑 |
+
+固定来源与摘要见[16.0.5 API 兼容性研究](https://github.com/anas-project/ANAS/blob/master/modules/ai_agent/docs/research/forgejo-api-compatibility.md)。
+源码检查只证明对应实现/定义存在，未将历史失败假设改成新版实机通过。
+
+## 1. 历史实测事实（15.0.7）
 
 **下表里每一条的共同特征是：按直觉写出来的代码能编译、能跑，然后在别的地方错。**
 
@@ -58,7 +76,33 @@ ANAS 里有两块代码跟 Forgejo 说话：[`forgejo` Module](/architecture/for
   （[设计](/architecture/forgejo-module-design) §2.3 第 3、4 点）。两者都要管理员 token，
   `forgejo-cli-probe-20260920` 只覆盖了 CLI 一侧。
 
-## 2. 由事实直接推出的规则
+### 1.1 17.0.1 Module 实测（2026-10-30）
+
+finance 的独立 Docker/netns、PostgreSQL 和测试 OIDC Provider 上执行
+`server-forgejo-postgres-upgrade-e2e.py`、`server-forgejo-oidc-e2e.py`（含 `--session-only`）。
+证据、镜像摘要与限制见 [Forgejo 配对计划 §14](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/plans/forgejo-module.md)。
+
+| 检查 | 17.0.1 结果与边界 |
+| --- | --- |
+| OIDC group→team | 真实登录加入/移除映射 team，管理员降权，保留手工 team；产品 helper 的新增、更新、清空通过。映射移除不是目录实时同步 |
+| 身份和改名 | `login_name` 逐字节等于稳定 `sub`；用户名/邮箱声明改变后仍为同一用户 ID、旧用户名、旧邮箱和原仓库。真实 LLNG/Casdoor 目录改名仍未验收 |
+| 最小停用请求 | 管理员 `PATCH /admin/users/{u}` 只带 `prohibit_login` 被接受 |
+| 停用的实际范围 | 已有 Web 会话显示 HTTP 200 的 **Account is suspended** 页面，私有文件不可读；API token 为 403，Git HTTP/SSH push 均失败。不是 session/凭据删除证明 |
+| 管理员凭据 API | `/admin/users/{u}/tokens` 创建和删除已实测，管理员 SSH key 创建/删除通过；15.0.7 的 token 端点不存在结论不能用于新版 |
+| LDAP / OIDC CLI | LDAP 仍无组同步或独立不可变 ID 字段；OAuth CLI 仍有 group-team-map/removal，无按自定义 claim 绑定既有 LDAP 用户的入口 |
+| 认证源、会话、登出 | 固定实例 Swagger 无对应 admin auth/session/logout 路由，探测四个候选端点均为 404；v17.0.1 Web 路由仍只有本地登出，未发现标准 IAM logout receiver。不能据此宣称 cookie 已撤销 |
+| 管理员改名 | 实例 `EditUserOption` 没有 `new_name` 字段；不宣称管理端 API 可自动重命名 |
+| PostgreSQL 升级与恢复 | 15.0.7→17.0.1、重建测试数据库并恢复旧数据/配置→15.0.7、再次升级均通过 Git HTTP/SSH、LFS 和包数据核对 |
+
+这些结果不自动覆盖 §1 的全部 AI Agent 探针、真实 IAM Provider、ARM64、完整 ANAS apply、
+凭据轮换或 Actions guest。单链路结论保持；永久撤权仍显式删除凭据，不能把停用期阻断当成永久吊销。
+
+后续在正式 Dockerfile 构建的 amd64 镜像上，普通 ANAS apply 和真实 Samba AD + Casdoor/LLNG
+浏览器矩阵均通过：包括 group→team 加入/登录移除、管理员降权、独立准入拒绝、手工 team 保留、
+IAM 停机拒绝新会话及恢复保持用户 ID。此矩阵没有执行真实目录改名，不能补记上表的改名边界。
+实际制品、源码和私有证据摘要见 [Forgejo 配对计划 §16](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/plans/forgejo-module.md)。
+
+## 2. 旧客户端规则（15.0.7）
 
 ### 2.1 身份引导顺序是硬的
 

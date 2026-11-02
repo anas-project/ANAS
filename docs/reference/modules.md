@@ -15,7 +15,7 @@ lastUpdated: false
 | [DDNS-GO](/reference/modules/ddns_go/) | `6.17.4-r7` | `release` | `network` | Dynamic DNS updater with first-class IPv6 and Chinese DNS vendor coverage. |
 | [DDNS Updater](/reference/modules/ddns_updater/) | `2.10.0-r5` | `release` | `network` | Dynamic DNS updater for the base domain and wildcard host. |
 | [Eturnal TURN](/reference/modules/eturnal/) | `1.12.2-r7` | `release` | `communication` | TURN service used by realtime communication modules. |
-| [Forgejo](/reference/modules/forgejo/) | `15.0.7-r3` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
+| [Forgejo](/reference/modules/forgejo/) | `17.0.1-r1` | `developing` | `app` | Self-hosted Git collaboration with HTTP/SSH access, Git LFS, packages, and OIDC authentication. |
 | [FreeRADIUS](/reference/modules/freeradius/) | `3.2.10-r5` | `developing` | `network` | RADIUS server module scaffold. |
 | [Immich](/reference/modules/immich/) | `3.2.4-r2` | `developing` | `app` | Photo and video upload, mobile backup, albums, and search with OIDC-only accounts. |
 | [Incus compute provider](/reference/modules/incus/) | `7.3.0-r4` | `developing` | `compute` | Provisions restricted Incus projects, quotas and per-consumer certificates for the compute contract. |

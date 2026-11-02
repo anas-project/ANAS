@@ -243,6 +243,27 @@ def client_checks(binary, decoder, report_root):
             if (result.returncode != 0 or any(e.get('Action') in ('fail', 'skip') for e in events)
                     or not any(e.get('Package') == package and e.get('Test') == name and e.get('Action') == 'pass' for e in events)
                     or not any(e.get('Package') == package and not e.get('Test') and e.get('Action') == 'pass' for e in events)):
+                # Keep only metadata and equality facts before private tmpfs
+                # disappears. Never archive certificate or private-key bytes.
+                config = {'default-remote': 'anas-compute', 'remotes': {'anas-compute': {
+                    'addr': lease['Endpoint'], 'auth_type': 'tls', 'project': lease['Sandbox'],
+                    'protocol': 'incus', 'public': False, 'last_working_address': lease['Endpoint'].removesuffix('/')}}}
+                expected = {
+                    'client.crt': base64.b64decode(lease['ClientCertB64']),
+                    'client.key': base64.b64decode(lease['ClientKeyB64']),
+                    'servercerts/anas-compute.crt': base64.b64decode(lease['ServerCertB64']),
+                    'config.yml': json.dumps(config, sort_keys=True, separators=(',', ':')).encode()+b'\n',
+                }
+                facts = []
+                for filename, content in expected.items():
+                    file = FIXTURE / 'client-restart' / filename
+                    if file.is_file() and not file.is_symlink():
+                        info = file.stat()
+                        facts.append({'file': filename, 'mode': oct(stat.S_IMODE(info.st_mode)),
+                                      'uid': info.st_uid, 'gid': info.st_gid, 'links': info.st_nlink,
+                                      'bytes': info.st_size, 'expected_bytes': len(content),
+                                      'matches_expected': file.read_bytes() == content})
+                (Path(report_root) / 'client-file-failure-facts.json').write_text(json.dumps(facts, indent=2)+'\n')
                 raise RuntimeError('native client validation failed or was skipped')
 
         run('TestNativeIncusClientInitialization', 'ANAS_REQUIRE_INCUS_CLIENT_NATIVE', 'client-initialization.jsonl')

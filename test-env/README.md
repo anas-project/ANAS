@@ -74,6 +74,105 @@ test-env/
   reports/    Generated logs and command output.
 ```
 
+`reports/go.mod` makes generated evidence a separate Go module. Historical
+source snapshots in this ignored directory stay available at their original
+paths and are excluded from the application's `go test ./...` package scan.
+Current test programs belong under `helpers/`, `fixtures/`, or `scripts/`.
+
+### Forgejo PostgreSQL and real IAM
+
+`scripts/server-forgejo-postgres-upgrade-e2e.py` checks the historical upgrade
+and full-data restore fixture; `scripts/server-forgejo-oidc-e2e.py` uses a test
+issuer for focused upstream API and session probes.
+
+`scripts/server-forgejo-iam-e2e.py --provider casdoor|llng` and
+`playwright/forgejo-iam-native.mjs` exercise the real directory/IAM/browser path
+after a successful ordinary ANAS apply. This harness is bound to the owned
+finance fixture `/home/whl/anas-fj-iam-20261030`, Docker socket
+`/run/anas-fj-iam-1030-docker.sock`, and netns `anas-fj-iam-1030`.
+Run one Provider at a time because Samba uses the namespace's host network.
+Before each apply, start `scripts/server-forgejo-iam-seed.py casdoor|llng` in
+the namespace. It waits for the owned Samba container to become healthy, then
+creates the marked test AD group before IAM starts. Production claim projection
+requires existing groups and does not create them. The denied test user belongs
+to this claim-only group but has no application-admission group.
+The browser container needs Playwright 1.62.1 and the matching `playwright-core`
+package under `inputs/playwright-core`; mount the runner as
+`/harness/forgejo-iam-native.mjs`. It pins the fixture certificate's SPKI.
+The matrix covers admission/denial, directory subject, custom team membership,
+admin downgrade, mapped-team removal, manual-team preservation, and IAM outage
+and recovery, followed by Git HTTP/SSH push/clone and LFS/package byte
+roundtrips. It verifies the live image digests and the proxy's owned Docker socket.
+Credentials and raw browser evidence stay in the private fixture.
+`--hosting-only` writes a separate `casdoor-hosting-probe` or `llng-hosting-probe`
+report and runs Git/LFS/package smoke without implying IAM acceptance.
+
+On a memory-constrained server, `forgejo-iam-browser-server.mjs` can run a
+separate workstation Chrome with the fixture's public leaf certificate. Use an
+SSH forward from local loopback port 19000 to `10.253.31.2:19000` and a reverse
+loopback forward from server port 19999 to local port 19998. The browser keeps
+the original HTTPS origins, pins the certificate, and uses a fresh context for
+every case. Credentials reach that workstation; use an authorized destination.
+Keep its generated connection JSON private (0600), copy it to the fixture's
+`inputs/browser-server.json`, and pass `--browser-ws-file` with that path. The
+server uses the Node binary from the fixed Playwright tool image as a small
+client in the host loopback namespace; no system Node installation is required.
+Its test libraries remain the matching `inputs/playwright-core`. Restart the
+workstation browser with the next provider's certificate before that matrix.
+Close both the browser server and SSH forwards when finished.
+The paired Forgejo plan records executed baselines and remaining acceptance gaps.
+
+### Forgejo VM Runner
+
+`server-incus-runner-image-e2e.py` and `server-forgejo-onejob-e2e.py` accept
+`--isolation vm` for an independently baked amd64 `incus_vm` split export
+(`incus.tar.xz` plus `disk.qcow2`). The default remains the container tier.
+VM runs retain 2 CPU, 4096 MiB RAM and 20 GiB root disk, including in the native
+Go controller/image probes. Both artifact target and combined fingerprint must
+match; a container export cannot stand in for a VM image. The real-job matrix
+and repo/org secret-free build modes use the same isolation selection.
+
+The exact disposable QEMU guest must expose nested KVM. Its outer memory budget
+also covers its OS, Incus, Forgejo and PostgreSQL; the owner checks physical RAM
+headroom before starting and does not count swap. For the larger VM artifact,
+the lab wrapper mounts a fresh, private guest-disk directory at `/run/anas`,
+keeping the Provider's fixed supply paths and byte/permission validation while
+avoiding RAM-backed artifact copies. No physical-host path or Docker socket is
+attached. See the paired Forgejo plan for the executed artifact and results.
+
+### Forgejo Core Actions switch
+
+`scripts/server-forgejo-core-actions-e2e.py` is the source-bound manual Core
+acceptance harness for the disposable QEMU lab recorded in the Forgejo plan
+§17.8–17.11. It requires the archived, checksum-verified public inputs under
+`/opt/anas-lifecycle-inputs`, Python 3 with PyYAML (`python3-yaml` in the guest),
+and the matching cloud instance ID passed as `--vm-id`. It refuses a non-QEMU
+host or an unexpected private workspace. Do not run it on an existing server.
+
+The standard-host path (`--standard-host --dns-fix`) performs the real
+install/configure/enroll flow before ordinary CLI apply. The source-bound
+`--standard-host --resume-standard` path continues the recorded r18 synthetic
+workspace in a new qcow2 overlay; it is not an arbitrary deployment repair tool.
+It covers the single Actions switch, a real workflow, running-job reclamation,
+account revocation, re-enablement, and ordinary CLI stop. The outer lab owner
+checks memory admission, QEMU shutdown and read-only physical-host baselines;
+its exact source and all input hashes are preserved in the acceptance archive.
+Private command logs, credentials and runtime disks must stay outside that
+public archive. A passing component test does not replace this Core gate.
+
+For the recorded full Samba image promotion only,
+`--standard-host --resume-standard --samba-full-image sha256:<accepted-image-id>`
+uses a distinct temporary Samba test revision after checking the old source
+snapshot. This prevents the existing deployment's frozen image from being
+mistaken for the new full build. It retags the unchanged anchor locally, leaves
+the operator checkout untouched, and requires the outer driver to independently
+observe the accepted Samba image healthy. Startup retries remain bounded and
+cover connection refusal/timeouts only; TLS and authentication errors fail.
+The initial deferred configuration edit runs while the old module source still
+matches its lock; promotion follows, then ordinary `apply --update-lock` performs
+the explicit trust update. The first failed command index, program, exit code
+and stage are recorded separately from later diagnostic commands.
+
 ### Nextcloud trash-bin configuration
 
 The domain-separation `full` suite includes `server-nextcloud-trashbin-e2e.sh`.

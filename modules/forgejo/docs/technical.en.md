@@ -41,10 +41,19 @@ publication, a complete business-stack deployment or acceptance on other platfor
 
 ## Cleanup before stopping
 
+The fixed OIDC container helper runs the upstream CLI to read, add/update, and verify the source.
+Its total execution budget is 180 seconds; ordinary container commands retain 45 seconds. A shorter
+caller deadline takes precedence, and failed subprocess output remains private. This allowance does
+not change readiness, OIDC validation, or failure compensation. Only exact, fixed helper reasons identify
+a failed read, reconciliation, or verification; arbitrary CLI, Docker, or discovery output stays private.
+
 The explicitly declared `before_stop` phase runs the old deployment's frozen Hook and private environment
 after Core verifies Compose project ownership. Its secrets map is empty: newer credentials from the current
 Secret Store are not appended to the old Hook's frozen projection. The Hook sends a bounded graceful stop only to the exact
 observed controller container ID, keeping its API and compute network available until cleanup completes.
+If a disabled controller remains Created after application startup failed, the Hook starts that exact
+process to perform cleanup, then verifies the same ID and successful exit. Created controllers in enabled
+mode and previously failed exits retain the existing refusal behavior.
 Two terminal reads must confirm the fixed entrypoint, mode and successful exit. Unknown/replaced containers,
 failed exits or unfinished cleanup block removal; this phase never changes an account. The next disabled
 deployment's `local_account_apply` invalidates the managed password under its existing ownership rules.
@@ -93,13 +102,22 @@ actual results must be recorded against the new artifacts separately.
 
 ## Shared build inputs for the compute controller image
 
+The Go build stages for the Forgejo entrypoint, controller and bundled Incus CLI are pinned to
+`1.26.10-alpine` to avoid reusing a floating older layer without standard-library security fixes.
+The repository minimum is Go 1.26.10; HTTP/SSH dependencies use `x/net v0.60.0` and its required
+`x/crypto v0.57.0`.
+
+
 The Actions controller and one-shot compute initialization service use the same Dockerfile. A source
 checkout resolves the named `shared` context from `../..`; a copied staging module must explicitly set
 `ANAS_SHARED_BUILD_CONTEXT` to its matching absolute ANAS source root, not a runtime data directory.
 
 Both Go and Alpine runtime bases honor `DOCKER_HUB_REGISTRY`; an explicit `GO_BUILDER_REGISTRY`
-overrides only the Go stage. The controller's shared repository code remains `GOPROXY=off`. The
-separately pinned upstream Incus CLI module `v7.3.0` uses `GO_MODULE_PROXY`, falling back to
+overrides only the Go stage. `GO_MODULE_PROXY` first downloads the external `golang.org/x/sys`
+dependency pinned by go.mod/go.sum. Compilation then uses `GOPROXY=off` and repository code from
+`shared`, preventing fallback to a published repository copy. The separately pinned upstream Incus
+CLI module `v7.3.0` is built in a separate module with the HTTP/SSH security versions above;
+these tool dependencies do not enter the ANAS module. It also uses `GO_MODULE_PROXY`, falling back to
 `GOPROXY_URL` and the official source. That CLI reports `7.3`; its display version must not be
 confused with the Go module tag's trailing `.0`. Transport settings do not enter the runtime
 environment, disable Go checksum verification or carry proxy credentials.
@@ -177,7 +195,7 @@ guest kernel-operation set. Project-level host-device/raw/privileged restriction
 workloads still use VMs. See the [Chinese design](/architecture/forgejo-module-design), section 4.3.
 
 <!-- generated:module-identity:start -->
-> Status: current implementation; based on `15.0.7-r3` / `anas.module/v1`.
+> Status: current implementation; based on `17.0.1-r1` / `anas.module/v1`.
 <!-- generated:module-identity:end -->
 
 ## Compose topology
@@ -191,15 +209,18 @@ This topology declaration is not native mTLS, isolation or one-job acceptance ev
 <!-- generated:compose-topology:start -->
 | Service | Image/build | Networks | Volumes |
 | --- | --- | --- | --- |
-| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:15.0.7-r3` | `actions-control, db, traefik` | 2 |
-| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 2 |
-| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:15.0.7-r3` | `actions-control, compute-control` | 1 |
+| `anas_forgejo` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo:17.0.1-r1` | `actions-control, db, traefik` | 2 |
+| `anas_forgejo_actions_controller` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:17.0.1-r1` | `actions-control, compute-control` | 2 |
+| `anas_forgejo_actions_preflight` | `${ANAS_IMAGE_REGISTRY:-ghcr.io/anas-project}/anas-forgejo-actions-controller:17.0.1-r1` | `actions-control, compute-control` | 1 |
 <!-- generated:compose-topology:end -->
 
 Web/API port 3000 is reachable only through Traefik. Built-in SSH container port 2222 is published directly as
 `FORGEJO_SSH_PORT`. The root filesystem is read-only; `/tmp` is tmpfs and `/var/lib/gitea` is the application data
-mount. The image extends `codeberg.org/forgejo/forgejo:15.0.7-rootless`. Its static wrapper fixes an initially
+mount. The image extends `codeberg.org/forgejo/forgejo:17.0.1-rootless`. Its static wrapper fixes an initially
 root-owned mount without following symlinks, drops permanently to `1000:1000`, and executes the upstream entrypoint.
+The unprivileged readiness probe requests `/api/healthz` and requires HTTP 200
+with JSON `status=pass`, including Forgejo's database/cache checks. The old
+`/-/healthcheck` path returns 404.
 
 ## Configuration contract
 
@@ -211,11 +232,12 @@ root-owned mount without following symlinks, drops permanently to `1000:1000`, a
 | `forgejo.actions_runner_image` | string | `format: json_object` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | no | no | no | yes | `container_recreate` | Structured image reference; Core freezes the fingerprint before rendering |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | no | no | no | yes | `container_recreate` | Allow repository custom Git hooks to execute server-side code as the Forgejo user |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Application database name |
-| `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
+| `forgejo.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Service domain prefix |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | IAM login protocol; OIDC only |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | no | yes | no | yes | `reconcile` | Default UI language; browser and saved preferences take precedence |
 | `forgejo.local_path_import_enabled` | bool | — | `false` | `static` | `FORGEJO_LOCAL_PATH_IMPORT_ENABLED` | no | no | no | yes | `container_recreate` | Allow imports from paths already visible inside the Forgejo container without adding a host mount |
+| `forgejo.oidc_group_team_map` | string | `max length: 65536`; `format: json_object` | `{}` | `static` | `FORGEJO_OIDC_GROUP_TEAM_MAP` | no | no | no | yes | `reconcile` | JSON mapping of IAM groups to existing Forgejo organizations and teams; additions and removals apply at login |
 | `forgejo.ssh_port` | int | `1..65535` | `2222` | `static` | `FORGEJO_SSH_PORT` | no | no | no | yes | `container_recreate` | Public SSH Git port |
 
 The hook matches `DEFAULT_LANGUAGE` against the pinned 31-locale inventory and moves the selected locale to the
@@ -225,7 +247,7 @@ the double-underscore section/key mapping is unchanged, so no lowercase section 
 
 ## Database and persistent state
 
-Forgejo consumes a retained `primary_database` Resource. PostgreSQL maps to `postgres`; MariaDB maps to `mysql`.
+Forgejo consumes a retained `primary_database` Resource. Only PostgreSQL (`postgres`) is accepted; legacy MySQL/MariaDB configurations fail without migration or deletion.
 The database owns users, organizations, metadata, issues, permissions, and sessions. `/var/lib/gitea` owns Git
 repositories, LFS, packages, attachments, SSH state, indexes, and application configuration. Database name/type
 changes are explicit data-migration boundaries.
@@ -265,14 +287,17 @@ IAM central session nor receive an IAM-initiated logout. Neither direction has a
 | --- | --- |
 | Account disabled, deleted, or removed from `APP_forgejo` | **No automatic path**: an administrator must disable or delete the Forgejo account |
 | Group membership change | Reaches teams through the groups claim at that person's next OIDC login |
-| Rename or mail change | **The same account**: matched by `sub`; username and email are written only at creation, so the username stays frozen at the old value (`inferred`, probe pending) |
+| Rename or mail change | **The same account**: matched by `sub`; username and email are written only at creation, so the username stays frozen at the old value (verified with a test OIDC Provider on 17.0.1; real IAM directory rename acceptance remains separate) |
 
 Access tokens and SSH keys never pass through a login, so "it converges at the next sign-in" does not hold for
 them. Revocation has to act on the account itself.
 
-**Not yet verified**: whether `prohibit_login` on the pinned version also closes access tokens and Git over SSH.
-Until a probe settles it, revocation means disabling the account *and* explicitly revoking its tokens and SSH
-keys. See [interoperability baseline](/developer/forgejo-interop) §4.
+**Verified on 17.0.1**: an admin PATCH containing only `prohibit_login` suspended the test OIDC user.
+API tokens returned 403, Git HTTP/SSH pushes failed, and the existing Web session received an HTTP 200
+suspension page instead of private file contents. This blocks access during suspension; it does not delete
+credentials. Permanent revocation still explicitly deletes tokens and SSH keys. Admin token creation/deletion
+was exercised; no separate auth-source or session API was found. See [interoperability baseline](/developer/forgejo-interop) §1.1.
+
 
 ### Directory attribute changes — implementation
 
@@ -289,20 +314,14 @@ One-to-one with the README's *Directory attribute changes*.
   mapping. Username, email, and display name are **not** refreshed.
 - **Which interface performs revocation**: none. The Module registers no directory-event watcher and
   the pinned version exposes no IAM-initiated logout receiver, so there is no automatic revocation
-  interface at all. Only an administrator, through Forgejo's admin UI or CLI, can revoke.
+  interface at all. Only an administrator, through Forgejo's admin UI or API, can revoke; the CLI has no `prohibit_login` subcommand.
 - **Reconciliation path**: none today. The entry point that would unlock one is below.
 - **Technical obstacle**: upstream's OAuth2 source accepts no configurable identity field, and
   `ACCOUNT_LINKING` can only fall back to username or email. This is a gap in the sense of
   `DIRKEY-R-004`; per `DIRKEY-R-005` it is re-checked whenever the pinned version changes (the
   re-check trigger is `FORGEJO-R-066`).
 
-**`DIRKEY-R-013` projection verdict: unaffected (`inferred`).** Forgejo stores `sub` in `login_name`,
-an internal field visible only to site administrators; the in-application username comes from
-`preferred_username`, and that username — not `sub` — is what URLs and repository paths use. So once
-M2 switches the subject identifier to the anchor, no UUID surfaces in the interface and Forgejo needs
-no prior change. **Not yet confirmed by a probe**: whether `login_name` really receives the verbatim
-`sub`, and whether the admin user list echoes it. The check belongs in
-`test-env/scripts/forgejo-agent-api-probe.sh` and must run before the M2 switch.
+**`DIRKEY-R-013` projection verdict: the Forgejo side was verified by the 17.0.1 protocol probe; real IAM migration remains separate.** The admin user list returned the exact OIDC `sub` in `login_name`, while the visible username and repository path remained distinct and stable. This proves the Forgejo-side premise, not the M2 Provider cutover.
 
 After the switch this gains a capability it does not have today: the value in `login_name` will be
 the anchor itself, so listing Forgejo's external accounts, diffing them against the directory's
@@ -329,6 +348,12 @@ fixes the restricted Incus project/profile and rejects raw configuration, host d
 secrets, and arbitrary devices. The guest uses separate Runner/engine users, rootless Podman, capacity one, no
 privileged mode, no valid volumes, and no `host` label.
 
+The Runner process uses `container.docker_host` and its startup environment to connect to
+`unix:///run/anas-podman/podman.sock` inside the guest. Runner maps this socket into job containers
+at `/var/run/docker.sock`, so `runner.envs.DOCKER_HOST` uses `unix:///var/run/docker.sock`. Only
+the disposable guest rootless engine is exposed; the ANAS host Docker socket is unavailable.
+Recipe changes require a new bake and a real secret-free container-build acceptance run.
+
 ### Isolation tiers
 
 `forgejo.actions_isolation` picks the compute contract interface, and the contract default in `module.yml` resolves
@@ -342,10 +367,10 @@ single managed NIC, no host disk, physical NIC, or arbitrary device -- and the c
 `restricted.containers.privilege=unprivileged` enforced on the project. The only difference is the kernel boundary,
 so scopes that span trust domains or execute untrusted input should set `incus_vm` explicitly (`FORGEJO-R-025`).
 
-`TestModuleIsolationTierDefaultsToTheContainerTier` pins the manifest's two-tier set and its
-`default: incus_container` (`R-024`). **Current gap**: nothing checks that the pinned fingerprint matches the
-selected tier and target architecture (`R-026`) -- `runner-image/` expects one image per amd64/arm64 and per
-container/VM tier, while `actions_runner_image` holds a single value validated only for hex shape.
+`TestModuleIsolationTierDefaultsToTheContainerTier` pins the two-tier set and the container default (`R-024`).
+Core freezes the structured image reference; the Incus provider verifies its fingerprint, tier and target
+architecture before issuing lease credentials (`R-026`). This does not mean all four architecture/tier guest
+images have passed native acceptance.
 
 ### The control-plane account
 
@@ -355,12 +380,12 @@ neither the controller password nor recovery-owner password enters host argv, co
 output. The fixed `anas_actions_controller` account remains a **site administrator**. Disabling its managed
 password does not conceal or resolve that existing privilege deviation.
 
-The controller's entire call set is three endpoints, all confined to approved scopes: `GET
+The controller's call set has four endpoints, all confined to approved scopes: `GET .../actions/runners`, `GET
 .../actions/runners/jobs`, `POST .../actions/runners`, and `DELETE .../actions/runners/{id}` (under `orgs/{owner}`
 or `repos/{owner}/{repo}`), using basic auth. Those endpoints need organization-owner or repository-admin rights,
 not site-wide ones; site administrator is the consequence of having no per-scope granting path, and is a recorded
 deviation (`FORGEJO-R-069`). The call set itself is pinned by
-`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI`: three requests per scope, for both org and repo scopes,
+`TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI`: four requests per scope, for both org and repo scopes,
 all inside that scope's `actions/runners` subtree and none touching `/admin/` (`FORGEJO-R-068`).
 
 With Actions disabled, reconciliation waits within a fixed deadline for the same immutable Docker container ID
@@ -370,7 +395,7 @@ or failed exit never authorize password mutation. A controller lacking its lease
 fails without erasing state. State reads require a private parent and a current-user-owned, single-link 0600
 regular file, bounded to 4 MiB with stable before/after identity. Links, missing workload inventory, duplicate
 JSON fields and unsupported state fail closed. A genuinely absent fresh state is read without creating files;
-this does not reconstruct orphan resources after loss of an entire state volume.
+orphan cleanup while enabled is handled by the periodic reconciliation described below.
 
 The account helper uses only the fixed loopback API and verifies both the recovery administrator and the target's
 numeric ID. A private HMAC receipt binds that ID, fixed name/email and pending/final state to the managed password.
@@ -390,11 +415,11 @@ separate feature state and is not a second Runner switch.
 
 Empty queues create no Runner or instance, and no ANAS host Docker socket is shared. Controller state lives in the
 named volume `forgejo_actions_state`, outside the `R-003` backup consistency point -- but **it is not freely
-discardable**: `ListManaged` is called only from `CleanupAll` (switch-off), while the periodic `Reconcile` works
-purely from state, and an orphaned Forgejo runner registration has no fallback at all because deregistration needs
-the `RunnerID` held in state and `ForgejoAPI` has no method that lists runners. Losing state means orphaned
-instances wait until the next switch-off, and a registration created just before a crash stays forever.
-`FORGEJO-R-046` tracks the fix. A real independent Incus host, egress firewall, image build, and one-job E2E per tier
+discardable**. Periodic `Reconcile` and `CleanupAll` check actual instances and paginated Runner lists. New
+registrations carry scope/lease ownership signatures and can be reclaimed after state loss; objects without
+provable ownership are retained. Preserve the volume and drain before changing the version,
+scope, lease or password. See the orphan-recovery section below and `FORGEJO-R-046`.
+A real independent Incus host, egress firewall, image build, and one-job E2E per tier
 remain release gates. Git hooks and local-path import are independently
 configurable and disabled by default. Hooks execute server-side code as the Forgejo user; local
 imports can read only paths already visible inside the container, and Compose adds no host mount for the feature.
@@ -406,8 +431,11 @@ Design decisions are recorded in the [Forgejo Module design](/architecture/forge
 and explicit exclusions are tracked in the [Forgejo Module implementation plan](../dev-docs/plans/forgejo-module.md).
 
 Unit tests cover database mapping, locale fallback, OIDC metadata, secret stability, stdin boundaries, symlink-safe
-ownership, local-admin bootstrap, and auth-source reconciliation. Database/architecture matrices, browser OIDC,
-HTTP/SSH Git, LFS/package, restore, and LTS upgrade/rollback E2E remain release gates.
+ownership, local-admin bootstrap, and auth-source reconciliation. This round covers PostgreSQL/amd64, browser OIDC,
+HTTP/SSH Git, LFS/package and restore remain release gates. The first public baseline is 17.0.1; compatibility
+with unpublished development versions is not required. Upgrade/rollback E2E applies once an older public version exists.
+ARM64 acceptance is explicitly deferred and does not block this amd64 conclusion; it is not reported as tested.
+Pure hosting and Actions are assessed separately under R-054; current execution evidence is in the paired plan.
 
 ## Actions cancellation, uncertain creation and durable retirement
 
@@ -508,3 +536,35 @@ the target URL. Native IAM display limitations and end-to-end acceptance are tra
 ### Application icon provenance
 
 `applications.icons.source` declares the 512px PNG. `assets/icon-source.json` records the official URL, original digest, redraw status and generation inputs; original artwork is retained alongside it. `node scripts/application-themes.mjs --check` verifies provenance and the original/minimal packages. Use `--render` after changing vector artwork; runtime code never loads SVG or downloads remote images. The global theme uses the shared catalog; personal themes affect the portal only.
+
+## 2026-10-30: PostgreSQL, group mapping and lost-state recovery
+
+The Hook requests team-mapping and administrator groups through the generic `CLAIM_GROUPS` JSON array.
+Casdoor registers trusted membership projections separately from `ALLOW_GROUPS`; this neither grants application
+admission nor creates directory groups. LLNG already returns actual directory groups.
+
+The current candidate is `17.0.1-r1` and accepts PostgreSQL only. Legacy MySQL/MariaDB settings fail without
+altering data. Existing `auto` settings bound to MariaDB are also rejected using Resource state or the active
+deployment record, preventing a silent switch to an empty PostgreSQL database.
+`oidc_group_team_map` has shape `{"IAM group":{"organization":["team"]}}`; the Hook sends it
+through stdin and the helper explicitly sets `--group-team-map` and `--group-team-map-removal=true`.
+An empty object clears configuration; memberships in teams removed from the map are not retroactively revoked.
+Organizations and teams must already exist. Changes take effect at login, without directory sync or immediate revocation.
+
+Both periodic `Reconcile` and `CleanupAll` enumerate lease-scoped managed instances and paginated registrations
+in approved scopes. Instance names must match their workload IDs. Runner names carry an HMAC made with the
+existing managed credential, bound to scope and lease sandbox. Tracked workloads remain protected, so orphan
+scanning cannot bypass a failed ownership check. Listing failures prevent new provisioning but do not prevent
+expired-workload retirement. Pagination continues to an empty page and rejects duplicate identities or overflow.
+
+Recovery applies to registrations created by the first public baseline; unpublished experiments are outside the compatibility scope.
+Registrations without a valid ownership signature are retained. Preserve state and disable/drain Actions before upgrading,
+migrating the controller credential, changing its sandbox or removing authorized scopes. Do not routinely delete state.
+
+The Forgejo Module reconciles only its OIDC source, recovery account and controller account. It does not register
+business webhooks or clean up external consumers' accounts, tokens, SSH keys or hooks. Consumers own the storage,
+audit and revocation of their management credentials.
+
+## EFI boot for VM Runners
+
+The generator selects VM packages directly for the target architecture, avoiding builder architecture filters that could silently omit the kernel and bootloader. VM recipes explicitly install Debian-signed GRUB and shim. A post-files action installs the EFI/BOOT fallback and EFI/debian entries and binds GRUB to distrobuilder's root filesystem UUID. Installing EFI packages alone does not populate the image's EFI partition; actual boot and read-only partition inspection reproduced the empty partition. These additional boot dependencies apply only to VMs and retain the compute client's Secure Boot=true policy. Generate a new recipe and immutable artifact revision after the fix; the container recipe remains unchanged.

@@ -52,10 +52,10 @@ modules:
     transitions:
       - {id: eturnal-r5-r6, from: 1.12.2-r5, to: 1.12.2-r7, suite: modules-casdoor}
   - name: forgejo
-    current: 15.0.7-r3
+    current: 17.0.1-r1
     # Still developing: this records the next first-release baseline, not a
     # successful native upgrade.
-    baseline: {id: forgejo-first-release-r2, version: 15.0.7-r3, reason: no_prior_release}
+    baseline: {id: forgejo-first-release-r2, version: 17.0.1-r1, reason: no_prior_release}
   - name: freeradius
     current: 3.2.10-r5
     transitions:
@@ -79,9 +79,13 @@ modules:
     transitions:
       - {id: lego-r4-r5, from: 5.3.1-r4, to: 5.3.1-r6, suite: modules-ddns}
   - name: llng
-    current: 2.23.2-r13
+    current: 2.23.4-r13
     transitions:
-      - {id: llng-r9-r12, from: 2.23.2-r9, to: 2.23.2-r13, suite: modules-app}
+      - {id: llng-r9-r12, from: 2.23.2-r9, to: 2.23.4-r13, suite: modules-app}
+  - name: mail
+    current: 0.1.0-r1
+    # Developing module; no previous ANAS release. This is not acceptance evidence.
+    baseline: {id: mail-first-release-r1, version: 0.1.0-r1, reason: no_prior_release}
   - name: mariadb
     current: 12.3.2-r5
     transitions:

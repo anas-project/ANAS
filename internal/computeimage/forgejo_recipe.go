@@ -52,6 +52,7 @@ func ForgejoRunnerRecipeWithOptions(target Target, options ForgejoRunnerRecipeOp
 	vmFiles := ""
 	vmPackages := ""
 	vmTarget := ""
+	vmBootAction := ""
 	if target.Interface == "incus_vm" {
 		vmFiles = `  - generator: fstab
   - generator: incus-agent
@@ -59,25 +60,42 @@ func ForgejoRunnerRecipeWithOptions(target Target, options ForgejoRunnerRecipeOp
 		switch target.Architecture {
 		case "amd64":
 			vmPackages = `    - action: install
-      architectures:
-        - x86_64
       packages:
         - efibootmgr
         - grub-efi-amd64
+        - grub-efi-amd64-signed
+        - shim-signed
         - grub2-common
         - linux-image-amd64
 `
 		case "arm64":
 			vmPackages = `    - action: install
-      architectures:
-        - aarch64
       packages:
         - efibootmgr
         - grub-efi-arm64
+        - grub-efi-arm64-signed
+        - shim-signed
         - grub2-common
         - linux-image-arm64
 `
 		}
+		// Package installation does not populate an image's EFI partition. Build
+		// both fallback and Debian entries while distrobuilder exposes that mount,
+		// retaining the signed boot chain required by the compute client's policy.
+		efiTarget := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[target.Architecture]
+		vmBootAction = fmt.Sprintf(`  - trigger: post-files
+    types:
+      - vm
+    action: |-
+      #!/bin/sh
+      set -eu
+      : "${DISTROBUILDER_ROOT_UUID:?VM root filesystem UUID is required}"
+      update-grub
+      grub-install --uefi-secure-boot --target=%s-efi --no-nvram --removable
+      grub-install --uefi-secure-boot --target=%s-efi --no-nvram
+      update-grub
+      sed -i "s#root=[^ ]*#root=${DISTROBUILDER_ROOT_UUID}#g" /boot/grub/grub.cfg
+`, efiTarget, efiTarget)
 		vmTarget = "targets:\n  incus:\n    vm:\n      size: 10737418240\n      filesystem: ext4\n"
 	}
 	body := fmt.Sprintf(`image:
@@ -257,7 +275,8 @@ actions:
       install -d -o runner-engine -g actions-engine -m 0700 /home/runner-engine/.config /home/runner-engine/.config/systemd /home/runner-engine/.config/systemd/user /home/runner-engine/.config/systemd/user/sockets.target.wants
       ln -s /usr/lib/systemd/user/anas-podman.socket /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
       chown -h runner-engine:actions-engine /home/runner-engine/.config/systemd/user/sockets.target.wants/anas-podman.socket
-%s`, arch, bootstrapURL, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.runnerInput), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.podmanAppArmor), indentLiteral(sources.podmanPolicyService), indentLiteral(sources.apparmorLoader), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), buildMirrorAction, vmTarget)
+`, arch, bootstrapURL, vmPackages, vmFiles, indentLiteral(sources.runnerStart), indentLiteral(sources.runnerInput), indentLiteral(sources.oneJob), indentLiteral(sources.podmanService), indentLiteral(sources.podmanSocket), indentLiteral(sources.podmanTmpfiles), indentLiteral(sources.podmanAppArmor), indentLiteral(sources.podmanPolicyService), indentLiteral(sources.apparmorLoader), indentLiteral(sources.engineUserManager), indentLiteral(sources.runnerConfig), buildMirrorAction)
+	body += vmBootAction + vmTarget
 	return []byte(body), nil
 }
 

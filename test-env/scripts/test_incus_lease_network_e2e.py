@@ -1,7 +1,9 @@
 """Offline guards for the lease network native gate."""
 import copy
 import importlib.util
+import json
 from pathlib import Path
+import tempfile
 import unittest
 
 SPEC = importlib.util.spec_from_file_location('lease_native', Path(__file__).with_name('server-incus-lease-network-e2e.py'))
@@ -63,6 +65,17 @@ class LeaseView(unittest.TestCase):
         flipped = copy.deepcopy(self.view())
         flipped['leases'][0]['directions'][0]['allowed'] = not flipped['leases'][0]['directions'][0]['allowed']
         self.assertTrue(NATIVE.validate_lease_view(flipped, NATIVE.expected_view(True)))
+
+
+class HostInterface(unittest.TestCase):
+    def test_vm_consumers_request_the_vm_interface(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'lease-tiers.json'
+            self.assertEqual(NATIVE.host_interface(path), 'incus_container')
+            path.write_text(json.dumps({'vm_consumers': []}))
+            self.assertEqual(NATIVE.host_interface(path), 'incus_container')
+            path.write_text(json.dumps({'vm_consumers': ['lnlan', 'lnhost']}))
+            self.assertEqual(NATIVE.host_interface(path), 'incus_vm')
 
 
 class LeasePage(unittest.TestCase):

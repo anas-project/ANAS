@@ -14,6 +14,19 @@ spec.loader.exec_module(lab)
 
 
 class RunnerImageSafety(unittest.TestCase):
+    def test_current_ensure_network_report_does_not_hide_missing_flags(self):
+        flags = dict(exists=True, ready=True, restricted=True, quota_enforced=True)
+        current = dict(flags, network={'bridge': 'lease123', 'ipv4_subnet': '10.0.0.0/24'})
+        self.assertTrue(lab.provider_confirmed(current, 'ensure'))
+        self.assertTrue(lab.provider_confirmed(flags, 'inspect'))
+        self.assertFalse(lab.provider_confirmed(flags, 'ensure'))
+        self.assertFalse(lab.provider_confirmed(current, 'inspect'))
+        for key in flags:
+            for value in (False, None, 1):
+                self.assertFalse(lab.provider_confirmed(dict(current, **{key: value}), 'ensure'))
+        for value in (None, {}, {'bridge': 'lease123'}, {'bridge': [], 'ipv4_subnet': '10.0.0.0/24'}):
+            self.assertFalse(lab.provider_confirmed(dict(current, network=value), 'ensure'))
+
     def runner_events(self):
         children = sorted(lab.REQUIRED_RUNNER_TESTS - {lab.RUNNER_TEST})
         pairs = [('start', None), ('run', lab.RUNNER_TEST)]
@@ -140,6 +153,25 @@ class RunnerImageSafety(unittest.TestCase):
             (root/'rootfs.squashfs').write_bytes(b'corrupt-rootfs!')
             with self.assertRaises(RuntimeError):
                 lab.verify_export(root, pin)
+
+    def test_vm_export_cannot_substitute_container_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            release, pin = self.make_export(root)
+            with self.assertRaises(RuntimeError):
+                lab.verify_export(root, pin, 'vm')
+            release['entry']['interface'] = 'incus_vm'
+            release['artifact']['target']['interface'] = 'incus_vm'
+            (root/'artifact.json').write_text(json.dumps(release))
+            with self.assertRaises(FileNotFoundError):
+                lab.verify_export(root, pin, 'vm')
+            (root/'rootfs.squashfs').rename(root/'disk.qcow2')
+            self.assertEqual(lab.verify_export(root, pin, 'vm'), release)
+            with self.assertRaises(RuntimeError):
+                lab.verify_export(root, pin)
+            (root/'disk.qcow2').write_bytes(b'changed-qcow2')
+            with self.assertRaises(RuntimeError):
+                lab.verify_export(root, pin, 'vm')
 
     def test_export_symlink_is_not_an_image_input(self):
         with tempfile.TemporaryDirectory() as directory:

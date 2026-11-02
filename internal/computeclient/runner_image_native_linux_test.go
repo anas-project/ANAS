@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -46,8 +47,12 @@ func TestNativeBakedForgejoRunnerImage(t *testing.T) {
 		}
 	}
 	var lease Lease
-	if json.Unmarshal(read(filepath.Join(root, "lease.json")), &lease) != nil || lease.Validate() != nil || lease.Endpoint != "https://127.0.0.1:8443" || lease.Sandbox != "anas-runner-image" || lease.Interface != InterfaceContainer || len(lease.ImageAllowlist) != 1 {
+	if json.Unmarshal(read(filepath.Join(root, "lease.json")), &lease) != nil || lease.Validate() != nil || lease.Endpoint != "https://127.0.0.1:8443" || lease.Sandbox != "anas-runner-image" || (lease.Interface != InterfaceContainer && lease.Interface != InterfaceVM) || len(lease.ImageAllowlist) != 1 {
 		t.Fatal("invalid baked-image lease")
+	}
+	if (lease.Interface == InterfaceVM && (lease.CPU != 2 || lease.MemoryMiB != 4096 || lease.DiskGiB != 20)) ||
+		(lease.Interface == InterfaceContainer && (lease.CPU != 1 || lease.MemoryMiB != 768 || lease.DiskGiB != 8)) {
+		t.Fatal("fixture must retain the recorded isolation tier resource budget")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
@@ -63,7 +68,7 @@ func TestNativeBakedForgejoRunnerImage(t *testing.T) {
 			t.Error("baked-image cleanup unconfirmed", err)
 		}
 	})
-	if err := c.Create(ctx, InstanceSpec{ID: id, Image: lease.ImageAllowlist[0], WorkloadID: "baked-image-smoke", CPU: 1, MemoryMiB: 768, DiskGiB: 8}); err != nil {
+	if err := c.Create(ctx, InstanceSpec{ID: id, Image: lease.ImageAllowlist[0], WorkloadID: "baked-image-smoke", CPU: lease.CPU, MemoryMiB: lease.MemoryMiB, DiskGiB: lease.DiskGiB}); err != nil {
 		t.Fatal("create baked image", err)
 	}
 	if err := c.Start(ctx, id); err != nil {
@@ -79,24 +84,61 @@ func TestNativeBakedForgejoRunnerImage(t *testing.T) {
 		applyNativeUserConfigControl(t, ctx, c, id, lease)
 	}
 	t.Run("provider-namespace-fence", func(t *testing.T) {
-		for key, want := range map[string]string{"restricted.containers.nesting": "allow", "restricted.containers.privilege": "unprivileged", "restricted.containers.lowlevel": "block", "restricted.devices.disk": "block", "restricted.devices.unix-char": "block"} {
+		fence := map[string]string{"restricted.containers.nesting": "allow", "restricted.containers.privilege": "unprivileged", "restricted.containers.lowlevel": "block", "restricted.virtual-machines.lowlevel": "block", "restricted.devices.disk": "block", "restricted.devices.unix-char": "block"}
+		nesting := "true"
+		if lease.Interface == InterfaceVM {
+			fence["restricted.containers.nesting"] = "block"
+			fence["limits.containers"], fence["limits.virtual-machines"] = "0", "1"
+			// Read advertised capabilities as the local fixture administrator,
+			// not through the restricted lease certificate. Older daemons reject
+			// security.nesting on VMs; newer ones require an explicit false.
+			query := exec.CommandContext(ctx, "/usr/bin/incus", "--force-local", "query", "/1.0")
+			query.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "INCUS_SOCKET=/var/lib/incus/unix.socket", "INCUS_CONF=" + root + "/admin", "HOME=" + root + "/admin"}
+			body, err := query.Output()
+			var server struct {
+				APIExtensions []string `json:"api_extensions"`
+			}
+			if err != nil || json.Unmarshal(body, &server) != nil || len(server.APIExtensions) == 0 {
+				t.Fatal("VM nesting capability could not be confirmed")
+			}
+			nesting = ""
+			fence["restricted.virtual-machines.nesting"] = ""
+			for _, extension := range server.APIExtensions {
+				if extension == "projects_restricted_virtual_machines_nesting" {
+					nesting = "false"
+					fence["restricted.virtual-machines.nesting"] = "block"
+				}
+			}
+			t.Logf("VM nesting policy is explicitly advertised: %t", nesting == "false")
+		}
+		for key, want := range fence {
 			body, err := c.run.Run(ctx, nil, "project", "get", remoteName+":"+lease.Sandbox, key)
 			if err != nil || strings.TrimSpace(string(body)) != want {
 				t.Fatalf("project fence %s mismatch: %v", key, err)
 			}
 		}
 		body, err := c.run.Run(ctx, nil, "profile", "get", remoteName+":"+lease.Profile, "security.nesting")
-		if err != nil || strings.TrimSpace(string(body)) != "true" {
-			t.Fatal("provider profile does not own namespace nesting", err)
+		if err != nil || strings.TrimSpace(string(body)) != nesting {
+			t.Fatal("provider profile does not own the selected isolation nesting policy", err)
 		}
-		for _, args := range [][]string{
-			{"config", "set", remoteName + ":" + id, "security.privileged=true"},
-			{"config", "set", remoteName + ":" + id, "raw.lxc=lxc.log.level=ERROR"},
+		forbidden := [][]string{
 			{"config", "device", "add", remoteName + ":" + id, "forbidden-host-disk", "disk", "source=/usr/share/doc", "path=/mnt/host-doc", "readonly=true"},
 			{"config", "device", "add", remoteName + ":" + id, "forbidden-host-char", "unix-char", "source=/dev/null", "path=/dev/anas-control"},
-		} {
+		}
+		if lease.Interface == InterfaceVM {
+			forbidden = append(forbidden, []string{"config", "set", remoteName + ":" + id, "raw.qemu=-no-reboot"})
+			if nesting == "false" {
+				forbidden = append(forbidden, []string{"config", "set", remoteName + ":" + id, "security.nesting=true"})
+			}
+		} else {
+			// Container-only keys do not configure VM privilege or VM QEMU.
+			forbidden = append(forbidden,
+				[]string{"config", "set", remoteName + ":" + id, "security.privileged=true"},
+				[]string{"config", "set", remoteName + ":" + id, "raw.lxc=lxc.log.level=ERROR"})
+		}
+		for index, args := range forbidden {
 			if _, err := c.run.Run(ctx, nil, args...); err == nil {
-				t.Fatal("daemon accepted a forbidden privileged/raw/device override")
+				t.Fatalf("daemon accepted forbidden isolation override %d", index)
 			}
 		}
 	})
@@ -277,7 +319,9 @@ func TestNativeBakedForgejoRunnerImage(t *testing.T) {
 		t.Cleanup(func() {
 			clean, done := context.WithTimeout(context.Background(), 20*time.Second)
 			defer done()
-			if _, err := engine(clean, "rm", "--force", "--ignore", name); err != nil {
+			// This diagnostic sleep needs no graceful shutdown window. Keep the
+			// cleanup deadline for removal itself, including the remote CLI hop.
+			if _, err := engine(clean, "rm", "--force", "--time=0", "--ignore", name); err != nil {
 				t.Error("inner diagnostic container cleanup unconfirmed", err)
 			}
 		})

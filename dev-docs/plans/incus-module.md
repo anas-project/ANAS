@@ -2,7 +2,7 @@
 doc_type: plan
 status: implementing
 created: 2026-08-23
-updated: 2026-10-11
+updated: 2026-10-30
 ---
 
 # Incus compute Provider 实施计划
@@ -48,7 +48,7 @@ Provider”拆出来独立跟踪。Forgejo 计划 M2 只保留“作为消费者
 | M11b：入站档位与租约间隔离 | R-131—R-136 | 已完成；2026-10-03 `network.ingress` 与 `publish.http` 随部署冻结、`none` 拒绝发布声明，Provider 按档位写入站规则（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 改为在 ACL 里直接列出其他租约网段；实机 r16 通过 R-133、R-135、R-136（§14.1），R-131、R-132、R-134 为契约与单元验收 |
 | M11c：端口绑定 | R-138、R-150—R-158、R-160—R-164 | 已完成；2026-10-03 实现完成并有单元测试：`network.slots`/`publish.ports`、槽位固定地址、`auto` 分配与冲突检查、hostd 同步动作 `incus.ports.sync`（nft 端口表与 systemd 端口占位）、开机先占位后恢复、anasd 触发与定期检查、运行问题记录、共享客户端写槽位地址（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 实机 r16 用实验 Module 通过 R-138、R-150—R-152、R-157、R-160—R-162 与 R-154 的显式端口部分（§14.1），途中修复开机同步误删绑定的缺陷；2026-10-10 r26、r27 通过 R-154 的 `auto` 跳过被占端口（§14.2）；R-158 由单元测试的篡改与冲突条目（范围外、宿主进程/Docker/其他工作区占用、网关或其他网段、非租约网桥、占位失败）与实机冲突、抢占条目不生效覆盖；只覆盖 amd64 与容器档；尚无内置 Module 声明端口绑定 |
 | M11a：独立租约命名密钥 | R-092 | 已完成；生成/复用、敏感投影、冻结引用与文件备份恢复回归通过 |
-| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 已完成；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，容器档真实烘焙/启动/one-job 通过；Core 链路上重复 apply 不重建、显式 prune 只删失败部署的新 revision、回滚从冻结产物恢复丢失镜像、产物丢失时失败且不重建，租约证书可自行导入白名单外镜像（摘要约束只在共享客户端）均有实机证据（2026-09-27，[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)）；VM 档产品镜像烘焙、ARM64 与正式签名分发未覆盖 |
+| M12：`guest_image` 契约与 distrobuilder 烘焙 | R-019、R-055、R-066、R-067、R-072、R-085、R-110 | 已完成；默认配方、冻结归档、历史 bundle、发布脚本与逐摘要供给已接通，容器档真实烘焙/启动/one-job 通过；Core 链路上重复 apply 不重建、显式 prune 只删失败部署的新 revision、回滚从冻结产物恢复丢失镜像、产物丢失时失败且不重建，租约证书可自行导入白名单外镜像（摘要约束只在共享客户端）均有实机证据（2026-09-27，[prune 与镜像验收](../reviews/2026-09-27-incus-image-prune.md)）；amd64 VM烘焙/实机与两档固定字节待发布包签收见Forgejo§17.13—17.15；ARM64延期，未公开分发，现有工具未实现独立catalog加密签名 |
 | M13：批量数据路径边界（只保留「动作自己打开目的地」） | R-083 | 已完成；整体审阅未发现制品下载端点或控制流内联，新增 OpenAPI 媒体类型门禁，见[审阅记录](../reviews/2026-09-26-incus-bulk-data-path-review.md)与[统一动作 ABI](../../docs/architecture/action-abi.md) §13 |
 | M15：租约持久卷 | R-165—R-172 | 已完成；2026-10-11 从 M8 拆出，供 AI Agent `job` 档保存会话与运行数据，数据留在执行宿主，备份按操作者决定交给执行宿主运维；同日代码与单元测试完成，ln 一次性实验 VM（Debian 13 / Incus 7.0.1）实机通过 R-166、R-169—R-171（§8.10）；只覆盖 amd64 与容器档，VM 档未跑；尚无内置消费者声明卷 |
 | M14：其余发行版适配 | — | 未开始；待适配清单见[宿主供给设计](../../docs/architecture/incus-host-provisioning.md) §2 |
@@ -1320,11 +1320,12 @@ restricted 键并调整 `limits.disk`，共享客户端加卷的增删挂卸与�
 ## 12. 当前阻塞与执行顺序
 
 1. M10a、M10b、M11、M11b、M11c 的代码与单元测试于 2026-10-03 完成（[实施记录](../reviews/2026-10-03-incus-lease-network-implementation.md)）；2026-10-08 实机 r16 与 2026-10-10 同一工件在 Debian 13（r26）、Ubuntu 26.04（r27）的两轮通过，R-054 按操作者选择改写并有契约测试，五个里程碑均已关闭（§14.1、§14.2）。仍未覆盖 ARM64 与 VM 档；尚无内置消费者声明 HTTP 发布或端口绑定。命名镜像解析已定案并随 M12 关闭。
-2. M8b staging 构建验证已完成；继续 M10 宿主原生生命周期与 M11/M6 剩余矩阵，不得因此宣称完整入站可用。
+2. M8b staging 构建验证已完成；M10/M11/M6 已有 §1 所述范围的实机通过基线，剩余平台/隔离档及当前候选制品仍需核验，不得泛化为完整发布范围通过。
 3. 宿主动作通道与统一动作 ABI 的实现仍分别归各自计划，Incus 只接入，不在本计划重复分配其需求。
-4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。独立宿主尚无可用验收证据；容器与 VM 分别跟踪，M2/M4/M5/M9 的真实验收均登记到 §10。
+4. v7.3.0 bridge/project 兼容性缺陷已修复为 default project 独立 bridge 与精确网络授权，历史证据与反例见[核验记录](../reviews/2026-09-10-incus-network-proxy-validation.md)。早期“独立宿主尚无证据”已被后续两档生命周期及网络实测取代；当前有效边界见 §1、§10、§14。
 5. M8 长驻档和 M14 后续发行版保持预留。完成文档整理不表示这些阶段已实施。
-6. M15 租约持久卷是 AI Agent M4（执行面）的前置；按 §8.10 先做容器档。
+6. M15 租约持久卷的容器档实现与指定实机验收已完成（§8.10）；VM/ARM64 和内置消费者业务接入不由该结果覆盖。
+7. 2026-10-30 本机回归与发布复核见 §16：源码可交叉编译，不代表当前完整发布矩阵通过；同步合并竞争仍需反例，当前共享 Core/Linux 回归和全仓门禁尚未全绿。
 
 2026-09-10 文档整理仅核对代码与契约、修正进度表达；本轮没有执行真实 Incus、Docker 镜像构建或
 one-job 验收。旧清单中的共享构建决策和客户端提取阻塞已经移除。
@@ -1640,3 +1641,195 @@ M11c 实现：
 - [x] anasd：定期与 Docker 事件触发的绑定检查，写入运行问题（2026-10-03）
 - [x] 共享客户端：创建槽位对应名称的实例时写入槽位地址，其余网卡设置与 profile 一致（2026-10-03）
 - [x] 同步 compute Contract、`incus` Module 技术文档与使用指南（中英文）（2026-10-03）
+
+## 16. 2026-10-30 代码与本机回归复核
+
+基线为 `master a9242c2acef71e14a1a3097c3fb59bf5fc1a9d59` 加当前工作树，Go 1.26.6 / darwin arm64。
+审阅见[联合评审](../reviews/2026-10-30-forgejo-incus-release-readiness.md)。本轮没有改产品代码、运行真实宿主验收或发布制品。
+§1 的历史通过基线保留；136/141 的文档统计中余下五项为 M8 预留，不作为本轮新增阻塞。
+
+| 需求或范围 | 本轮结果 | 验收边界 |
+| --- | --- | --- |
+| R-001、§8.1 静态/单元 | 两档声明及 `developing` 状态存在；Provider、Hook、共享客户端、镜像/网络/宿主动作相关包回归通过 | 当前全仓门禁仍有其他模块阻塞，不能整体判为发布通过 |
+| R-007/R-008/R-029—R-034、M6 | 核对 2026-09-26 amd64 容器/VM 生命周期等历史记录，本轮没有重跑 | 不以本机 mock 或交叉编译覆盖真实宿主、ARM64/ZFS/NAS 基准 |
+| R-118、R-152 | 当前同步仍合并运行中同名作业；§14.2 所记“读取旧状态后新触发被并入”的竞争未见补跑机制 | 尚未实机复现；需要并发反例，不标为已证实产品故障或已通过 |
+| M10a/M10b/M11/M11b/M11c | 核对 native.54 的 r26/r27 历史实机结果与当前代码/测试；本机相关回归通过 | 该实机基线覆盖 amd64 容器；VM/ARM64 的新网络发布矩阵未由本轮补齐 |
+| R-019/R-055/R-066/R-067/R-072/R-085/R-110、M12 | 镜像校验、供给与配方相关单元通过；源码 `modules/incus/images/catalog.json` 仍为 `[]` | 本轮未烘焙或签收正式四目标 guest 镜像；构建脚本存在不等于交付已完成 |
+| R-165—R-172、M15 | Provider/客户端卷相关单元通过；保留 §8.10 的容器实机证据 | 本轮未运行 VM 卷、ARM64、ZFS 或消费者业务接入 |
+
+实际执行结果：
+
+| 命令/范围 | 结果 |
+| --- | --- |
+| `go test -count=1 -json ./modules/forgejo/... ./modules/incus/... ./internal/computeclient/... ./internal/computeimage/... ./internal/computeingress/... ./internal/computenet/... ./internal/incushost/... ./internal/incusprovision/... ./internal/hostaction/...` | 12 包最终通过。首次默认 Go cache 路径不可写，改用 `/tmp/anas-review-go-cache`；初次命令误写不存在的 `internal/guestimage`，已改正。Provider IPv6 回环监听被沙箱拒绝，在允许本地临时监听后单包重跑通过 |
+| `go test -count=1 -json ./modules/incus/provisioner ./internal/runner ./internal/jobexecutor ./internal/api/httpapi ./cmd/anasd` | Provider、jobexecutor、httpapi、anasd 四包通过；Runner 三个顶层测试失败，见下文。两轮去重共 16 包，15 包最终通过 |
+| 上述第一组 12 包 `go vet` | 通过 |
+| Forgejo Python 测试脚本 | 44 项通过 |
+| Incus Python 测试脚本 | 113 项；首次 112 通过、1 项因沙箱禁止回环监听出错；解除该限制后 `test_incus_vm_cleanup.py` 的 8 项全部通过，覆盖唯一失败项 |
+| `npm run test:incus-browser-guards` | 4 项通过，仅为浏览器驱动保护逻辑测试 |
+| `npm --prefix web test -- src/maintenance/incus-flow.test.ts src/maintenance/incus-prune-flow.test.ts` | 21 项通过，仅为控制台流程单元测试 |
+| Linux amd64/arm64，`CGO_ENABLED=0 go build`：Forgejo/Incus 模块、`cmd/anas`、`cmd/anasd`、`cmd/anas-helper` | 两种架构均通过；没有运行目标 ELF、构建镜像或验签 |
+| `go run ./cmd/gen-module-docs --check`；文档状态、需求状态和计划状态检查 | 通过 |
+| `npm run docs:check-requirements` | 需求归属检查通过；邮件 `intake_trace_counterexample_live_test.go` 声明 `MAILMOD-T-007` 但未在 catalog 登记，后续测试目录检查失败 |
+| `go run ./cmd/check-shared-build` | 失败：`modules/mail/service/Dockerfile` 的传递依赖 `internal/application` 缺少构建输入 |
+| `go run ./cmd/check-upgrade-tests` | 失败：LLNG catalog 为 `2.23.2-r13`、manifest 为 `2.23.4-r13`；已登记的邮件模块缺少升级条目 |
+
+收尾再次检查：邮件反例漏登记已消失，但 `docs:check-requirements` 仍因 `MAILMOD-T-007` 的
+`implementation_digest`、`MAILMOD-T-015` 的 `requirement_digest` 过期失败；需求归属仍通过。
+共享构建和升级目录仍为表中错误。末次输出另存 `/tmp/anas-forgejo-incus-review-docs-final.log`、
+`/tmp/anas-review-shared-build-final.log`、`/tmp/anas-review-upgrade-final.log`，不覆盖初次检查的证据归档。
+
+Runner 三个顶层失败是 `TestCLIApplyRetriesFailedFrozenMaintenanceCandidateAfterHookFailure`、
+`TestCLIApplyCannotReaddHistoricalPostgresOverRetainedData`、`TestCLIApplyAllowsFirstPostgresWithNoPriorPostgresRecords`；
+均报 `managed temporary storage requires a local Linux filesystem`。这证明本机共享 Core 回归没有全绿，
+尚不能据此判断 Linux 产品路径失败。该组还有 8 个跳过项，涉及真实邮件宿主、Btrfs、Docker 和测试辅助入口；
+Linux build-tag 测试在 macOS 不进入执行。必须在 Linux 补验，不能把交叉编译作为替代。
+
+本轮未执行全仓 `go test ./...`、完整 CI、VitePress 构建、Docker 渲染/镜像构建或真实 Incus/浏览器业务。
+证据路径与完整摘要统一记在 [Forgejo 计划 §13](../../modules/forgejo/dev-docs/plans/forgejo-module.md#13-2026-10-30-代码与本机回归复核)，
+包含相关源码清单和两组 Go JSON 输出；只是本机临时证据，不是共享持久验收库。
+
+结论：保持 `developing`。下一步先处理候选版本门禁与同步竞争验证，再按既有要求补完整发布范围内的宿主、
+guest 镜像和消费者业务验收；不因本轮代码复核改动历史实机通过结论，也不静默缩小发布范围。
+
+## 17. 2026-10-30：同步触发丢失修复
+
+状态：局部修复验证，不提升 Module 发布状态，不重置历史已通过基线。
+
+`INCUS-R-118/R-119/R-152/R-158/R-160/R-161`：已复现运行中的 sync 读过旧值之后，新触发被
+`ActionCoalesce` 合并而丢失。两类同步改用已有 `ActionQueue`，后续执行重新读取状态；事件入口仍去抖。
+`TestSyncTriggeredAfterOldReadRunsAgain` 先在旧实现两种 action 下失败，修复后本地通过。
+端口 watcher 只在成功入队后提交已见激活身份；失败保留 pending，后续 poll 重试。
+Traefik 入队失败沿用已有 backoff 重试，即使没有新 Docker 事件也不丢弃触发。
+`TestSyncAdmissionFailureIsRetriedWithoutAnotherEvent` 与既有 port/Traefik 测试通过。
+
+服务器以普通用户运行 Linux jobexecutor；首次发现回归测试在 job 成功提交与 observed 更新之间存在
+测试断言竞态，已把模拟副作用放在成功提交之前，并重新冻结 ELF 复跑。此失败不视为产品修复通过，
+最终 Linux jobexecutor 全包通过，两个同步 action 的“旧读之后再触发”均通过；三个此前受 macOS
+文件系统限制的 Runner 顶层测试在 Linux 通过，anasd 的同步入口/无新事件重试测试通过。
+另外发现 Unix 取消测试在内核回收后代前立即断言进程组消失的竞态：加入 2 秒上限的轮询，仍要求
+`ESRCH`；Linux processgroup 连跑 20 次通过，本地 processgroup/jobexecutor 也通过。没有修改生产取消语义。
+证据为 `/tmp/anas-finance-linux-regressions-final.log`、`/tmp/anas-finance-linux-regressions.log`、
+`/tmp/anas-anasd-finance-sync.log`；其中初始失败保留，不用重跑覆盖。源码/归档摘要见 Forgejo §14。
+未操作 finance 现有 Incus daemon、project 或生产 Docker。
+
+完整 VM/ARM64、资源回收与剩余网络/磁盘发布矩阵仍按原计划逐项验收；本轮同步单元不能替代实机矩阵。
+
+### 17.1 2026-10-30：新增 ARM64 原生单元验证
+
+用户提供 `root@dghome.hlong.wang:2200`，实际为 QWRT/OpenWrt 25.12.2、aarch64、
+Linux 5.4.213，约 2GB 内存，没有 Docker/Btrfs 工具。只在专用临时目录执行静态测试 ELF，
+没有安装服务或修改路由/内核。Incus Provider 328 个 PASS、computeclient 157 个 PASS、
+10 个受环境开关约束的 native 场景跳过；这些数字包含子用例，不代表需求通过率。
+Hook 首次 5 个自动 bundle 用例失败，原因是 `/tmp` 祖先公开可写，符合安全拒绝；使用
+root 私有 TMPDIR 原样重跑全包通过，没有放宽 ownership/ancestor 校验。原始失败与重跑
+日志收集在本机 `/tmp/anas-fj-iam-arm-tests/`；ARM 临时目录在持久归档摘要核验后已删除，私有 TMPDIR 已移除。
+这不覆盖 ARM64 实际 Docker/Incus/guest、VM 或持久卷/网络矩阵，不改变发布未就绪结论。
+
+ARM64 Hook 可信 TMPDIR 重跑为 45 个 PASS（含子用例），0 FAIL。六包共 690 个 PASS、
+13 个 native 场景跳过，边界保持如上。完整证据持久化到 finance 既有私有目录的
+`anas-forgejo-incus-arm64-native-20261030.tar.gz`，SHA-256
+`3462f68ea72a9488034a5cf0967f58b9072a826589ca114fca35ad89dcd10d20`，本地/远端一致。
+
+## 18. 2026-10-30：amd64 原生初始化补验与修复
+
+状态：执行中，不替代 §8 的 guest/VM、配额、网络和持久卷发布矩阵。
+
+在 finance 的私有 mount/net/PID namespace、独立 Incus 7.0.1 daemon 上重跑
+`test-incus-daemon-native.sh`，存储生命周期和 Provider 的 dir 拒绝、错误 pin、缺失池及只读 inspect
+均通过，但共享客户端真实重启失败。固定文件元数据证明证书/key/pin 内容均未变化，仅 CLI 配置被改写。
+上游固定源码的 [working address 保存路径](https://github.com/lxc/incus/blob/v7.0.1/cmd/incus/usage/utils.go)
+会在首次成功连接后写 `last_working_address`。共享客户端预填租约唯一 endpoint（去掉末尾 `/`），
+保留严格不可覆盖校验；正常地址/末尾斜杠反例先红后绿。
+
+第一次修复后真实重启/并发通过，下一检查暴露“无权项目列表被过滤为空”不能作为准入证明。
+初始化改为先读取 `/1.0/projects/<精确 sandbox>` 并确认名称，再读实例列表。
+拒绝请求、空文档和错误名称三种反例先红后绿。此结果不是跨 project 数据泄露证明；
+补的是客户端就绪判断（关联 R-006/R-007/R-008），不将空列表成功解读为有权访问。
+
+最终两轮实际运行分别使用系统 CLI 7.0.1、正式 Dockerfile 镜像内 CLI 7.3；
+重启、八路并发初始化、错误项目、TLS pin 和撤证均通过，且测试项目/证书盘点恢复原状，
+daemon 正常退出。没有运行 guest，也不据此结算 R-030—R-034 的完整生命周期/配额/时延。
+原始失败、固定文件权限/匹配布尔值、修复后的原生 JSONL 全部保留；不保存私钥正文到诊断输出。
+
+共享客户端/controller 全包、vet、race 通过。正式 controller 镜像、ELF 与源码摘要及全仓门禁
+统一记录在 [Forgejo §17](../../modules/forgejo/dev-docs/plans/forgejo-module.md)，收尾归档前仍以
+本机 `/tmp/anas-amd64-*.log` 和 finance `/home/whl/anas-amd64-gates-20261030/` 为工作证据目录。
+
+
+本轮安全补充：仓库最低 Go 更新为 1.26.10，HTTP/SSH 依赖修复，实际安全重建的
+controller/CLI 二进制扫描均无可达漏洞；真实 CLI 7.3 初始化边界再次通过。
+Linux 全量 Go 最终 exit 0（198.51 秒）；冷缓存 ARM64 交叉编译原超时及 57.96 秒
+原样重跑均保留，未修改 120 秒限制。宿主原生 host-action、共享构建与升级目录均通过。
+
+更完整的 amd64 矩阵已启动独立 Debian 13 QEMU VM，使用官方镜像与逐项校验的输入，
+在 VM 内安装官方 Zabbly Incus 7.0.2 LTS（安装 exit 0），随后执行 container/volumes/VM/network。
+物理宿主仅使用私有解压的 Ubuntu QEMU 10.2.1、用户态 NAT、回环 SSH 与普通用户/KVM 组；
+不替换宿主 QEMU 或挂业务 Docker。前三轮依赖适配失败均未进入验收，保留原 cleanup 失败，
+另核对进程与监听不存在后逐项清理旧 socket、磁盘和 SSH 身份并保存补充清理记录。
+第四轮 container 23 项、持久卷 12 项检查通过；VM 镜像启动后 agent 在 300 秒内未就绪，network 未执行。正常关机、资源清理及宿主基线比对通过。不能据此将 R-030—R-034、R-044 或完整持久卷矩阵标为完成。
+
+
+### 18.1 amd64 实机补验结算与 ln 接续
+
+finance 第五轮独立执行 network 通过（7 项检查，含 IPv4/IPv6 NAT、禁用 IPv6、伪造源地址拒绝及正向对照），测试资源盘点为空。随后 container 23 项和 volumes 12 项再次通过。VM 阶段物理宿主严重换页：约 3.3 GiB RAM，swap 使用约 5.3 GiB，PSI full avg10 61.05；已核对 QMP 身份后正常关机。VM 检查中断，不计通过，也未证实为产品缺陷。原始失败保留。
+
+第五轮宿主基线不一致：一个 portal 容器 ID/启动时间、nft 摘要和 IPv6 路由变化；Docker daemon PID/config、网络/卷清单及命名 netns 未变。未确定变更来源，没有回退其他工作或豁免此失败。第四轮基线全项一致的结果独立保留。
+
+原始证据位于 finance `/home/whl/anas-amd64-gates-20261030/vm-lab/`；第四轮 `reports/lifecycle-evidence.tgz` SHA-256 `2a0f474559ff42c103a03f9c70bc52a92db8172a062264ffe1e8388e525d78aa`。第五轮完整 guest 报告仍在私有 qcow2，未生成完整便携归档；外层 network 日志及退出码保留，不将本机忽略目录称为共享归档。
+
+finance 本轮专用 Docker/containerd、netns、veth、兼容 socket、空目录别名及精确测试 CIDR 的 RETURN 规则均已清理，`closing-cleanup-final.json` 为通过；生产 Docker/Incus 仍活动，PID 未变。私有源码、缓存、诊断磁盘仍保留，没有宣称目录全部删除。测试 owner 新增真实可用 RAM 准入，预留 512 MiB，不把 swap 当 RAM；finance 的 3584 MiB 请求已在启动前被拒绝，7 项回归通过。
+
+用户提供 `whl@ln.hlong.wang:2200`，并明确不得修改服务器 Docker 容器。实测为 Ubuntu 22.04 amd64、约 7.8 GiB 总 RAM、约 3 GiB 可用、KVM 可用、ext4 及约 38 GiB 空闲。仅准备私有 QEMU 工作目录；宿主 Docker 仅允许只读盘点。测试包 13 文件、13,993,475 bytes，SHA-256 `38becc0f5db3a84a8ca1f7b5bb793d61021b269af480441290de13786629e3a0`，已完整核验；初次不完整传输未解压执行。外层 VM 拟用 2 CPU/2304 MiB，guest 配额、时限不变。当前下载固定摘要的公开 OS 镜像，尚未结算 ln 验收。
+
+下一步：在 ln 补验 VM 和可承受的 Actions 场景，保存持久证据并逐 ID 结算；完整 Actions、正式签名镜像、VM/网络/存储剩余矩阵和真实 ARM64 Linux 仍未完成，不具备发布条件。
+
+
+finance 本轮执行证据检查点已持久保存为 `/home/whl/anas-evidence/forgejo-incus-20261030/amd64-finance-gates-checkpoint-20261030.tar.gz`，26,060,552 bytes、188 文件，SHA-256 `f9e221dfdf98a103ccb554fc8093ef5ebaa6c23207f5f98edb980432ace0b245`（0600/父目录0700）。包含冻结源码、修复增量、全仓及原生检查、owner 版本和外层报告；排除 runtime 凭据、私钥、VM 磁盘、缓存与 Git 历史。初次打包因 root-owned receipt 无读权限失败，不完整包独立保留；重打包成功。此为阶段检查点，ln 结果及后续本机收尾证据另行保存。
+
+
+ln 第一轮安装 Incus 7.0.2 成功，container 日志输出 23 项原生检查通过（典型任务 wall 1902 ms），但随后宿主 memory PSI full avg10 达 67.28；QMP 身份核验后正常关机，阶段 SSH exit255，owner exit1，不能结算整轮通过。宿主 Docker 容器/daemon/unit/config/网络/卷清单全部前后一致，未对其写操作；nft、IPv4/IPv6 路由及 named netns 有差异，来源未定，host baseline 失败保留。关机后 memory full avg10 降至 0.20，可用 RAM 约4 GiB。第二轮使用全新磁盘/SSH身份/端口22141，外层1536 MiB，guest资源和时限不变，继续尝试；不得将外层缩小解释为降低产品验收门槛。
+
+
+### 18.2 ln 第二轮：amd64 四阶段验收通过
+
+本轮 `r2-ln-current` 使用全新 Debian 13 外层 VM（2 vCPU/1536 MiB）、Zabbly Incus 7.0.2、真实 Btrfs 与嵌套 KVM。Go1.26.10 的 Provider/computeclient ELF 与 §18.1 的固定输入一致。四阶段退出码全部0：container 23 项、volumes 12 项、VM 21 项、network 7 项。正常关机，owner exit0；临时磁盘/seed/SSH身份已删除，所有10项宿主基线一致，包括 Docker containers/services/config/unit/networks/volumes、nft、双栈路由与 named netns。整个 ln 过程无宿主 Docker 写操作。第一轮失败另留，未覆盖或豁免。
+
+| 需求 | 本轮结果及边界 |
+| --- | --- |
+| R-007/R-008、R-029—R-032 | 双档真实 lease 初始化、同名双项目隔离、daemon 配额/设备围栏、运行中管理证书轮换通过 |
+| R-033 | 双档 exec 取消/实例回收检查通过；完整 Actions controller crash/state 丢失矩阵仍不能由此替代 |
+| R-034 | 同一环境启动及典型作业基线已记录：container ready 1396ms、exec91ms、reclaim1027ms、wall2514ms；VM ready96090ms、exec523ms、reclaim1482ms、wall98096ms。首次两租约 VM ready128983/92533ms。物理宿主有换页和嵌套虚拟化影响，不代表目标 NAS 裸机性能。R-034 要求记录基线，没有75秒上限；对话中“30/75”曾误读为秒数，已明确纠正，没有改动要求或测试 |
+| R-044、R-112相关源地址围栏 | container 双栈 NAT、关闭IPv6、伪造源拒绝和正向对照通过；不声称覆盖所有 VM/网络授权状态矩阵 |
+| R-166/R-169—R-171 | container卷12项通过（容量/跨池/宿主路径/快照导出围栏、实例删除后数据、撤销重入、卸载盘点）；完整 controller restart 和宿主卸载的剩余场景仍按原矩阵验收 |
+| R-085 | 共享客户端拒绝非白名单镜像；lease证书可直接导入/创建非白名单镜像的已知边界再次实测，不声称daemon逐摘要强制 |
+
+持久证据在 ln `/home/whl/anas-evidence/forgejo-incus-20261030/`：
+
+- `ln-amd64-lifecycle-r2-20261030.tgz`：3,298,085 bytes，SHA-256 `8cd29e384332494b265178f8445bfae519b7fdc7d910dab365657efd517412c8`，四阶段完整原始报告。
+- `ln-amd64-owner-rounds-20261030.tar.gz`：108,032 bytes、44文件，SHA-256 `a0c03b278fd55fe8e52eb5b9aea1d70d8d3b24e651c84b4c28d8cd88e22f863d`，两轮外层日志/基线、输入摘要及owner源码版本。排除 runtime凭据、SSH私钥和VM磁盘；第一轮诊断磁盘仍在原私有目录，不宣称全部删除。
+- 当前执行owner SHA-256 `8e251ee0b52eafbcfa8df4623ae76913bcb2b6f52fd6d00a0dcd46401712b744`；security源码增量 SHA-256 `4defccf3697eb999c1912e5eab4fd7874a46e9b9ccefe8c6d64322b6eb772eb5`。完整四个ELF摘要、原源码/范围增量基线及宿主全项比对另存同名JSON。
+
+这次补齐当前 amd64 双档核心生命周期、容器持久卷与双栈出网，不等于完整 Incus/Forgejo Actions 发布矩阵通过。正式 runner 镜像、Actions 当前版本夹具/完整作业矩阵、其他未完成网络/存储场景及 ARM64 仍须逐项完成。
+
+
+2026-10-30 最新范围确认：用户明确“目前没有arm的测试暂缓，如果x86过了，就算过了”。本轮以amd64/x86_64结算，ARM64不再阻止本轮完成；此前ARM64阻塞叙述保留为历史，适用性由此更新。ARM64未实测、后续单独验收，不据此宣称ARM已通过。其他x86门槛没有豁免，当前Actions镜像/工作流/资源等仍按实际结果推进。
+
+
+2026-10-31 Actions消费侧接续：当前配方新烘焙的Runner实验镜像build/export/reuse通过，fingerprint `f7983f293abd5fe67cc5ca71120a1d0ad397d855d6b5fd24b55e813591419564`，10项原生镜像检查通过（包含真实rootless OCI限额与AppArmor资产）。后续17.0.1/PG工作流仍等待失败，idle未执行，不能据镜像检查替代执行面通过。新隔离轮次 `/data/anas-amd64-gates-20261030-ln/reuse-lab/r1-reuse-current` 正在重跑；修改仅明确合成Forgejo宿主地址访问，并增加真实waiting TTL/idle观察，生产Module默认网络策略不变。源摘要、历史失败、共享证据归档及后续结算集中见Forgejo配对计划§17.2，避免复制原始日志。Incus§18.2四组原生成功基线保持；ARM64按用户确认延期。
+
+2026-10-31 消费侧最新结算：Forgejo§17.3记录当前配方amd64容器Runner的10项镜像门禁、五种真实17.0.1/PG工作流、真实600秒waiting TTL及1800秒idle均通过，外层正常关机、测试身份/磁盘删除与10项宿主基线全部通过。共享证据归档SHA256 `28cec78f3519319580e6c51ded374cab42924b292c566a77ecdfce8184363291`，位置见Forgejo配对计划。该结果不替代完整Core业务开关/生产默认网络、org容器构建或VM Runner，ARM64按用户确认延期。
+
+2026-10-31 Forgejo后续真实构建暴露job侧引擎socket路径错误，配方修复并重新烘焙，当前amd64容器Runner镜像FP `3e03737b6bb78b96b82b7a5036919a23a5ca26620a09b504451144933db6e940`；五场景及repo/org实际无Secret构建/回收功能通过，正确org端点独立复核通过。严格宿主基线因既有ln-mesh-v2fly重启循环仍失败，未修改宿主Docker、不自动豁免。最新共享归档、基线、待确认Core方案和VM硬件限制集中见Forgejo§17.4—§17.6；不据容器档结果提前完成完整Core/VM Runner。
+
+2026-11-01 完整Core消费侧发现并修复Samba BIND的IPv6全接口监听与Incus dnsmasq冲突：完整Samba健康后IPv6桥红测失败，限定到已声明服务地址及回环后绿测通过；IPv4/IPv6/两种回环的真实BIND解析检查通过，r16实际Module租约桥Created。未关闭IPv6、未增加测试网络放行，宿主Docker只读。产品修复及完整Core后续结算、实验镜像与源覆盖摘要集中见Forgejo配对计划§17.9；不能据网络修复提前宣称Core或VM Runner全部通过。
+
+2026-11-01 消费侧完整Core结算：Forgejo配对计划§17.12的R-052通过，实际标准主机install/configure/enroll、默认网络真实workflow及回收、运行中单开关关闭和账号撤销、重新启用、普通CLI停止全部通过。r23业务exit0、QEMU正常退出0、当前测试磁盘/身份回收、10项物理宿主基线全等；宿主Docker无写操作，现有容器未停止。Samba监听修复使用固定实验候选，尚未正式发布；源制品及共享证据集中在Forgejo计划。此结果不替代仍待完成的amd64 VM Runner档，ARM64延期范围不变。
+
+
+2026-11-01 Forgejo消费侧amd64 VM Runner最终验收通过：配对计划§17.14的r13四阶段image/onejob/repo构建/org构建全部exit0；真实Secure Boot VM固定4096MiB，正常/失败/SIGTERM取消/SIGKILL恢复、未授权waiting无Runner及两种scope无Secret构建均完成实例/磁盘/registration回收。外层QEMU正常关闭、测试盘/身份删除，10项物理宿主基线全部相同；现有宿主容器未停止或修改。修复VM配方包集架构过滤及EFI安装缺陷；制品、源码、失败历史及持久证据集中见Forgejo§17.13—17.14。ARM64延期，不将实验候选混称正式签名发布。
+
+
+2026-11-01正式Runner字节签收：Forgejo§17.15记录ln持久待发布包，两档原不可变修订及指纹不变，使用正式Record/重复登记/Bundle与真实amd64 Module打包验证。两个包payload、命名Freeze/全字节校验、缺件/篡改/错误架构/历史key替换反例及真实预编译Hook全部通过。源码catalog仍为空；完整images仅在独立打包副本，不向Git加入大镜像文件、不虚构加密签名或公开发布。技术文档中旧“导入/恢复未实现”表述已按当前verifyImages调用链纠正。伴随Samba正式全量构建与Core接续仍执行中，宿主Docker继续只读。
+
+2026-11-02待发布收尾：Forgejo§17.16的全量Samba原Dockerfile构建及实际同image ID健康观察、完整Core r5全部通过；Core0、QEMU正常退出0、当前测试盘/身份回收、10项每轮宿主严格对照全等。两档Runner原字节及Module待发布包均保存在ln持久目录，未执行公开分发。额外跨日对照routes6因既有网桥两条临时动态地址的内核本地路由增加而失败，原比较未过滤，容器/Docker/网络/卷跨日一致；具体分类及每轮证据集中在Forgejo配对计划，未操作宿主Docker。M8五项长驻实例预留不属于本轮Runner范围，保持未开始；ARM64仍延期。

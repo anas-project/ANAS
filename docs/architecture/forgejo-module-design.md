@@ -2,7 +2,7 @@
 
 > 状态：**当前模型与明确标注的未实现部分**。Forgejo 应用、controller、Incus adapter 和 guest image
 > 资产已实现；独立 Incus 宿主上的真实隔离与 one-job E2E 尚未完成，不能视为 release 能力。
-> 更新：2026-09-20。
+> 更新：2026-10-30。
 
 本文记录 Forgejo Module 的身份、Actions 授权、Runner 隔离和高风险功能开关设计。当前实现事实以
 [`modules/forgejo/module.yml`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/module.yml)和
@@ -40,6 +40,11 @@ Group，登录协议负责交互认证，两条链路以不可变 `anasIdentityA
 
 ### 2.2 Forgejo 结论：只用 OIDC 登录
 
+2026-10-30 的 17.0.1 复核保持本结论。产品已接入声明式 group→team 和登录移除；测试 OIDC
+Provider 已验证稳定 `sub` 与 `login_name` 一致、改名/邮箱声明变化后身份和仓库不变。实测停用会
+阻断已有 Web 会话、token、Git HTTP/SSH，但不等于删除凭据；新版管理员 token API 已确认存在。
+以下保留 v15 的决策理由，当前能力以 §2.3 的新版结果和互操作基线 §1.1 为准。
+
 > 状态：**2026-09-20 决定并已实现**。此前 2026-09-13 的"LDAP 同步 + OIDC 登录双源形态"结论连同其
 > 实现一并撤回，`FORGEJO-R-063`—`R-065` 作废，`FORGEJO-R-006` 恢复为本节的规范来源，新增
 > `FORGEJO-R-066` 约束升级复核。
@@ -73,17 +78,16 @@ LDAP 用户的接口——绑定只能落回用户名或邮箱。§2.1 的四条
 | --- | --- |
 | 账号停用、删除、移出 `APP_forgejo` | **无自动路径**：Module 不持有目录副本，固定版本也没有 IAM 主动 logout receiver（`LOGOUT-R-008`）。管理员必须在 Forgejo 停用或删除该账号 |
 | 组成员变更 | 该用户下次 OIDC 登录时随 groups 声明到达 team（`FORGEJO-R-060`）。依赖的 `--group-team-map` / `--group-team-map-removal` 已于 2026-09-20 在固定镜像上实测存在 |
-| 改名、邮箱变更 | **同一个账号**：Forgejo 按 OIDC `sub` 认人（`sub` 存进 `login_name`），用户名取 `preferred_username` 且只在建号时写一次，因此改名后用户名冻结在旧值，仓库路径仍是 `/old/...`；邮箱同样不刷新。`sub` 若不稳定才会建出第二个账号。**`推断`**，待 `FJPROBE-T-003`/`T-004` 复核 |
+| 改名、邮箱变更 | **同一个账号**：Forgejo 按 OIDC `sub` 认人（`sub` 存进 `login_name`），用户名取 `preferred_username` 且只在建号时写一次，因此改名后用户名冻结在旧值，仓库路径仍是 `/old/...`；邮箱同样不刷新。`sub` 若不稳定才会建出第二个账号。17.0.1 协议探针已验证；`FJPROBE-T-004` 的真实目录改名仍待验收 |
 
 因此有两条约束必须写进目录管理流程，Module 无法代为强制：**用户名与邮箱别名不得回收再分配、改名走
 正式流程**；**离职与紧急撤权必须包含"在 Forgejo 停用账号并吊销其 token 与 SSH key"这一步**。需要组
 撤权即时生效的消费者（`ai_agent`）必须自己订阅目录事件日志并保留即时否决表，这一点在双源形态下同样
 成立，不因本次撤回而改变。
 
-**上面的"无自动路径"是可以解开的，入口不在 Forgejo。** 以下这条路建立在一个尚未复核的前提上：
-Forgejo 把 OIDC `sub` 原样存进 `login_name`，而管理端用户列表对管理员会返回 `login_name`。这个前提
-由 [`FJPROBE-T-003`](https://github.com/anas-project/ANAS/blob/master/modules/forgejo/dev-docs/plans/forgejo-module.md)
-验证；在它给出结论之前，下面这段是**设计意图，不是已证实的能力**。因此只要 IAM 把主体标识符本身取成 `anasIdentityAnchor`
+**上面的"无自动路径"是可以解开的，入口不在 Forgejo。** 17.0.1 的 `FJPROBE-T-003` 已确认：
+Forgejo 把 OIDC `sub` 原样存进 `login_name`，管理端用户列表会向管理员返回该字段。
+下面的自动目录对账仍是**设计意图，尚未实现**。只要 IAM 把主体标识符本身取成 `anasIdentityAnchor`
 （[目录身份键要求](https://github.com/anas-project/ANAS/blob/master/dev-docs/requirements/directory-identity-key.md)
 `DIRKEY-R-008`），Forgejo 侧不需要任何新能力就持有了一个可以直接与目录对账的稳定键：列出 Forgejo 的
 外部账号、与目录准入集合取差、对差集撤权，匹配是精确的，不会误伤改过名的在职者。这条路不需要 LDAP
@@ -96,7 +100,7 @@ Forgejo 不消费的 anchor claim 同样不做——上面那条路用的是 `su
 
 ### 2.3 升级复核：固定版本每次变更都要重新判定
 
-本节结论绑定在固定版本 `15.0.7` 的能力上，因此**每次变更 Forgejo 固定版本（含 patch）都必须复核以下
+历史结论绑定在固定版本 `15.0.7` 的能力上，因此**每次变更 Forgejo 固定版本（含 patch）都必须复核以下
 四点**，任何一点成立就重新评估双链路（`FORGEJO-R-066`）：
 
 1. LDAP source 是否新增了可配置的不可变 ID 字段——例如把目录 UUID/anchor 作为外部 ID 持久化；
@@ -111,7 +115,7 @@ Forgejo 不消费的 anchor claim 同样不做——上面那条路用的是 `su
 先跑探针再改文档——这一页里过半条目与上游文档描述不符，不能凭 changelog 下结论。结论写回本节、
 `FORGEJO-R-066` 的执行记录和互操作基线 §1。
 
-**当前固定版本 `15.0.7+gitea-1.22.0` 的复核状态**（2026-09-20 CLI 实测，报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库））：
+**历史固定版本 `15.0.7+gitea-1.22.0` 的复核状态**（2026-09-20 CLI 实测，报告在 `test-env/reports/forgejo-cli-probe-20260920.md`（报告目录不入库））：
 
 | 点 | 结论 | 证据 |
 | --- | --- | --- |
@@ -121,7 +125,14 @@ Forgejo 不消费的 anchor claim 同样不做——上面那条路用的是 `su
 | 3b. 认证源 REST API | **未复核** | 需要管理员 token，本次只跑了 CLI |
 | 4. IAM logout receiver / 按用户撤销会话 token 的管理端接口 | **未复核** | 同上；已知 `admin user` 没有 `prohibit_login` 子命令 |
 
-第 1、2 点仍不成立，因此**不恢复双链路**。3b 与 4 是下一次复核要补的两项。
+**17.0.1 复核（2026-10-30）**：真实 CLI、实例 Swagger、OIDC 登录与管理端探针见
+[互操作基线 §1.1](/developer/forgejo-interop)。第 1、2 点没有新增入口；
+LDAP 仍无组同步选项，未发现认证源 REST API、独立会话撤销 API 或 IAM logout receiver。
+第 4 点中的管理员 token API 已出现并实测创建/删除，不能沿用旧版端点不存在的假设。
+`prohibit_login` 只带自身字段即可停用测试 OIDC 用户，四条访问路径在停用期间均被阻断；
+HTTP 200 停用页不代表私有数据可读，也不代表已销毁 session。`EditUserOption` 没有 `new_name`。
+**不恢复双链路**；`FJPROBE-T-003` 的 `sub`/`login_name` 前提已实测，自动目录对账仍是独立设计工作。
+真实 Provider 的目录改名与完整撤权集成按原计划验收，本轮不代替这些项。
 
 ## 3. Actions 授权模型
 

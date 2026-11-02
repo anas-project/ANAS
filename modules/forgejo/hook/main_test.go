@@ -67,8 +67,26 @@ func TestCalculatePreservesManagedSecrets(t *testing.T) {
 	}
 }
 
+func TestTeamMappingGroupsAreRequestedWithoutGrantingApplicationAccess(t *testing.T) {
+	for _, filter := range []string{"true", "false"} {
+		e := forgejoCalculateEnv()
+		e["SAMBA_DC_APP_FILTER"] = filter
+		e["FORGEJO_OIDC_GROUP_TEAM_MAP"] = `{"Release Reviewers":{"engineering":["reviewers"]}}`
+		if _, err := calculate(e, &secretStore{values: map[string]string{}}); err != nil {
+			t.Fatal(err)
+		}
+		var groups []string
+		if err := json.Unmarshal([]byte(e[iamClientPrefix+"CLAIM_GROUPS"]), &groups); err != nil || !reflect.DeepEqual(groups, []string{"Admins", "Release Reviewers"}) {
+			t.Fatalf("claim groups = %v, %v", groups, err)
+		}
+		if strings.Contains(e[iamClientPrefix+"ALLOW_GROUPS"], "Release Reviewers") {
+			t.Fatal("team membership broadened application admission")
+		}
+	}
+}
+
 func TestRenderEnvMapsDatabasesAndSafeDefaults(t *testing.T) {
-	for _, test := range []struct{ selected, upstream string }{{"postgres", "postgres"}, {"mariadb", "mysql"}} {
+	for _, test := range []struct{ selected, upstream string }{{"postgres", "postgres"}} {
 		t.Run(test.selected, func(t *testing.T) {
 			env := map[string]string{
 				iamBindingPrefix + "INTERFACE":          "oidc",
@@ -554,5 +572,56 @@ func TestOIDCIsTheOnlyAccountSource(t *testing.T) {
 	if render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"] != "disabled" ||
 		render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"] != "true" {
 		t.Fatalf("linking=%q autoreg=%q", render["FORGEJO__OAUTH2_CLIENT__ACCOUNT_LINKING"], render["FORGEJO__OAUTH2_CLIENT__ENABLE_AUTO_REGISTRATION"])
+	}
+}
+
+func TestMariaDBIsRejectedWithoutGeneratingSecrets(t *testing.T) {
+	for _, engine := range []string{"mariadb", "mysql"} {
+		env := forgejoCalculateEnv()
+		env["FORGEJO_DB_TYPE"] = engine
+		store := &secretStore{values: map[string]string{}}
+		if _, err := calculate(env, store); err == nil {
+			t.Fatalf("accepted %s", engine)
+		}
+		if len(store.values) != 0 {
+			t.Fatal("rejected database selection changed secrets")
+		}
+		render := forgejoRenderEnv()
+		render["FORGEJO_DB_TYPE"] = engine
+		if err := renderEnv(render); err == nil || !strings.Contains(err.Error(), "PostgreSQL") {
+			t.Fatalf("render did not reject %s explicitly: %v", engine, err)
+		}
+	}
+}
+
+func TestOIDCGroupTeamMapValidationAndPayload(t *testing.T) {
+	for _, raw := range []string{`null`, `[]`, `{"dev":null}`, `{"dev":{"org":[]}}`, `{"dev":{"org":[""]}}`, `{"dev":{"org":"team"}}`, `{"dev":{"org":["team\n"]}}`} {
+		env := forgejoCalculateEnv()
+		env["FORGEJO_OIDC_GROUP_TEAM_MAP"] = raw
+		store := &secretStore{values: map[string]string{}}
+		if _, err := calculate(env, store); err == nil || len(store.values) != 0 {
+			t.Fatalf("invalid mapping reached secret creation: %s", raw)
+		}
+	}
+	original := runContainerHelper
+	defer func() { runContainerHelper = original }()
+	calls := 0
+	runContainerHelper = func(_ context.Context, payload []byte, _ string, _ ...string) ([]byte, error) {
+		calls++
+		var input oidcInput
+		if err := json.Unmarshal(payload, &input); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(input.GroupTeamMap, map[string]map[string][]string{"Developers": {"engineering": {"reviewers", "builders"}}}) {
+			t.Fatalf("map=%v", input.GroupTeamMap)
+		}
+		return nil, nil
+	}
+	env := map[string]string{"CONTAINER_PREFIX": "test_", "FORGEJO_OIDC_CLIENT_ID": "client", "FORGEJO_OIDC_CLIENT_SECRET": "secret", iamBindingPrefix + "OIDC_DISCOVERY_URL": "https://id.test/.well-known/openid-configuration", "FORGEJO_OIDC_GROUP_TEAM_MAP": `{"Developers":{"engineering":["reviewers","builders"]}}`}
+	if err := reconcileOIDC(env); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatal("mapping was not sent")
 	}
 }

@@ -97,7 +97,7 @@ func TestComputeSubprocessExactLimitsAndPrivateFailureOutput(t *testing.T) {
 }
 
 func TestNewWithContextCancelsBeforeEffectsAndFreezesImageAllowlist(t *testing.T) {
-	fixtureIncusExecutable(t, "printf '[]\\n'\n")
+	fixtureIncusExecutable(t, "if [ \"$1\" = query ]; then printf '{\"name\":\"%s\"}\\n' \"$INCUS_PROJECT\"; else printf '[]\\n'; fi\n")
 	l := credentialBoundaryLease(t)
 	dir := filepath.Join(credentialDirectory(t), "uncreated")
 	ctx, cancel := context.WithCancel(context.Background())

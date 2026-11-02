@@ -62,7 +62,7 @@
 
 - [Immich Module](../../modules/immich/dev-docs/plans/immich-module.md)（实施中）
 - [AI Agent 编排](../../modules/ai_agent/dev-docs/plans/ai-agent.md)（实施中）
-- [Forgejo Module](../../modules/forgejo/dev-docs/plans/forgejo-module.md)（实施中）
+- [Forgejo Module](../../modules/forgejo/dev-docs/plans/forgejo-module.md)（已完成；首发amd64待发布包）
 - [Vikunja Module](../../modules/vikunja/dev-docs/plans/archived/vikunja-module.md)（已归档）
 - [Casdoor IAM Provider](../../modules/casdoor/dev-docs/plans/archived/casdoor-iam.md)（已归档）
 - [MeshCentral OIDC-only](../../modules/meshcentral/dev-docs/plans/archived/meshcentral-oidc-only.md)（已归档）

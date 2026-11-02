@@ -1,8 +1,8 @@
-ARG FORGEJO_VERSION=15.0.7
+ARG FORGEJO_VERSION=17.0.1
 ARG FORGEJO_REGISTRY=codeberg.org
 ARG GO_BUILDER_REGISTRY=docker.io
 
-FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26-alpine AS helper
+FROM --platform=$BUILDPLATFORM ${GO_BUILDER_REGISTRY}/library/golang:1.26.10-alpine AS helper
 WORKDIR /src
 COPY entrypoint.go actions_account.go ./
 ARG TARGETOS

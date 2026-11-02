@@ -22,6 +22,7 @@ if [ "$1 $2" = "remote add" ]; then
   exit 0
 fi
 if [ "$1" = list ]; then printf '[]\n'; exit 0; fi
+if [ "$1" = query ]; then printf '{"name":"%s"}\n' "$INCUS_PROJECT"; exit 0; fi
 exit 9
 `)
 }
@@ -73,6 +74,47 @@ func TestClientConfigurationUsesIncusProtocolAndExactLease(t *testing.T) {
 		remote.Address != l.Endpoint || remote.Project != l.Sandbox || remote.AuthType != "tls" ||
 		remote.Protocol != "incus" || remote.Public {
 		t.Fatal("generated CLI remote does not use the Incus protocol and exact private lease")
+	}
+}
+
+func TestClientConfigurationPreseedsThePinnedWorkingAddress(t *testing.T) {
+	initializationCLI(t)
+	for _, suffix := range []string{"", "/"} {
+		l, dir := credentialBoundaryLease(t), credentialDirectory(t)
+		l.Endpoint += suffix
+		if _, err := NewWithContext(context.Background(), l, []string{"/usr/local/bin/entry"}, dir); err != nil {
+			t.Fatal(err)
+		}
+		body, err := os.ReadFile(filepath.Join(dir, "config.yml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Remotes map[string]struct {
+				Address        string `json:"addr"`
+				WorkingAddress string `json:"last_working_address"`
+			} `json:"remotes"`
+		}
+		if err := json.Unmarshal(body, &config); err != nil {
+			t.Fatal(err)
+		}
+		remote := config.Remotes[remoteName]
+		if remote.Address != l.Endpoint || remote.WorkingAddress != strings.TrimSuffix(l.Endpoint, "/") {
+			t.Fatal("CLI would rewrite immutable configuration to record its first working address")
+		}
+	}
+}
+
+func TestClientInitializationDoesNotTreatFilteredEmptyInventoryAsProjectAdmission(t *testing.T) {
+	for _, response := range []string{"exit 3", "printf '{}\\n'", "printf '{\"name\":\"other-project\"}\\n'"} {
+		fixtureIncusExecutable(t, `
+if [ "$1" = list ]; then printf '[]\n'; exit 0; fi
+if [ "$1" = query ]; then `+response+`; exit 0; fi
+exit 9
+`)
+		if _, err := NewWithContext(context.Background(), credentialBoundaryLease(t), []string{"/usr/local/bin/entry"}, credentialDirectory(t)); err == nil {
+			t.Fatal("filtered empty inventory was accepted without proving access to the exact lease project")
+		}
 	}
 }
 

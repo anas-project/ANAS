@@ -107,6 +107,13 @@ Provider/guest 生命周期或正式发布成功。
 
 ## 控制连接（2026-09-30 起 Incus 直接监听控制网关）
 
+共享客户端一次性生成私有 CLI 配置，同时将 `last_working_address` 固定为租约唯一 endpoint
+（去掉末尾 `/`）。Incus CLI 否则会在首次连接后记录该地址并重写配置，使下一次严格字节校验失败。
+证书、私钥、project 与 endpoint 的校验及不可覆盖规则保持；不接纳 CLI 改写后的任意配置。
+初始化还须读取并确认租约精确 project；无权访问的实例列表可能被过滤为空，空列表不能作为项目准入证明。
+Forgejo 默认将此连接目录放在容器 `/run`，重建容器会重新生成。若使用自定义持久目录，升级前先排空并
+停止消费者，为相同租约准备新的私有连接目录；保留 Secret Store、controller state 和业务数据。
+
 消费者与 Provider 经 Docker 控制网桥访问宿主上的 Incus。`incus.configure` 把 Incus 的
 `core.https_address` 设为控制网桥网关的 `8443`，这是它唯一的 HTTPS 监听，并写入 drop-in 让
 `incus.service` 排在 `docker.service` 之后（网关地址要等 Docker 建好网桥才存在，Incus 7.0 绑定失败只在
@@ -533,16 +540,20 @@ Compose/Docker，不下载源码。缺少模块、源码漂移、被枚举到的
 allowlist，AI Agent 读取 JSON 镜像绑定。Agent Hook 使用与 manifest 参数一致的
 `AI_AGENT_AGENT_RUNTIMES`，Compose 向 orchestrator 映射为 `AI_AGENT_RUNTIMES`。本轮未引入新依赖。
 
-Incus 的 `image_architecture` 必须显式描述目标 daemon。受信 bundle 目录当前为空；ensure 在
-登记信任前检查租约 project 中现有镜像的 fingerprint、架构与类型，缺失直接失败，不查询 alias
-或重建。自动导入/烘焙仍待实现。快照及回滚语义见 [compute 契约](../../../contracts/compute/docs/technical.md)。
+Incus 的 `image_architecture` 必须显式描述目标 daemon。ensure 在登记信任前检查租约
+project 中镜像的 fingerprint、架构与类型；缺失时只从 Core 供给的相同可信 split 产物导入并
+再次核对，产物也缺失则失败，不解析 alias 或重新烘焙。源码 `images/catalog.json` 仍为空；
+2026-11-01 已签收的 amd64 容器/VM 待发布包在独立打包副本携带完整目录与字节，不能只复制目录。
+包与校验清单见[Forgejo配对计划](../../forgejo/dev-docs/plans/forgejo-module.md)。该包未公开发布，
+工具不生成独立加密签名。快照及回滚语义见 [compute 契约](../../../contracts/compute/docs/technical.md)。
 
-## Split 镜像工件离线核验（本机回归通过，实机待验收）
+## Split 镜像工件离线核验
 
 `internal/computeimage/artifact.go`、`release_verify.go` 与 `cmd/compute-image-artifact` 复用统一
 `ArtifactRelease` 描述，提供已完成烘焙产物的只读检查，
-不运行 distrobuilder、不导入 Incus、不下载、不签名，也不写入受信目录。受信目录仍为空，
-`guest_image` 契约、首次烘焙/分发和缺失恢复接线仍未完成。
+不运行 distrobuilder、不导入 Incus、不下载、不签名，也不写入受信目录。烘焙、供给与缺失恢复
+由独立的 artifact CLI、Core 与 Provider 路径承担；两档 amd64 Runner 的真实启动及工作流结果
+和已签收字节分开记录于配对计划，不能由本段的离线核验代替。
 
 该 CLI 当前只接受 split 工件；共享库另外支持 unified 描述。按 [Incus 镜像格式](https://linuxcontainers.org/incus/docs/main/reference/image_format/)，
 总 fingerprint 是按顺序拼接 **metadata 原始文件字节 + rootfs 原始文件字节** 的 SHA-256，不是
@@ -629,8 +640,9 @@ go run ./cmd/incus-image-artifacts catalog \
 确实没有历史发布时才使用 `--first-release`，不能与 `--previous-catalog` 同时给出。目录生成
 重新检查全部产物，并拒绝丢失或改变旧版本键；上一次目录缺失或损坏不能解释为空历史。stdout 只
 包含 JSON 元数据，不返回镜像字节、源路径或配方正文，也不会自动改写 `modules/incus/images/catalog.json`。
-受信归档与历史目录需要独立备份；本地产物供给、Provider 导入和受限 prune 已有代码，尚未完成
-发布签名、正式分发、真实镜像启动或破坏性 prune 验收。生产目录仍为空，不据此验收 M12/M13。
+受信归档与历史目录需要独立备份。本地产物供给、Provider 导入、缺失恢复和受限 prune 的实机
+结果见配对计划M12；2026-11-01补齐amd64 VM Runner并签收两档待发布包。公开发布尚未执行，
+不把字节校验称为签名，也不把已有amd64结果扩大为ARM64验收。
 
 ## 发布目录打包与可取消供给（2026-09-21）
 
@@ -825,3 +837,18 @@ chroot 内替换；显式声明 systemd init 包。完整说明见
 ## 应用目录
 
 不发布独立人员卡片；原因声明在 module.yml 的 applications_not_published。该 Module 的服务协议或管理入口由现有集成方使用。
+
+### 同步任务运行期间的新触发
+
+`incus.ports.sync` 与 `incus.traefik.sync` 使用已有 job queue 策略。旧任务可能已经读取旧部署或
+旧容器地址，因此运行期间的新触发会排入后续任务；事件入口仍保留去抖。回归测试阻塞已完成读取的
+旧同步、改变期望状态，再验证第二次执行读到新值，避免新激活被旧任务合并后丢失。
+
+入队失败会保留待处理触发。端口 watcher 在下次 poll 重试，成功入队后才推进已见激活身份；Traefik
+沿用已有 backoff 重试，没有新容器事件也不会丢弃触发。这是入队重试，不把排队成功当作执行完成。
+
+## Provider 镜像编译器
+
+Provider 镜像编译器固定为 Go 1.26.10，与当前 go.mod 和本轮安全基线一致。共享源码编译保留
+`GOPROXY=off`，不通过浮动的 1.26 标签隐式选择 SDK 或临时下载工具链。正式镜像验收记录实际
+基础镜像摘要和编译产物，测试数据不进入镜像构建上下文。

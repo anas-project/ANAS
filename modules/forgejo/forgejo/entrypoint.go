@@ -35,11 +35,12 @@ type localAdminInput struct {
 }
 
 type oidcInput struct {
-	Name         string `json:"name"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	DiscoveryURL string `json:"discovery_url"`
-	AdminGroup   string `json:"admin_group"`
+	Name         string                         `json:"name"`
+	ClientID     string                         `json:"client_id"`
+	ClientSecret string                         `json:"client_secret"`
+	DiscoveryURL string                         `json:"discovery_url"`
+	AdminGroup   string                         `json:"admin_group"`
+	GroupTeamMap map[string]map[string][]string `json:"group_team_map"`
 }
 
 type apiUser struct {
@@ -175,7 +176,7 @@ func dropPrivileges(uid, gid int) error {
 }
 
 func checkHealth(baseURL string) error {
-	request, err := http.NewRequest(http.MethodGet, baseURL+"/-/healthcheck", nil)
+	request, err := http.NewRequest(http.MethodGet, baseURL+"/api/healthz", nil)
 	if err != nil {
 		return err
 	}
@@ -184,8 +185,14 @@ func checkHealth(baseURL string) error {
 		return fmt.Errorf("Forgejo health request: %w", err)
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("Forgejo health status %d", response.StatusCode)
+	}
+	var health struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&health); err != nil || health.Status != "pass" {
+		return errors.New("Forgejo readiness check did not pass")
 	}
 	return nil
 }
@@ -311,6 +318,13 @@ func ensureOIDC(input oidcInput) error {
 	if input.Name == "" || input.ClientID == "" || input.ClientSecret == "" || input.DiscoveryURL == "" || input.AdminGroup == "" {
 		return errors.New("OIDC reconciliation input is incomplete")
 	}
+	if input.GroupTeamMap == nil {
+		input.GroupTeamMap = map[string]map[string][]string{}
+	}
+	groups, err := json.Marshal(input.GroupTeamMap)
+	if err != nil {
+		return errors.New("invalid OIDC group team map")
+	}
 	list, err := runForgejoCommand("admin", "auth", "list")
 	if err != nil {
 		return errors.New("list Forgejo authentication sources failed")
@@ -335,6 +349,8 @@ func ensureOIDC(input oidcInput) error {
 		"--scopes", "openid", "--scopes", "profile", "--scopes", "email", "--scopes", "groups",
 		"--group-claim-name", "groups",
 		"--admin-group", input.AdminGroup,
+		"--group-team-map", string(groups),
+		"--group-team-map-removal=true",
 	)
 	if _, err := runForgejoCommand(args...); err != nil {
 		return errors.New("reconcile Forgejo OIDC source failed")

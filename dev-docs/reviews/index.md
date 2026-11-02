@@ -6,6 +6,7 @@
 
 | 文档 | 基线 | 类型 |
 | --- | --- | --- |
+| [Forgejo 与 Incus 代码及发布状态复核](2026-10-30-forgejo-incus-release-readiness.md) | 2026-10-30，`a9242c2a` 加当前工作树 | 复现 Actions 状态丢失回收缺口，核对 team 映射、镜像校验与实机证据边界；本机结果见两份配套计划，均不批准发布 |
 | [门户后台账号复制与 anasd 服务授权方案](2026-10-23-portal-backend-credentials.md) | 2026-10-23，`058d5c2ce872` 加工作树 | 调查方案已采纳；5 分钟本人认证、宿主服务授权与自动令牌交付，当前实现和验收结果转入 service-api 配套计划 |
 | [Immich 初始接入评审与修正](2026-10-02-immich-integration-plan-review.md) | 固定 v3.2.4 与用户确认边界 | 设计评审；末尾修正早期方案，执行结果见私有计划 |
 | [Immich master 整合评估](2026-10-07-immich-master-integration.md) | 9fc699c 与未提交工作树 | 基线差异与验证限制；最新 aa1944a 回归见私有计划 |

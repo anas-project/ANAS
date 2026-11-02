@@ -117,6 +117,19 @@ func NewWithContext(ctx context.Context, l Lease, entrypoints []string, configDi
 	if err := c.writeCredentialsContext(ctx, configDir); err != nil {
 		return nil, err
 	}
+	// Instance inventories can be permission-filtered to an empty array.
+	// Confirm access to this exact project before treating an empty lease as ready.
+	body, err := c.run.Run(ctx, nil, "query", remoteName+":/1.0/projects/"+url.PathEscape(l.Sandbox))
+	if err != nil {
+		return nil, fmt.Errorf("verify project-scoped compute admission: %w", err)
+	}
+	defer clear(body)
+	var project struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &project); err != nil || project.Name != l.Sandbox {
+		return nil, fmt.Errorf("compute connection did not confirm the exact lease project")
+	}
 	// Configuration is already complete and immutable. Never ask the CLI to
 	// mutate it, prompt for trust, or add an existing remote on restart.
 	if _, err := c.ListManaged(ctx); err != nil {

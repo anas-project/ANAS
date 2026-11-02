@@ -29,7 +29,7 @@ func reconcileActionsAccount(e map[string]string, owner localAdminInput) error {
 		// immutable Docker container rather than trusting its reusable name.
 		ctx, cancel := context.WithTimeout(context.Background(), 130*time.Second)
 		defer cancel()
-		if err := waitDisabledController(ctx, e["CONTAINER_PREFIX"], 200*time.Millisecond); err != nil {
+		if err := waitDisabledController(ctx, e["CONTAINER_PREFIX"], "", 200*time.Millisecond); err != nil {
 			return errActionsAccountReconciliation
 		}
 	}
@@ -47,11 +47,11 @@ func reconcileActionsAccount(e map[string]string, owner localAdminInput) error {
 	return nil
 }
 
-func waitDisabledController(ctx context.Context, prefix string, interval time.Duration) error {
+func waitDisabledController(ctx context.Context, prefix, expectedID string, interval time.Duration) error {
 	if ctx == nil || interval <= 0 {
 		return errActionsAccountReconciliation
 	}
-	id, exitObserved := "", false
+	id, exitObserved := expectedID, false
 	for {
 		if ctx.Err() != nil {
 			return errActionsAccountReconciliation
@@ -87,8 +87,13 @@ func disabledControllerObservation(ctx context.Context, prefix string) (string, 
 }
 
 func controllerModeObservation(ctx context.Context, target, enabled string) (string, bool, error) {
+	id, status, err := controllerProcessObservation(ctx, target, enabled)
+	return id, status == "exited", err
+}
+
+func controllerProcessObservation(ctx context.Context, target, enabled string) (string, string, error) {
 	if enabled != "true" && enabled != "false" {
-		return "", false, errActionsAccountReconciliation
+		return "", "", errActionsAccountReconciliation
 	}
 	// Project only closed process facts, never .Config.Env, plaintext values,
 	// arbitrary Docker errors, or complete inspect responses.
@@ -98,7 +103,7 @@ func controllerModeObservation(ctx context.Context, target, enabled string) (str
 	const format = `{"id":{{json .Id}},"matches_mode":{{range .Config.Env}}{{if ge (len .) 24}}{{if eq (slice . 0 24) "FORGEJO_ACTIONS_ENABLED="}}{{json (eq . "FORGEJO_ACTIONS_ENABLED=@MODE@")}}{{end}}{{end}}{{end}},"status":{{json .State.Status}},"exit_code":{{json .State.ExitCode}},"restarting":{{json .State.Restarting}},"user":{{json .Config.User}},"path":{{json .Path}},"args":{{if .Args}}{{json .Args}}{{else}}[]{{end}}}`
 	body, err := runContainerHelper(ctx, nil, "docker", "inspect", "--type", "container", "--format", strings.Replace(format, "@MODE@", enabled, 1), target)
 	if err != nil || len(body) > 4096 {
-		return "", false, errActionsAccountReconciliation
+		return "", "", errActionsAccountReconciliation
 	}
 	// decoding a struct alone accepts duplicate keys/case aliases and treats
 	// null args as an empty slice. None can establish successful cleanup.
@@ -107,7 +112,7 @@ func controllerModeObservation(ctx context.Context, target, enabled string) (str
 	fields := json.NewDecoder(bytes.NewReader(body))
 	first, err := fields.Token()
 	if err != nil || first != json.Delim('{') {
-		return "", false, errActionsAccountReconciliation
+		return "", "", errActionsAccountReconciliation
 	}
 	for fields.More() {
 		token, err := fields.Token()
@@ -115,17 +120,17 @@ func controllerModeObservation(ctx context.Context, target, enabled string) (str
 		seen, known := keys[key]
 		var value json.RawMessage
 		if err != nil || !ok || !known || seen || fields.Decode(&value) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return "", false, errActionsAccountReconciliation
+			return "", "", errActionsAccountReconciliation
 		}
 		keys[key] = true
 	}
 	last, err := fields.Token()
 	if err != nil || last != json.Delim('}') || fields.Decode(&struct{}{}) != io.EOF {
-		return "", false, errActionsAccountReconciliation
+		return "", "", errActionsAccountReconciliation
 	}
 	for _, seen := range keys {
 		if !seen {
-			return "", false, errActionsAccountReconciliation
+			return "", "", errActionsAccountReconciliation
 		}
 	}
 	var state struct {
@@ -145,7 +150,7 @@ func controllerModeObservation(ctx context.Context, target, enabled string) (str
 		(state.Status != "running" && state.Status != "created" && state.Status != "exited") ||
 		state.ExitCode == nil || *state.ExitCode != 0 || state.Restarting == nil || *state.Restarting ||
 		state.User != "65532:65532" || state.Path != "/usr/local/bin/anas-forgejo-actions-controller" || len(state.Args) != 0 {
-		return "", false, errActionsAccountReconciliation
+		return "", "", errActionsAccountReconciliation
 	}
-	return state.ID, state.Status == "exited", nil
+	return state.ID, state.Status, nil
 }

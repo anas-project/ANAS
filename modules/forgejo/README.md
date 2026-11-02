@@ -9,7 +9,7 @@
 | 项目 | 值 |
 | --- | --- |
 | Module | `forgejo` |
-| 版本 / revision | `15.0.7-r3` |
+| 版本 / revision | `17.0.1-r1` |
 | 状态 | `developing` |
 | 类别 | `app` |
 | 运行时 | `compose` |
@@ -18,7 +18,8 @@
 ## 依赖与最简配置
 
 依赖 `traefik`、OIDC `iam` capability，以及 `relational_database >=1.0.0 <2.0.0` Contract；
-数据库支持 PostgreSQL 和 MariaDB，默认 PostgreSQL。
+数据库仅支持 PostgreSQL；`auto` 只解析到 PostgreSQL。旧 MySQL/MariaDB 配置明确拒绝，
+不会自动改绑、迁移或删除旧数据。
 
 ```yaml
 modules:
@@ -49,38 +50,49 @@ Module 登记 confidential OIDC client `forgejo`，回调地址为
 **改名不会建出第二个账号。** Forgejo 按 OIDC `sub` 认人（`sub` 存进内部的 `login_name` 字段），用户名
 取 `preferred_username` 且只在建号时写一次，因此目录改名之后仍是同一个账号，只是 Forgejo 里的用户名
 冻结在旧值，仓库路径仍然是 `/old/...`；邮箱同样不刷新。邮箱别名与用户名仍然不得回收再分配——Forgejo
-的邮箱全局唯一，旧地址还挂在原账号上时，新人首次登录会因冲突建号失败。（以上按上游实现推断，尚未
-探针复核。）
+的邮箱全局唯一，旧地址还挂在原账号上时，新人首次登录会因冲突建号失败。（17.0.1 协议探针已验证稳定 `sub` 下的身份、仓库路径和旧邮箱保持；标识符回收冲突仍为推断，
+真实 LLNG/Casdoor 目录改名另行验收。）
 
 Forgejo `/user/logout` 只清除应用 session。固定版本没有可由本 Module 稳定登记的 RP-Initiated
 Logout 或 IAM 主动 front/back-channel receiver，因此不声明单点登出与后台会话撤销。
 
 ### 目录属性变更说明
 
-**匹配键**：OIDC `sub`，Forgejo 把它原样存进内部的 `login_name` 字段。用户名另取
-`preferred_username`，只在建号时写一次，不参与认人。**这个键在目录改名后是否稳定，取决于部署
-选了哪个 IAM Provider**——`authentik` 与 `casdoor` 发出的主体标识符都不是目录标签，改名后 `sub`
-不变；`llng` 的主体标识符默认取自登录名，改名后 `sub` 会变，Forgejo 会建出第二个账号、原有仓库
-留在旧账号下（见[Module IAM / OIDC 支持清单](/reference/module-iam-support)的匹配键列）。
+**匹配键**：OIDC `sub`，存入 Forgejo 的 `login_name`；用户名只在建号时写入，不参与账号匹配。
+Provider 必须让 `sub` 在目录改名后保持稳定。当前 ANAS LLNG 配置使用 `anasIdentityAnchor`
+作为 OIDC 主体，不应继续把它描述成登录名；其他 Provider 和历史部署仍须按其实际配置验证。
+不稳定或回收后复用的 `sub` 会导致错配，Module 不会用用户名/邮箱自动修正。
 
 | 目录侧变更 | Forgejo 的行为 | 证据 |
 | --- | --- | --- |
-| `sAMAccountName` 改变 | 同一账号、不新建；Forgejo 里的用户名冻结在旧值，仓库路径仍是 `/old/...`，URL 标识符不跟着变。Provider 的 `sub` 取自登录名时（`llng`）此结论不成立，会建出第二个账号 | `推断` |
-| `mail` 改变 | 不刷新，账号里仍是建号时的旧地址；邮箱不参与账号绑定，但 Forgejo 的邮箱全局唯一，旧地址还挂在原账号上时，用同一地址的新账号会建号失败 | `推断` |
+| `sAMAccountName` 改变 | 同一账号、不新建；Forgejo 里的用户名冻结在旧值，仓库路径仍是 `/old/...`，URL 标识符不跟着变。历史 Provider 的 `sub` 若取自登录名，此结论不成立，会建出第二个账号 | `17.0.1 协议探针`；真实目录改名未验收 |
+| `mail` 改变 | 不刷新，账号里仍是建号时的旧地址；邮箱不参与账号绑定，但 Forgejo 的邮箱全局唯一，旧地址还挂在原账号上时，用同一地址的新账号会建号失败 | 邮箱不刷新已由 `17.0.1 协议探针` 验证；回收冲突仍为推断 |
 | `displayName` 与其他 profile 属性 | 只在建号时写一次，之后从不刷新 | `推断` |
-| 直接或递归组成员变更 | 该用户**下次 OIDC 登录**时随 groups 声明到达 team 与站点管理员映射；不登录就不收敛，没有同步或实时路径 | `推断` |
+| 直接或递归组成员变更 | 该用户**下次 OIDC 登录**时随 groups 声明到达 team 与站点管理员映射；不登录就不收敛，没有同步或实时路径 | `17.0.1 协议探针`；真实目录/递归组另验 |
 | 账号停用 | **无自动路径**。已有 Forgejo session、access token 与 SSH/部署密钥全部继续有效；后两者根本不经过登录，不存在"下次登录时收敛" | `推断` |
 | 账号删除 | 同上，且 Forgejo 账号与其仓库、issue、包全部原样保留；资产归属不会自动转移 | `推断` |
-| 标识符回收再分配 | 用户名回收：新人首次登录时 `preferred_username` 与原账号冲突，Forgejo 建号失败（fail-closed）。邮箱回收同样冲突失败。但若 Provider 的 `sub` 也取自被回收的标签（`llng`），新人会直接接上旧账号（**fail-open**） | `推断` |
+| 标识符回收再分配 | 用户名回收：新人首次登录时 `preferred_username` 与原账号冲突，Forgejo 建号失败（fail-closed）。邮箱回收同样冲突失败。但若 Provider 的 `sub` 也取自被回收的标签，新人会直接接上旧账号（**fail-open**） | `推断` |
 
 **兜底路径**——上表每一行"无自动路径"对应的运维动作：
 
 1. 目录里停用或删除一个人时，必须在 Forgejo 以站点管理员身份**停用该账号，并显式吊销它的全部
-   access token 与 SSH/部署密钥**。固定版本的 `prohibit_login` 是否同时关闭 token 与 Git over SSH
-   尚未复核，因此两步都要做，不能只停用账号；
+   access token 与 SSH/部署密钥**。17.0.1 实测停用期间阻断已有 Web 会话、API token、Git HTTP/SSH。
+   Web 返回 200 的停用提示页，不能按状态码判定仍可访问；停用不等于删除会话或凭据，永久撤权仍须吊销；
 2. 删除目录账号前，先在 Forgejo 把该账号拥有的仓库转移给接手人或组织，再删除 Forgejo 账号；
-3. 组撤权要立即生效时，除上面第 1 步外还要结束该用户已有的 Forgejo session；等下次登录不够；
+3. 组撤权要立即阻断访问时执行第 1 步；等待下次登录不够。当前未发现独立的管理端会话撤销 API，
+   不宣称已删除 session 或客户端 cookie；
 4. **目录侧流程约束**：用户名与邮箱别名不得回收再分配，改名走正式流程。Module 无法强制这两条。
+
+## PostgreSQL 升级与组映射
+
+首发基线为 Forgejo 17.0.1，不提供未发布开发版本的兼容路径。今后升级前关闭 Actions 并确认排空，再保存数据库、应用目录、Secret Store
+和部署元数据的一致备份。上游 schema 升级后不能直接启动旧二进制降级；回滚必须恢复升级前的一致备份。
+旧 MySQL/MariaDB 配置会报错；本轮不提供跨数据库迁移。
+
+`forgejo.oidc_group_team_map` 默认 `{}`。例如 `{"Developers":{"engineering":["reviewers"]}}` 把 IAM
+的 `Developers` 组映射到已有组织 `engineering` 的 `reviewers` team。Module 不创建组织或 team。
+组成员加入和移除在该用户下次 OIDC 登录时生效，已建立的会话不会因此即时失效。自动移除只涉及当前映射
+中的 team；删除一条映射不会追溯撤销旧成员，改映射前应先移除旧组成员并完成登录收敛，或由管理员撤销。
 
 ## 本地恢复管理员
 
@@ -91,7 +103,7 @@ anas admin local credential forgejo break_glass -w /srv/anas
 ```
 
 固定用户名默认为 `admin_forgejo`，登录地址为 `<FORGEJO_DOMAIN_FULL>/user/login`。普通登录仍优先
-使用 OIDC。本版只声明幂等 apply；Forgejo 15 CLI 无法完成带验证与回滚的事务式密码轮换，因此
+使用 OIDC。本版只声明幂等 apply；Forgejo CLI 无法完成带验证与回滚的事务式密码轮换，因此
 `anas admin local rotate forgejo break_glass` 暂不可用，不能直接在应用内修改该托管密码。
 
 ## 所有可用配置参数
@@ -104,11 +116,12 @@ anas admin local credential forgejo break_glass -w /srv/anas
 | `forgejo.actions_runner_image` | string | `format: json_object` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | 否 | 否 | 否 | 是 | `container_recreate` | 结构化镜像引用；Core 在渲染前冻结摘要 |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许仓库自定义 Git Hooks；Hook 会以 Forgejo 用户身份执行服务端代码 |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 应用数据库名 |
-| `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
+| `forgejo.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | 否 | 否 | 否 | 否：`migrate-forgejo-database` | `data_migrate` | 关系数据库类型或自动选择 |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | 否 | 否 | 否 | 是 | `container_recreate` | 服务域名前缀 |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | 否 | 否 | 否 | 是 | `container_recreate` | IAM 登录协议；仅支持 OIDC |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | 否 | 是 | 否 | 是 | `reconcile` | 默认 UI 语言；浏览器和用户偏好优先 |
 | `forgejo.local_path_import_enabled` | bool | — | `false` | `static` | `FORGEJO_LOCAL_PATH_IMPORT_ENABLED` | 否 | 否 | 否 | 是 | `container_recreate` | 是否允许从 Forgejo 容器内已可见的本地路径导入；不会增加宿主路径挂载 |
+| `forgejo.oidc_group_team_map` | string | `max length: 65536`; `format: json_object` | `{}` | `static` | `FORGEJO_OIDC_GROUP_TEAM_MAP` | 否 | 否 | 否 | 是 | `reconcile` | IAM 组到已有 Forgejo 组织和 team 的 JSON 映射；登录时增加及移除成员 |
 | `forgejo.ssh_port` | int | `1..65535` | `2222` | `static` | `FORGEJO_SSH_PORT` | 否 | 否 | 否 | 是 | `container_recreate` | 对外 SSH Git 端口 |
 
 ### 查询和修改
@@ -182,17 +195,20 @@ SSH key/config 和应用配置；用户、权限、Issue 等关系状态位于�
 clone/push、LFS、Package、OIDC 登录和本地恢复登录。
 
 Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里，不属于上面的一致点，但
-目前**也不能随手丢弃**：丢了它，Actions 还开着时孤立的 Runner 实例要等到关闭开关才回收，个别孤立
-的 Runner registration 则会永久留在 Forgejo 里。重建部署时请一并保留它。
+重建部署时仍须保留。周期性调和核对孤立实例和带归属签名的 registration；无法证明归属的对象保留，
+不会当作自己的孤儿删除。变更 scope/租约/口令前先排空。
 
 ## 当前限制
 
-- 状态为 `developing`；PostgreSQL/MariaDB、amd64/arm64、真实浏览器 OIDC、备份恢复和前一版本
-  升级/回滚 E2E 尚是提升 `release` 的门槛。
+- 状态为 `developing`，仅支持 PostgreSQL。amd64 正式部署、两种 IAM 浏览器和普通备份恢复已通过；
+  本轮按用户确认的 amd64 范围结算，ARM64 验收延期；其余既定门禁的当前结果见[实施计划](dev-docs/plans/forgejo-module.md)。
 - SMTP、S3/object storage 和外部搜索尚未自动配置。Actions controller/Runner image 资产已接入，但
-  独立 Incus 宿主、网络 egress 和真实 one-job E2E（两档各一遍）尚未完成，因此 Actions 仍是开发中
-  能力。Runner 镜像需要按 amd64/arm64 × 容器/VM 各签收一份 fingerprint，配置里只有一个值，填错
-  档位或架构要到创建实例失败时才会暴露。
+  amd64 Incus 两档核心生命周期和双栈出网已通过；容器 Runner 五场景工作流、
+  10分钟等待回收及30分钟空闲门禁已有通过基线。真实构建发现工作流引擎路径错误，
+  新配方已修复，容器档 repo/org 真实构建与回收通过。完整 Core 开关及 VM Runner 仍待验收，
+  因此 Actions 仍是开发中能力。本轮 Runner 镜像按 amd64 容器/VM 各签收一份
+  fingerprint，ARM64 后续另验；Provider 在登记信任和
+  创建实例前校验目标架构、镜像类型及 fingerprint，错误配置会被拒绝。
 - `forgejo.oidc_client_secret` 使用 `migrate` 模式，不能参与统一 `credential rotate` 事务；变更需
   在维护窗口内同时更新 IAM client 与 Forgejo auth source 并验证登录。
 
@@ -206,7 +222,7 @@ Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里�
 
 > 本节由 `localization.yml` 生成；请勿手工编辑。 / Generated from `localization.yml`; do not edit manually.
 
-- Module version / 版本：`15.0.7-r3`（reviewed 2026-08-22）
+- Module version / 版本：`17.0.1-r1`（reviewed 2026-10-30）
 - Timezone / 时区：`configured` — Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
 - Language scope / 语言范围：Forgejo Web UI
 - Selection / 选择方式：`application`
@@ -214,11 +230,11 @@ Actions controller 的状态在 Docker named volume `forgejo_actions_state` 里�
 - Upstream format / 上游格式：Forgejo locale key from the pinned i18n LANGS list
 - Fallback / 回退：The matched ANAS language is moved to the first position; unmatched values warn and fall back to en-US, while browser and saved user choices take precedence.
 - Supported languages / 支持语言（31）：`en-US`, `zh-CN`, `zh-HK`, `zh-TW`, `da`, `de-DE`, `nds`, `fr-FR`, `nl-NL`, `lv-LV`, `ru-RU`, `uk-UA`, `ja-JP`, `es-ES`, `pt-BR`, `pt-PT`, `pl-PL`, `bg`, `it-IT`, `fi-FI`, `fil`, `eo`, `tr-TR`, `cs-CZ`, `sl`, `sv-SE`, `ko-KR`, `el-GR`, `fa-IR`, `hu-HU`, `id-ID`
-- Notes / 说明：Forgejo uses the first configured locale only when the browser does not match a listed locale. The hook keeps the complete pinned list and reorders the selected default instead of removing choices.
+- Notes / 说明：The v17.0.1 custom/conf/app.example.ini LANGS/NAMES list was checked against the hook and is unchanged. Forgejo uses the first configured locale only when the browser does not match a listed locale. The hook keeps the complete pinned list and reorders the selected default instead of removing choices.
 
 Evidence / 证据：
 
-- [v15.0 — i18n LANGS and NAMES](https://forgejo.org/docs/v15.0/admin/config-cheat-sheet/)
+- [v17.0 — i18n LANGS and NAMES](https://forgejo.org/docs/v17.0/admin/config-cheat-sheet/)
 <!-- generated:localization:end -->
 
 ## 结构化 compute 镜像

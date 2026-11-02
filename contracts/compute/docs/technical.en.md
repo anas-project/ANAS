@@ -226,6 +226,12 @@ therefore closes the set of things a lease can boot at apply time: tags, aliases
 refused, because otherwise a reviewed lease would drift as the remote publishes updates. The provider owns profiles, networks, and storage pools, and accepts no
 caller-supplied devices, raw configuration, mounts, or host sockets.
 
+The shared client enforces the per-digest image allowlist; the current daemon has no equivalent native
+configuration key. Trusted consumer code holding the lease certificate can bypass the client and directly
+import or create other images. The allowlist is therefore not a daemon-enforced restriction against
+malicious consumer code. Consumer credentials must stay out of guests; project isolation and quotas
+remain daemon-enforced.
+
 The contract does not install, configure, or host the provider daemon, and does not require the ANAS
 host to support virtualization: it is a client control plane for that daemon. `deletion_policy` accepts
 only `retain`; removing the declaration revokes the certificate and keeps the project, see "Ending a lease".
@@ -257,8 +263,11 @@ deleting paths another process may use. Other platforms have no unprotected writ
 `config.yml` uses standard JSON encoding for YAML-compatible CLI configuration, fixing `protocol: incus`, the remote,
 endpoint, TLS authentication and project. It is checked, committed and read back alongside the credentials.
 Old experimental `protocol: lxd` configuration is not overwritten or silently migrated; use a new private
-configuration directory. Initialization no longer calls `remote add`: matching files are reused, followed by a read-only instance
-listing in the restricted project. Another project or pre-existing configuration is never overwritten.
+configuration directory. Initialization no longer calls `remote add`: matching files are reused, followed by
+a read of the exact project and verification of its name, then an instance listing. An unauthorized inventory
+may be filtered to empty, so an empty list does not establish project admission. Configuration preseeds
+`last_working_address` with the unique endpoint so the CLI does not rewrite it after its first connection
+and break subsequent strict byte checks. Another project or pre-existing configuration is never overwritten.
 The initialization lock is created exclusively; an existing entry is opened without a creation flag.
 Disappearance therefore fails rather than creating another lock inode. Errors contain only fixed stage
 labels and system-error categories, not paths or credentials.

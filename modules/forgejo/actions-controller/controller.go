@@ -3,11 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -104,6 +106,9 @@ func (c *Controller) Reconcile(ctx context.Context) error {
 			}
 		}
 	}
+	if err := c.cleanupOrphans(ctx, state); err != nil {
+		return errors.Join(append(errs, err)...)
+	}
 	for handle, retryAt := range state.RetryAfter {
 		if !retryAt.After(c.now()) {
 			delete(state.RetryAfter, handle)
@@ -169,7 +174,10 @@ func (c *Controller) provision(ctx context.Context, state *ControllerState, cand
 	if existing.ID != instanceID || existing.State != "missing" {
 		return fmt.Errorf("provisioning instance identity is already occupied or unconfirmed")
 	}
-	registration, err := c.forgejo.CreateRunner(ctx, candidate.Scope, instanceID)
+	if c.cfg.Password == "" {
+		return fmt.Errorf("controller credential is required for Runner ownership")
+	}
+	registration, err := c.forgejo.CreateRunner(ctx, candidate.Scope, c.runnerName(candidate.Scope, instanceID))
 	if err != nil {
 		return err
 	}
@@ -272,22 +280,73 @@ func (c *Controller) CleanupAll(ctx context.Context) error {
 			errs = append(errs, cleanupErr)
 		}
 	}
-	instances, listErr := c.compute.ListManaged(ctx)
-	if listErr != nil {
-		errs = append(errs, listErr)
-	} else {
-		protected := map[string]bool{}
-		for _, workload := range state.Workloads {
-			protected[workload.InstanceID] = true
+	errs = append(errs, c.cleanupOrphans(ctx, state))
+	return errors.Join(errs...)
+}
+
+// runnerName proves which registration this controller created even if its
+// state volume is lost. Reuse the existing durable, randomly generated account
+// credential; no second key store or cross-service synchronization is needed.
+// Drain Actions before migrating that credential or changing its lease sandbox.
+func (c *Controller) runnerName(scope Scope, instanceID string) string {
+	mac := hmac.New(sha256.New, []byte(c.cfg.Password))
+	for _, value := range []string{"anas-forgejo-runner-v1", c.cfg.Lease.Sandbox, scope.String(), instanceID} {
+		_, _ = mac.Write([]byte(value + "\x00"))
+	}
+	return instanceID + "-" + hex.EncodeToString(mac.Sum(nil)[:16])
+}
+
+func (c *Controller) ownsRunner(scope Scope, name string) bool {
+	// Instance IDs are the prefix plus 20 lowercase hex digits. Never retire an
+	// operator's runner just because its name has our public prefix.
+	if c.cfg.Password == "" || len(name) != 61 || !strings.HasPrefix(name, "anas-fj-") {
+		return false
+	}
+	instanceID := name[:28]
+	if _, err := hex.DecodeString(instanceID[8:]); err != nil {
+		return false
+	}
+	return hmac.Equal([]byte(name), []byte(c.runnerName(scope, instanceID)))
+}
+
+func (c *Controller) cleanupOrphans(ctx context.Context, state ControllerState) error {
+	protectedInstances := map[string]bool{}
+	protectedRunners := map[string]map[int64]bool{}
+	for _, workload := range state.Workloads {
+		protectedInstances[workload.InstanceID] = true
+		if protectedRunners[workload.Scope] == nil {
+			protectedRunners[workload.Scope] = map[int64]bool{}
 		}
+		protectedRunners[workload.Scope][workload.RunnerID] = true
+	}
+	var errs []error
+	instances, err := c.compute.ListManaged(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	} else {
 		for _, instance := range instances {
-			// A failed ownership/retirement check must not be bypassed by the
-			// catch-all orphan sweep immediately below it.
-			if protected[instance.ID] {
+			// ListManaged is lease-scoped. Also require the original deterministic
+			// workload identity, and never bypass an earlier failed ownership check.
+			if protectedInstances[instance.ID] || instance.WorkloadID == "" || instance.ID != instanceIDFor(instance.WorkloadID) {
 				continue
 			}
-			if deleteErr := c.compute.Delete(ctx, instance.ID); deleteErr != nil {
-				errs = append(errs, deleteErr)
+			if err := c.compute.Delete(ctx, instance.ID); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	for _, scope := range c.cfg.Scopes {
+		runners, err := c.forgejo.ListRunners(ctx, scope)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		for _, runner := range runners {
+			if protectedRunners[scope.String()][runner.ID] || !c.ownsRunner(scope, runner.Name) {
+				continue
+			}
+			if err := c.forgejo.DeleteRunner(ctx, scope, runner.ID); err != nil {
+				errs = append(errs, err)
 			}
 		}
 	}

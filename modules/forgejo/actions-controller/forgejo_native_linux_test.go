@@ -82,3 +82,89 @@ func TestNativeForgejoScopedRunnerAPI(t *testing.T) {
 		})
 	}
 }
+
+// This separate fixture deliberately uses a fake ComputeProvider. It verifies
+// real 17.0.1/PostgreSQL registration recovery, not Incus instance acceptance.
+func TestIsolatedPostgresRunnerRecovery(t *testing.T) {
+	if os.Getenv("ANAS_FORGEJO_POSTGRES_FIXTURE") != "1" {
+		t.Skip("requires dedicated PostgreSQL fixture")
+	}
+	fixtureNS, err := os.Stat("/run/netns/anas-fj-1030")
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentNS, err := os.Stat("/proc/self/ns/net")
+	if err != nil || !os.SameFile(fixtureNS, currentNS) {
+		t.Fatal("dedicated fixture network namespace required")
+	}
+	const passwordPath = "/home/whl/anas-forgejo-1030/fixture/password"
+	info, err := os.Lstat(passwordPath)
+	if err != nil || securefs.ValidateFileInfo(info, "PostgreSQL fixture") != nil {
+		t.Fatal("private fixture credential required")
+	}
+	password, err := os.ReadFile(passwordPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(password)
+	client := NewForgejoClient("http://127.0.0.1:13000", "anas-forgejo-upgrade-test", string(password))
+	var version struct {
+		Version string `json:"version"`
+	}
+	if err := client.(*forgejoClient).do(context.Background(), "GET", "/api/v1/version", nil, &version, 200); err != nil || !strings.HasPrefix(version.Version, "17.0.1") {
+		t.Fatal("fixed Forgejo 17.0.1 fixture required")
+	}
+	for _, scope := range []Scope{{Owner: "anas-forgejo-upgrade-test", Repo: "upgrade-proof"}, {Owner: "upgrade-org"}} {
+		t.Run(scope.String(), func(t *testing.T) {
+			// This fixture performs multiple authenticated requests on a shared
+			// test server. Keep individual client deadlines; allow a bounded
+			// overall budget for two full reconciliation cycles plus probes.
+			ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+			defer cancel()
+			c, _, compute, _, _ := controllerFixture()
+			c.cfg.Password = string(password)
+			c.cfg.Scopes = []Scope{scope}
+			c.cfg.Lease.Sandbox = "fixture-no-real-compute"
+			c.forgejo = client
+			id := instanceIDFor("lost-state-fixture")
+			compute.managed = []Instance{{ID: id, WorkloadID: "lost-state-fixture", State: "running"}}
+			owned, err := client.CreateRunner(ctx, scope, c.runnerName(scope, id))
+			if err != nil {
+				t.Fatal(err)
+			}
+			foreign, err := client.CreateRunner(ctx, scope, "manual-fixture-runner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				clean, stop := context.WithTimeout(context.Background(), 15*time.Second)
+				defer stop()
+				_ = client.DeleteRunner(clean, scope, owned.ID)
+				_ = client.DeleteRunner(clean, scope, foreign.ID)
+			})
+			owned.Token = ""
+			foreign.Token = ""
+			for cycle := 0; cycle < 2; cycle++ {
+				if err := c.Reconcile(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+			runners, err := client.ListRunners(ctx, scope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundForeign := false
+			for _, r := range runners {
+				if r.ID == owned.ID {
+					t.Fatal("orphan registration retained")
+				}
+				if r.ID == foreign.ID {
+					foundForeign = true
+				}
+			}
+			if !foundForeign || len(compute.deleted) != 2 {
+				t.Fatalf("foreign retained=%v fake compute deletions=%d", foundForeign, len(compute.deleted))
+			}
+		})
+	}
+}

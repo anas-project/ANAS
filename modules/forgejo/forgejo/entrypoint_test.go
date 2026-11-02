@@ -20,6 +20,33 @@ func response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}
 }
 
+func TestHealthCheckUsesForgejoAPIReadinessEndpoint(t *testing.T) {
+	original := httpClient
+	defer func() { httpClient = original }()
+	for _, check := range []struct {
+		status int
+		body   string
+		ready  bool
+	}{
+		{http.StatusOK, `{"status":"pass","checks":{"database:ping":[{"status":"pass"}]}}`, true},
+		{http.StatusServiceUnavailable, `{"status":"fail"}`, false},
+		{http.StatusOK, `{"status":"fail"}`, false},
+		{http.StatusOK, `<html>Sign in</html>`, false},
+		{http.StatusOK, `{}`, false},
+	} {
+		httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			if request.Method != http.MethodGet || request.URL.Path != "/api/healthz" {
+				return response(http.StatusNotFound, ""), nil
+			}
+			return response(check.status, check.body), nil
+		})}
+		err := checkHealth("http://forgejo.test")
+		if (err == nil) != check.ready {
+			t.Fatalf("readiness status %d, body %q: %v", check.status, check.body, err)
+		}
+	}
+}
+
 func TestChownDataTreeDoesNotFollowSymlinks(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "forgejo")
@@ -177,5 +204,60 @@ func TestEnsureOIDCRejectsDisabledSource(t *testing.T) {
 	err := ensureOIDC(oidcInput{Name: "anas", ClientID: "forgejo", ClientSecret: "secret", DiscoveryURL: "https://id/.well-known/openid-configuration", AdminGroup: "Admins"})
 	if err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestEnsureOIDCUpdatesAndClearsGroupTeamMapping(t *testing.T) {
+	original := runForgejoCommand
+	defer func() { runForgejoCommand = original }()
+	for _, groups := range []map[string]map[string][]string{{"Developers": {"engineering": {"reviewers"}}}, nil} {
+		expected := "{}"
+		if groups != nil {
+			expected = `{"Developers":{"engineering":["reviewers"]}}`
+		}
+		updated := false
+		runForgejoCommand = func(args ...string) ([]byte, error) {
+			if len(args) > 2 && args[2] == "update-oauth" {
+				updated = true
+				joined := strings.Join(args, " ")
+				if !strings.Contains(joined, "--id 3") || !strings.Contains(joined, "--group-team-map "+expected) || !strings.Contains(joined, "--group-team-map-removal=true") {
+					t.Fatalf("args=%v", args)
+				}
+				return nil, nil
+			}
+			return []byte("3 anas OAuth2 true\n"), nil
+		}
+		if err := ensureOIDC(oidcInput{Name: "anas", ClientID: "client", ClientSecret: "secret", DiscoveryURL: "https://id.test", AdminGroup: "Admins", GroupTeamMap: groups}); err != nil {
+			t.Fatal(err)
+		}
+		if !updated {
+			t.Fatal("existing source was not updated")
+		}
+	}
+}
+
+func TestLocalAdminRefusesToAdoptOrMutateAnUnmanagedAccount(t *testing.T) {
+	originalClient, originalCommand := httpClient, runForgejoCommand
+	defer func() { httpClient = originalClient; runForgejoCommand = originalCommand }()
+	runForgejoCommand = func(args ...string) ([]byte, error) {
+		t.Fatalf("unmanaged account reached CLI mutation: %v", args)
+		return nil, nil
+	}
+	httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != "GET" {
+			t.Fatalf("unmanaged account reached HTTP mutation: %s", r.Method)
+		}
+		switch r.URL.Path {
+		case "/api/v1/user":
+			return response(401, ""), nil
+		case "/api/v1/users/external-automation":
+			return response(200, `{"login":"external-automation"}`), nil
+		default:
+			t.Fatalf("unrelated account endpoint reached: %s", r.URL.Path)
+		}
+		return response(500, ""), nil
+	})}
+	if err := ensureLocalAdmin(localAdminInput{Username: "external-automation", Email: "automation@example.test", Password: "different-managed-secret"}, "http://forgejo.test"); err == nil {
+		t.Fatal("unmanaged account adopted")
 	}
 }

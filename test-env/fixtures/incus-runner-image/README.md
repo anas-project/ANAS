@@ -4,7 +4,9 @@ The immutable-image gate also requires `rootless-oci-exec-limits`. It runs a dig
 container as the actual agent through the rootless socket, exercises create and exec, and reads the
 effective CPU, memory, PID and no-new-privileges controls inside that container. It never patches the
 guest service. The `cgroup-control` replay is explicitly diagnostic and cannot replace this gate.
-The independent one-job matrix must still confirm payload execution and resource reclamation.
+The diagnostic sleep container is force-removed with zero stop grace inside the unchanged
+20-second cleanup deadline; an unconfirmed removal fails the gate. The independent one-job
+matrix must still confirm payload execution and resource reclamation.
 
 The image gate also requires `runner-config-readable`, executed as `runner-agent`. Root-only binary
 and API probes did not catch the original 0700 public configuration parent. Older binaries missing
@@ -13,15 +15,50 @@ It now also requires `rootless-user-session`, which queries the real engine user
 after the API is ready. This covers the user bus needed by rootless container DNS helpers; it does not
 replace the separate real-workflow/container-start matrix.
 
-`server-forgejo-onejob-e2e.py` is the separate real-workflow matrix. Run it as root only inside the
-identified disposable VM, with verified Forgejo 15.0.7, Git and the actual controller test executable.
-Its report must be a new child of `/home/anas-test/verification`. It exercises normal completion,
-intentional failure, controller SIGTERM cancellation after the payload starts, actual SIGKILL and preserved-state
-controller restart, and a queued unapproved repository. Every case checks state, instance, root-disk
-and registration inventories. It does not prove recovery after loss of the controller state volume.
-It does not exercise Forgejo's separate web/UI cancellation. The pinned Forgejo API uses `commit_sha`
-and has no run/jobs/steps endpoint; payload progress is observed through read-only, non-secret columns
-of this fixture's SQLite database. No task status is written by the harness. The job image is a
+`server-forgejo-onejob-e2e.py` is the separate real-workflow matrix, pinned to Forgejo
+17.0.1 and PostgreSQL. Run it only inside the identified disposable VM with distribution
+PostgreSQL server tools (`pg_config`, `initdb`, `pg_ctl`, `psql`) and the ordinary `postgres`
+account installed beforehand. It creates its own peer-authenticated, Unix-socket-only cluster,
+using the ordinary `anas-test` Forgejo account, and stops that cluster during cleanup.
+It never connects to a host database or installs prerequisites itself. The report must be a
+new child of `/home/anas-test/verification`. It exercises normal completion, intentional failure,
+controller SIGTERM cancellation after payload starts, SIGKILL and preserved-state restart,
+and a queued unapproved repository. Every case checks state, instance, root-disk and registration
+inventories. It does not prove recovery after loss of controller state or Forgejo web/UI cancellation.
+Payload progress uses the Forgejo 17.0.1 run/jobs API followed by the single-job API, which populates
+steps. Date-time values are validated and normalized; ambiguous jobs, wrong identities and malformed
+timestamps fail observation. Forgejo 17 optional dates may be explicit null: these normalize to zero
+and cannot prove payload start or completion; a missing date field still fails. No database tables or Runner token columns are inspected.
+The prior 15.0.7/SQLite results remain historical; the updated fixture needs new native acceptance.
+
+The synthetic Forgejo endpoint resides on the disposable execution host, so normal and idle
+fixtures explicitly declare `internet_lan_host` egress with no ingress. This fixture placement
+is separate from the production Module endpoint behind Traefik and does not establish the
+production default-network gate. `--waiting-ttl` instead declares internet-only egress,
+checks that a TCP-only probe to the synthetic endpoint times out, and observes a real unclaimed
+job for the production 600-second waiting TTL. It requires unchanged creation time, complete
+resource reclamation, persisted retry backoff and 30 seconds without recreation. It does not
+shorten the clock or edit controller state. Run each mode with fresh private runtime paths.
+
+`--container-build` runs a separate real workflow with a digest-pinned amd64 Docker CLI
+image. With no Secrets, checkout or privileged options, it builds a scratch image from a
+local marker, inspects its label, copies the marker back from a stopped container and checks
+exact bytes. `--org-scope` selects a fixed test organization instead of the repository scope.
+Organization reclamation uses the organization Runner endpoint directly; the default repository
+list does not include organization registrations. The unauthorized personal repository must
+still receive no Runner. This mode reports its
+scope and build coverage explicitly and does not claim the crash matrix or Core switch test.
+
+The optional `--idle-baseline` mode creates no workflows. It records a 60-second Forgejo baseline
+with Actions disabled, restarts that same private server with Actions enabled, observes two actual
+controller reconciliation cycles, then samples the controller for at least 1800 seconds. The native
+process writes only queue request timestamps while forwarding the original HTTP requests unchanged.
+The gate checks RSS <=128 MiB, average single-core CPU <=1% (including reaped CLI child CPU), no queue
+request interval below 10 seconds, and empty Runner/instance/root-disk inventories throughout. Raw
+resource samples and timestamp-only queue observations are retained separately from configuration
+and credentials. This mode requires the current native controller test executable and enough owner
+time for the 30-minute gate; failed reconciliation logs also fail the observation; normal workflow timeouts remain unchanged.
+The job image is a
 verified amd64 BusyBox manifest pinned by digest at the reachable ECR public registry, not a mutable
 Docker Hub tag. External registry reachability is separate from Incus isolation and image acceptance.
 The current fixture uses the production controller's bounded stdin trust projection. It does not

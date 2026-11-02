@@ -8,7 +8,7 @@ Self-hosted Git collaboration with HTTP/SSH Git, code review, issues, wiki, Git 
 | Item | Value |
 | --- | --- |
 | Module | `forgejo` |
-| Version / revision | `15.0.7-r3` |
+| Version / revision | `17.0.1-r1` |
 | Status | `developing` |
 | Category | `app` |
 | Runtime | `compose` |
@@ -17,7 +17,8 @@ Self-hosted Git collaboration with HTTP/SSH Git, code review, issues, wiki, Git 
 ## Dependencies and minimal configuration
 
 Forgejo requires Traefik, the OIDC IAM capability, and relational database Contract `>=1.0.0 <2.0.0`.
-PostgreSQL is the default; MariaDB is also supported.
+Only PostgreSQL is supported; `auto` resolves to PostgreSQL. Legacy MySQL/MariaDB configurations are rejected
+without rebinding, migrating or deleting their data.
 
 ```yaml
 modules:
@@ -53,45 +54,58 @@ the internal `login_name` field; the username comes from `preferred_username` an
 account is created. After a directory rename it is still the same account, with the Forgejo username frozen at
 the old value and repository paths still under `/old/...`; the email is not refreshed either. Mail aliases and
 usernames must still never be recycled: Forgejo's emails are globally unique, so while the old address still
-belongs to the old account a newcomer's first login fails to create one. (Inferred from upstream behavior, not
-yet confirmed by a probe.)
+belongs to the old account a newcomer's first login fails to create one. (A 17.0.1 protocol probe verified identity, repository path and old email retention with a stable `sub`.
+Identifier recycling remains inferred; real LLNG/Casdoor directory renames require separate acceptance.)
 
 Forgejo `/user/logout` clears the application session only. The pinned version exposes neither a stable
 RP-Initiated Logout integration for this Module nor an IAM-initiated front/back-channel receiver.
 
 ### Directory attribute changes
 
-**Matching key**: the OIDC `sub`, which Forgejo stores verbatim in its internal `login_name` field.
-The username comes separately from `preferred_username`, is written once at account creation, and
-takes no part in identifying anyone. **Whether this key survives a directory rename depends on which
-IAM Provider the deployment selected** — `authentik` and `casdoor` both mint a subject identifier
-that is not a directory label, so `sub` does not change on rename; `llng` derives its subject
-identifier from the login name by default, so after a rename `sub` changes, Forgejo creates a second
-account, and the existing repositories stay behind on the old one (see the matching-key column in
-[Module IAM / OIDC support](/en/reference/module-iam-support)).
+**Matching key**: OIDC `sub`, stored in Forgejo's `login_name`; the username is set at creation and is not the
+matching key. The Provider must keep `sub` stable across directory renames. Current ANAS LLNG configuration
+uses `anasIdentityAnchor` as the OIDC subject, so describing it as the login name is obsolete. Verify other
+Providers and historical deployments against their actual configuration. An unstable or recycled `sub` can
+cause incorrect association; the Module does not repair this through username or email matching.
 
 | Directory change | What Forgejo does | Evidence |
 | --- | --- | --- |
-| `sAMAccountName` changes | Same account, nothing created; the Forgejo username stays frozen at the old value, repository paths remain `/old/...`, and the identifier in URLs does not follow. This does not hold when the Provider's `sub` is the login name (`llng`), where a second account appears | `inferred` |
-| `mail` changes | Not refreshed; the account keeps the address captured at creation. Email takes no part in account binding, but Forgejo emails are globally unique, so while the old address still belongs to the old account a new account using it fails to be created | `inferred` |
+| `sAMAccountName` changes | Same account, nothing created; the Forgejo username stays frozen at the old value, repository paths remain `/old/...`, and the identifier in URLs does not follow. This does not hold when the historical Provider's `sub` is the login name, where a second account appears | `17.0.1 protocol probe`; real directory rename not accepted |
+| `mail` changes | Not refreshed; the account keeps the address captured at creation. Email takes no part in account binding, but Forgejo emails are globally unique, so while the old address still belongs to the old account a new account using it fails to be created | Email retention verified by `17.0.1 protocol probe`; recycling conflicts remain inferred |
 | `displayName` and other profile attributes | Written once at account creation and never refreshed afterwards | `inferred` |
-| Direct or recursive group membership changes | Reach teams and the site-administrator mapping through the groups claim at the user's **next OIDC login**; without a login nothing converges, and there is no sync or real-time path | `inferred` |
+| Direct or recursive group membership changes | Reach teams and the site-administrator mapping through the groups claim at the user's **next OIDC login**; without a login nothing converges, and there is no sync or real-time path | `17.0.1 protocol probe`; real directory/recursive groups require separate acceptance |
 | Account disabled | **No automatic path.** Existing Forgejo sessions, access tokens, and SSH/deploy keys all keep working; the last two never pass through a login, so "it converges at the next sign-in" does not apply to them | `inferred` |
 | Account deleted | As above, and the Forgejo account keeps its repositories, issues, and packages untouched; ownership of assets is never transferred automatically | `inferred` |
-| Identifier recycled and reassigned | Recycled username: the newcomer's first login collides with the old account's `preferred_username` and account creation fails (fail-closed). A recycled email collides the same way. But if the Provider's `sub` is itself the recycled label (`llng`), the newcomer lands directly on the old account (**fail-open**) | `inferred` |
+| Identifier recycled and reassigned | Recycled username: the newcomer's first login collides with the old account's `preferred_username` and account creation fails (fail-closed). A recycled email collides the same way. But if the Provider's `sub` is itself the recycled label, the newcomer lands directly on the old account (**fail-open**) | `inferred` |
 
 **Fallback path** — what operations must do for every "no automatic path" row above:
 
 1. When a person is disabled or deleted in the directory, a Forgejo site administrator must **disable
-   that account and explicitly revoke every access token and SSH/deploy key it owns**. Whether the
-   pinned version's `prohibit_login` also closes tokens and Git over SSH has not been re-checked, so
-   do both steps; disabling the account alone is not enough;
+   that account and explicitly revoke every access token and SSH/deploy key it owns**. The
+   17.0.1 probe confirms that disabling blocks existing Web sessions, API tokens and Git HTTP/SSH.
+   Web returns an HTTP 200 suspension page, so the status alone does not prove access. Suspension does not
+   delete sessions or credentials; permanent revocation still requires explicit credential deletion;
 2. Before deleting a directory account, transfer the repositories it owns to a successor or an
    organization in Forgejo, then delete the Forgejo account;
-3. When group revocation has to take effect immediately, terminate the user's existing Forgejo
-   sessions in addition to step 1; waiting for the next login is not enough;
+3. For immediate group revocation, perform step 1; waiting for another login is insufficient. No separate
+   admin session-revocation API was found, and this does not claim session or client-cookie deletion;
 4. **Directory-side process constraints**: usernames and mail aliases must never be recycled, and
    renames must go through the formal process. The Module cannot enforce either.
+
+## PostgreSQL upgrades and group mapping
+
+The first public baseline is Forgejo 17.0.1. Unpublished development versions have no supported compatibility path.
+
+Forgejo is pinned to 17.0.1. Disable and drain Actions before upgrading, then save a consistent backup of the
+database, application data, Secret Store and deployment metadata. Schema rollback requires restoring that backup
+before starting the old version. Legacy MySQL/MariaDB configurations are rejected without migrating or deleting data.
+
+`forgejo.oidc_group_team_map` defaults to `{}`. For example, `{"Developers":{"engineering":["reviewers"]}}`
+maps the IAM group to an existing organization and team. Additions and removals apply at the next OIDC login,
+without revoking existing sessions. Removing a mapping does not retroactively remove its old members;
+reconcile their group removal first or revoke membership manually. The Module does not create organizations or teams.
+
+## Local recovery administrator
 
 Retrieve the managed local recovery account when IAM is unavailable:
 
@@ -100,7 +114,7 @@ anas admin local credential forgejo break_glass -w /srv/anas
 ```
 
 The default username is `admin_forgejo`; use `<FORGEJO_DOMAIN_FULL>/user/login`. This revision provides idempotent
-apply only. Forgejo 15 cannot offer a verified transactional password change with rollback through its CLI, so
+apply only. The Forgejo CLI cannot offer a verified transactional password change with rollback through its CLI, so
 `anas admin local rotate forgejo break_glass` is intentionally unavailable.
 
 ## All configuration parameters
@@ -113,11 +127,12 @@ apply only. Forgejo 15 cannot offer a verified transactional password change wit
 | `forgejo.actions_runner_image` | string | `format: json_object` | `""` | `static` | `FORGEJO_ACTIONS_RUNNER_IMAGE` | no | no | no | yes | `container_recreate` | Structured image reference; Core freezes the fingerprint before rendering |
 | `forgejo.custom_git_hooks_enabled` | bool | — | `false` | `static` | `FORGEJO_CUSTOM_GIT_HOOKS_ENABLED` | no | no | no | yes | `container_recreate` | Allow repository custom Git hooks to execute server-side code as the Forgejo user |
 | `forgejo.db_name` | string | — | `forgejo` | `static` | `FORGEJO_DB_NAME` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Application database name |
-| `forgejo.db_type` | enum (`auto`, `postgres`, `mariadb`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
+| `forgejo.db_type` | enum (`auto`, `postgres`) | — | `auto` | `static` | `FORGEJO_DB_TYPE` | no | no | no | no: `migrate-forgejo-database` | `data_migrate` | Relational database type or automatic selection |
 | `forgejo.domain_prefix` | string | `length: 1..63`; `pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$` | `git` | `static` | `FORGEJO_DOMAIN_PREFIX` | no | no | no | yes | `container_recreate` | Service domain prefix |
 | `forgejo.iam_protocol` | enum (`auto`, `oidc`) | — | `auto` | `static` | `FORGEJO_IAM_PROTOCOL` | no | no | no | yes | `container_recreate` | IAM login protocol; OIDC only |
 | `forgejo.language` | string | — | — | `inherited` | `FORGEJO_LANGUAGE` | no | yes | no | yes | `reconcile` | Default UI language; browser and saved preferences take precedence |
 | `forgejo.local_path_import_enabled` | bool | — | `false` | `static` | `FORGEJO_LOCAL_PATH_IMPORT_ENABLED` | no | no | no | yes | `container_recreate` | Allow imports from paths already visible inside the Forgejo container without adding a host mount |
+| `forgejo.oidc_group_team_map` | string | `max length: 65536`; `format: json_object` | `{}` | `static` | `FORGEJO_OIDC_GROUP_TEAM_MAP` | no | no | no | yes | `reconcile` | JSON mapping of IAM groups to existing Forgejo organizations and teams; additions and removals apply at login |
 | `forgejo.ssh_port` | int | `1..65535` | `2222` | `static` | `FORGEJO_SSH_PORT` | no | no | no | yes | `container_recreate` | Public SSH Git port |
 
 Database name/type changes do not migrate data. Back up the database and persistent volume before an explicit migration.
@@ -184,15 +199,20 @@ attachments, SSH state, and application configuration. Consistent backup/restore
 database Resource, `.anas/secrets.yml`, and deployment metadata.
 
 Actions controller state lives in the Docker named volume `forgejo_actions_state`. It is outside that consistency
-point but **is not freely discardable today**: losing it leaves orphaned Runner instances uncollected until the
-switch is turned off, and leaves the occasional orphaned Runner registration in Forgejo permanently. Keep the volume
-when rebuilding a deployment.
+point and must still be preserved when rebuilding. Periodic reconciliation checks orphaned instances and signed
+registrations. Objects whose ownership cannot be established are retained rather than deleted as owned orphans.
+Drain Actions before changing the scope, lease or controller password.
 
-The Module is `developing`. Database/architecture matrices, browser OIDC, restore, and upgrade/rollback E2E remain
-release gates. SMTP, object storage, and external search are not automatically configured. The Actions controller
-and Runner-image assets are wired, but an independent Incus host, egress, and real one-job E2E (once per tier) are
-still pending. Runner images are signed off per amd64/arm64 and per container/VM tier, while the configuration holds
-a single fingerprint, so a wrong tier or architecture only surfaces when instance creation fails.
+The Module is `developing` and supports PostgreSQL only. Formal amd64 deployment, both IAM browser matrices and
+ordinary backup/restore passed. The confirmed first-release acceptance scope is amd64; ARM64 acceptance
+is deferred, and the other agreed gates remain tracked. See the [implementation plan](dev-docs/plans/forgejo-module.md). SMTP, object storage, and
+external search are not automatically configured. The Actions controller
+and Runner-image assets are wired. The amd64 core Incus lifecycle on both tiers and dual-stack egress passed;
+five container workflow cases, real 10-minute waiting cleanup and the 30-minute idle gate have passing baselines.
+A real build exposed an incorrect job-side engine path; the fixed recipe passed a fresh bake and real
+repository/organization builds with reclamation. Full Core switching and the VM Runner remain under acceptance. This round signs off
+amd64 container/VM image fingerprints; ARM64 acceptance is deferred. The Provider verifies the
+target architecture, image type and fingerprint before registering trust or creating an instance.
 `forgejo.oidc_client_secret` uses manual `migrate` rotation because Forgejo cannot participate in the unified
 transactional rotation contract.
 

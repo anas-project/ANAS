@@ -12,14 +12,19 @@ import (
 )
 
 type recordingSync struct {
-	mu      sync.Mutex
-	actions []string
+	mu       sync.Mutex
+	actions  []string
+	failures int
 }
 
 func (r *recordingSync) InvokeSync(_ context.Context, workspace, action string) (consolejobs.CreateResult, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.actions = append(r.actions, workspace+"/"+action)
+	if r.failures > 0 {
+		r.failures--
+		return consolejobs.CreateResult{}, consolejobs.ErrConflict
+	}
 	return consolejobs.CreateResult{}, nil
 }
 
@@ -101,5 +106,32 @@ func TestDockerStartEventArgsUseActorID(t *testing.T) {
 	}
 	if slices.Contains(dockerStartEventArgs(""), "--filter=label=") || len(dockerStartEventArgs("")) != 7 {
 		t.Fatalf("unfiltered docker events arguments = %v", dockerStartEventArgs(""))
+	}
+}
+
+func TestSyncAdmissionFailureIsRetriedWithoutAnotherEvent(t *testing.T) {
+	for _, kind := range []string{"ports", "traefik"} {
+		t.Run(kind, func(t *testing.T) {
+			host := &recordingSync{failures: 1}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan struct{})
+			if kind == "ports" {
+				watch, _, _ := testPortWatch(t, host)
+				go func() { watch.Run(ctx); close(done) }()
+			} else {
+				trigger := newTraefikSyncTrigger(host, "main", nil)
+				trigger.approved = func() bool { return true }
+				trigger.backoff = time.Millisecond
+				trigger.events = func(context.Context) (<-chan struct{}, <-chan error) { return make(chan struct{}), make(chan error) }
+				go func() { trigger.Run(ctx); close(done) }()
+			}
+			waitFor(t, func() bool { return host.count() == 2 })
+			cancel()
+			<-done
+			if host.count() != 2 {
+				t.Fatal("successful admission kept retrying")
+			}
+		})
 	}
 }

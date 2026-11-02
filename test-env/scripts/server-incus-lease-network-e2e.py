@@ -207,10 +207,19 @@ def expected_view(with_inet):
     return view
 
 
+def host_interface(tiers_path=INPUTS/'lease-tiers.json'):
+    """The interface the host is approved for: incus_vm when the round
+    runs any lease on the VM tier (its preflight requires KVM)."""
+    if not tiers_path.exists():
+        return 'incus_container'
+    tiers = json.loads(tiers_path.read_text())
+    return 'incus_vm' if tiers.get('vm_consumers') else 'incus_container'
+
+
 def confirm_host_action(native, client, host_phase):
     """One host action through the console approval: plan, owner
     confirmation, then apply with the confirmed parameters."""
-    request = {'interface': 'incus_container', 'storage_size_gib': 24}
+    request = {'interface': host_interface(), 'storage_size_gib': 24}
     plan = client.wait_job(client.cli('incus-plan', '-w', 'native', '--phase', host_phase,
                                       '--request-json', json.dumps(request), '--session-json', '-'))
     proof = client.cli('incus-confirm', '-w', 'native', '--plan-job', plan['id'],

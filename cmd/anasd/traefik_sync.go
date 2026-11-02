@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"time"
@@ -58,21 +57,24 @@ func (t *traefikSyncTrigger) Run(ctx context.Context) {
 	if t == nil || t.host == nil || t.workspace == "" {
 		return
 	}
-	t.trigger(ctx)
+	pending := !t.trigger(ctx)
 	for ctx.Err() == nil {
 		starts, failed := t.events(ctx)
-		t.drain(ctx, starts, failed)
+		t.drain(ctx, starts, failed, pending)
 		// The stream ended: Docker restarted or is down. Containers may have
 		// started meanwhile, so sync once more after reconnecting.
 		if !sleepContext(ctx, t.backoff) {
 			return
 		}
-		t.trigger(ctx)
+		pending = !t.trigger(ctx)
 	}
 }
 
-func (t *traefikSyncTrigger) drain(ctx context.Context, starts <-chan struct{}, failed <-chan error) {
+func (t *traefikSyncTrigger) drain(ctx context.Context, starts <-chan struct{}, failed <-chan error, pending bool) {
 	var timer <-chan time.Time
+	if pending {
+		timer = time.After(t.backoff)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -88,7 +90,9 @@ func (t *traefikSyncTrigger) drain(ctx context.Context, starts <-chan struct{}, 
 			timer = time.After(t.debounce)
 		case <-timer:
 			timer = nil
-			t.trigger(ctx)
+			if !t.trigger(ctx) {
+				timer = time.After(t.backoff)
+			}
 			if starts == nil {
 				return
 			}
@@ -101,13 +105,17 @@ func (t *traefikSyncTrigger) drain(ctx context.Context, starts <-chan struct{}, 
 	}
 }
 
-func (t *traefikSyncTrigger) trigger(ctx context.Context) {
+func (t *traefikSyncTrigger) trigger(ctx context.Context) bool {
 	if ctx.Err() != nil || !t.approved() {
-		return
+		return false
 	}
-	if _, err := t.host.InvokeSync(ctx, t.workspace, hostaction.ActionTraefikSync); err != nil && !errors.Is(err, consolejobs.ErrConflict) && t.logf != nil {
-		t.logf("Traefik address sync could not be queued: %v", err)
+	if _, err := t.host.InvokeSync(ctx, t.workspace, hostaction.ActionTraefikSync); err != nil {
+		if t.logf != nil {
+			t.logf("Traefik address sync could not be queued: %v", err)
+		}
+		return false
 	}
+	return true
 }
 
 func sleepContext(ctx context.Context, d time.Duration) bool {

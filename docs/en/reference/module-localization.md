@@ -12,7 +12,7 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 | [ddns_go](#ddns_go) | 6.17.4-r7 | container | supported | application | not_consumed | not_consumed | 2 |
 | [ddns_updater](#ddns_updater) | 2.10.0-r5 | application | fixed | fixed | not_consumed | not_consumed | 1 |
 | [eturnal](#eturnal) | 1.12.2-r7 | container | not_applicable | none | not_applicable | not_applicable | 0 |
-| [forgejo](#forgejo) | 15.0.7-r3 | configured | supported | application | fallback | not_consumed | 31 |
+| [forgejo](#forgejo) | 17.0.1-r1 | configured | supported | application | fallback | not_consumed | 31 |
 | [freeradius](#freeradius) | 3.2.10-r5 | container | not_applicable | none | not_applicable | not_applicable | 0 |
 | [immich](#immich) | 3.2.4-r2 | container | supported | browser | not_consumed | not_consumed | 88 |
 | [incus](#incus) | 7.3.0-r4 | not_applicable | not_applicable | none | not_consumed | not_consumed | 0 |
@@ -99,14 +99,14 @@ When omitted, timezone and language inherit the host. Locale uses an explicit re
 
 ## forgejo
 
-- **Version / 版本：** `15.0.7-r3`; reviewed 2026-08-22
+- **Version / 版本：** `17.0.1-r1`; reviewed 2026-10-30
 - **Timezone / 时区：** `configured` — Forgejo time.DEFAULT_UI_LOCATION inherits ANAS TZ; signed-in users may retain their own UI preference.
 - **Language / 语言：** `supported`, `application` — Forgejo Web UI
 - **ANAS globals / 全局默认：** `default_language=fallback`; `default_locale=not_consumed`
 - **Fallback / 回退：** The matched ANAS language is moved to the first position; unmatched values warn and fall back to en-US, while browser and saved user choices take precedence.
 - **Supported / 支持语言：** `en-US`, `zh-CN`, `zh-HK`, `zh-TW`, `da`, `de-DE`, `nds`, `fr-FR`, `nl-NL`, `lv-LV`, `ru-RU`, `uk-UA`, `ja-JP`, `es-ES`, `pt-BR`, `pt-PT`, `pl-PL`, `bg`, `it-IT`, `fi-FI`, `fil`, `eo`, `tr-TR`, `cs-CZ`, `sl`, `sv-SE`, `ko-KR`, `el-GR`, `fa-IR`, `hu-HU`, `id-ID`
-- **Notes / 说明：** Forgejo uses the first configured locale only when the browser does not match a listed locale. The hook keeps the complete pinned list and reorders the selected default instead of removing choices.
-- **Evidence / 证据：** [v15.0 — i18n LANGS and NAMES](https://forgejo.org/docs/v15.0/admin/config-cheat-sheet/)
+- **Notes / 说明：** The v17.0.1 custom/conf/app.example.ini LANGS/NAMES list was checked against the hook and is unchanged. Forgejo uses the first configured locale only when the browser does not match a listed locale. The hook keeps the complete pinned list and reorders the selected default instead of removing choices.
+- **Evidence / 证据：** [v17.0 — i18n LANGS and NAMES](https://forgejo.org/docs/v17.0/admin/config-cheat-sheet/)
 
 ## freeradius
 

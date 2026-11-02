@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,9 @@ func TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI(t *testing.T) {
 		if _, err := client.ListJobs(context.Background(), scope, "docker"); err != nil {
 			t.Fatalf("scope %s: %v", scope, err)
 		}
+		if _, err := client.ListRunners(context.Background(), scope); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := client.CreateRunner(context.Background(), scope, "anas-fj-0123456789abcdef0123"); err != nil {
 			t.Fatalf("scope %s: %v", scope, err)
 		}
@@ -112,8 +116,8 @@ func TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI(t *testing.T) {
 		if scope.Repo != "" {
 			prefix = "/api/v1/repos/" + scope.Owner + "/" + scope.Repo + "/actions/runners"
 		}
-		if len(requested) != 3 {
-			t.Fatalf("scope %s made %d requests, want exactly the three runner calls: %v", scope, len(requested), requested)
+		if len(requested) != 4 {
+			t.Fatalf("scope %s made %d requests, want exactly the four runner calls: %v", scope, len(requested), requested)
 		}
 		for _, path := range requested {
 			if !strings.HasPrefix(path, prefix) {
@@ -123,5 +127,43 @@ func TestForgejoClientNeverLeavesTheApprovedScopeRunnerAPI(t *testing.T) {
 				t.Errorf("scope %s reached an admin endpoint: %q", scope, path)
 			}
 		}
+	}
+}
+
+func TestListRunnersUsesScopedPaginationAndRejectsPartialResults(t *testing.T) {
+	for _, behavior := range []string{"clamped", "repeated", "failed", "invalid"} {
+		t.Run(behavior, func(t *testing.T) {
+			calls := 0
+			client := NewForgejoClient("http://forgejo.test", "controller", "password")
+			client.(*forgejoClient).client = &http.Client{Transport: controllerRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				calls++
+				if r.URL.Path != "/api/v1/orgs/team/actions/runners" || r.URL.Query().Get("visible") != "" || r.URL.Query().Get("page") != strconv.Itoa(calls) {
+					t.Fatalf("request=%s", r.URL)
+				}
+				if calls == 1 {
+					return controllerResponse(200, `[{"id":1,"name":"manual"}]`), nil
+				}
+				switch behavior {
+				case "repeated":
+					return controllerResponse(200, `[{"id":1,"name":"manual"}]`), nil
+				case "failed":
+					return controllerResponse(503, `unavailable`), nil
+				case "invalid":
+					return controllerResponse(200, `[{"id":0,"name":"invalid"}]`), nil
+				}
+				if calls == 2 {
+					return controllerResponse(200, `[{"id":2,"name":"other"}]`), nil
+				}
+				return controllerResponse(200, `[]`), nil
+			})}
+			runners, err := client.ListRunners(context.Background(), Scope{Owner: "team"})
+			if behavior == "clamped" {
+				if err != nil || len(runners) != 2 || calls != 3 {
+					t.Fatalf("runners=%v calls=%d err=%v", runners, calls, err)
+				}
+			} else if err == nil || len(runners) != 0 {
+				t.Fatalf("partial list accepted: %v %v", runners, err)
+			}
+		})
 	}
 }

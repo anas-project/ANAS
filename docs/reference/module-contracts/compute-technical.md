@@ -195,6 +195,10 @@ Incus 把「SHA-256 十六进制摘要」统称 fingerprint，本 Contract 里�
 就已封闭：tag、alias 与远程 URL 一律不接受，否则一份审过的租约会随远端更新而漂移。Provider 拥有 profile、network 与 storage pool，不接受调用方传入 device、raw config、
 挂载或宿主 socket。
 
+逐摘要镜像白名单由共享客户端执行，当前 daemon 没有等价的原生配置键。持有租约证书的
+可信消费者代码可以绕过共享客户端，直接导入或创建其他镜像；不能把白名单当成 daemon
+对恶意消费者代码的强制限制。消费者证书仍不得进入 guest；project 隔离与配额由 daemon 强制。
+
 Contract 不负责安装、配置或托管 Provider daemon 本身，也不要求 ANAS 宿主具备虚拟化能力——它
 只是这台 daemon 的客户端控制面。`deletion_policy` 只接受 `retain`，移除声明撤销证书、不删除 project，
 见「租约的结束」。
@@ -222,7 +226,9 @@ Contract 不负责安装、配置或托管 Provider daemon 本身，也不要求
 `config.yml` 使用标准 JSON 编码表达 CLI 可读取的 YAML 配置，固定 `protocol: incus`、remote、endpoint、TLS 类型和
 project，并与证书一起校验、提交和读回。旧实验的 `protocol: lxd` 配置不被覆盖或静默迁移，
 需使用新私有配置目录。不再执行 `remote add`；重复初始化复用相同字节，
-然后只读列举受限 project 中的实例来检查连接。不同 project 或其他既有配置不能静默覆盖。
+先只读请求精确 project 并校验返回名称，再列举实例；无权清单可能被过滤为空，不能据此证明 project 准入。
+配置预填唯一 endpoint 的 `last_working_address`，避免 CLI 首次连接自动保存地址后破坏后续严格字节校验。
+不同 project 或其他既有配置不能静默覆盖。
 初始化锁先独占创建，已存在时以不带创建标志的方式打开；后者消失时拒绝，不另建锁 inode。
 错误只附带固定阶段和系统错误类别，不回显路径或凭据。
 

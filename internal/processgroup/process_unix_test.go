@@ -35,7 +35,16 @@ func TestCancellationTerminatesWholeProcessGroupAfterGrace(t *testing.T) {
 			t.Fatalf("wait error = %T %v", err, err)
 		}
 	}
-	if err := syscall.Kill(-pid, 0); !errors.Is(err, syscall.ESRCH) {
-		t.Fatalf("process group %d still exists after cancellation: %v", pid, err)
+	// Wait only reaps the direct child; allow init to reap killed descendants.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err := syscall.Kill(-pid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("process group %d still exists after cancellation: %v", pid, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

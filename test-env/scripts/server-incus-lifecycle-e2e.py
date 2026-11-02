@@ -358,6 +358,8 @@ def main(args):
         diagnostics.mkdir(mode=0o700,exist_ok=True)
         journal=call(['/usr/bin/journalctl','-u','incus.service','-n','400','--no-pager'],check=False,timeout=30)
         (diagnostics/'incusd-journal.log').write_bytes(journal.stdout[-(1<<20):])
+        kernel=call(['/usr/bin/journalctl','-k','-n','300','--no-pager'],check=False,timeout=30)
+        (diagnostics/'kernel-journal.log').write_bytes(kernel.stdout[-(1<<20):])
         for item in ROOT.glob('diagnostics-*.log'):
             (diagnostics/item.name).write_bytes(item.read_bytes()[-(1<<20):])
         for project in PROJECTS+('default',):
@@ -367,6 +369,9 @@ def main(args):
                 if instance['name'] in LAB_INSTANCES+(VM_BUILD,):
                     shown=cli('info',instance['name'],'--project',project,'--show-log',check=False)
                     (diagnostics/(project+'-'+instance['name']+'.log')).write_bytes(shown.stdout[-(1<<20):]+shown.stderr[-(64<<10):])
+                    if instance.get('type')=='virtual-machine':
+                        console=cli('console',instance['name'],'--project',project,'--show-log',check=False,timeout=30)
+                        (diagnostics/(project+'-'+instance['name']+'-console.log')).write_bytes(console.stdout[-(1<<20):]+console.stderr[-(64<<10):])
         raise
     finally:
         # Never destroy unknown objects. This VM was empty, and all names here

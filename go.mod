@@ -1,12 +1,12 @@
 module github.com/anas-project/ANAS
 
-go 1.26.6
+go 1.26.10
 
 require gopkg.in/yaml.v3 v3.0.1
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/sys v0.48.0
 )
 
@@ -15,7 +15,7 @@ require (
 	golang.org/x/text v0.42.0
 )
 
-require golang.org/x/net v0.57.0
+require golang.org/x/net v0.60.0
 
 require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6 // indirect

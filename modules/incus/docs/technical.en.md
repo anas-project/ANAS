@@ -126,6 +126,16 @@ deployment; it does not establish `anas build/apply`, Provider/guest lifecycle o
 
 ## Control connection (Incus listens on the control gateway since 2026-09-30)
 
+The shared client generates private CLI configuration with `last_working_address` set to the lease's sole
+endpoint, without a trailing `/`. Otherwise Incus records that address after its first connection and rewrites
+the configuration, causing strict byte validation to reject the next initialization. Certificate, private-key,
+project and endpoint checks remain strict; arbitrary CLI-rewritten configuration is not accepted.
+Initialization also reads and confirms the exact lease project. A permission-filtered empty instance list does
+not prove that the certificate can access that project.
+Forgejo uses `/run` by default, so recreating the container regenerates this connection directory. For a custom
+persistent directory, drain and stop the consumer before upgrading and prepare a new private connection directory
+for the same lease. Preserve the Secret Store, controller state and business data.
+
 Consumers and the Provider reach the host's Incus through the Docker control bridge. `incus.configure`
 sets Incus `core.https_address` to port `8443` on the control bridge gateway, its only HTTPS listener,
 and installs a drop-in that orders `incus.service` after `docker.service`: the gateway address exists
@@ -651,18 +661,23 @@ containers receive only frozen fingerprints: Forgejo reads the lease allowlist, 
 bindings. The Agent hook reads `AI_AGENT_AGENT_RUNTIMES`, matching the manifest parameter; Compose passes
 it to the orchestrator as `AI_AGENT_RUNTIMES`. No new dependency is introduced.
 
-Incus requires explicit `image_architecture` for the daemon target. Its trusted bundle catalog is currently
-empty. Ensure checks each existing image's fingerprint, architecture and type in the lease project before
-registering trust; missing images fail instead of resolving aliases or rebuilding. Import/baking remains
-pending. See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
+Incus requires explicit `image_architecture` for the daemon target. Before registering trust, ensure
+checks each lease-project image's fingerprint, architecture and type. A missing image is imported only
+from Core's identical trusted split artifact and checked again; missing artifact bytes cause failure,
+never alias resolution or a rebake. The source `images/catalog.json` remains empty. The accepted amd64
+container/VM pending-publication packages carry the complete catalog and bytes in a separate packaging
+checkout; copying only the catalog is insufficient. See the [paired Forgejo plan](../../forgejo/dev-docs/plans/forgejo-module.md)
+for packages and checksums. They are not publicly published, and the tools do not generate an independent
+cryptographic signature. See the [compute contract](../../../contracts/compute/docs/technical.en.md) for snapshot and rollback semantics.
 
 
-## Offline split-image artifact verification (local tests pass; native acceptance pending)
+## Offline split-image artifact verification
 
 `internal/computeimage/artifact.go`, `release_verify.go` and `cmd/compute-image-artifact` reuse the
 single `ArtifactRelease` representation for read-only inspection of completed image bakes. They do not run distrobuilder, import into Incus, download, sign or publish a
-trusted catalog. The trusted catalog remains empty; the `guest_image` contract, first bake/distribution
-and missing-image recovery are still pending.
+trusted catalog. Separate artifact CLI, Core and Provider paths implement baking, supply and missing-image
+recovery. Native startup/workflow results for both amd64 Runner tiers and their accepted artifact bytes
+are recorded separately in the paired plan; offline verification does not replace those gates.
 
 The CLI supports split artifacts only; the shared library also describes unified artifacts. Under the [Incus image format](https://linuxcontainers.org/incus/docs/main/reference/image_format/),
 the fingerprint hashes the actual **metadata bytes followed by the rootfs bytes**, not the concatenated
@@ -767,8 +782,9 @@ Use `--first-release` only when there truly is no published history; it is mutua
 version keys. A missing or corrupt previous catalog is not empty history. Standard output contains JSON
 metadata only, never image bytes, source paths or recipe content, and does not update
 `modules/incus/images/catalog.json`. Back up the archive and trusted history independently. Local supply,
-Provider import and guarded prune have code implementations; signed distribution, real guest startup and
-destructive prune acceptance remain incomplete. The shipped catalog stays empty; M12/M13 remain unaccepted.
+Provider import, missing-image recovery and guarded prune have native evidence in the paired plan's M12.
+The amd64 VM Runner and both pending-publication packages were accepted on 2026-11-01. Public release
+has not occurred; byte verification is not a signature, and amd64 evidence does not establish ARM64 acceptance.
 
 ## Complete release bundles and cancellable supply (2026-09-21)
 
@@ -1010,3 +1026,21 @@ systemd init package explicitly. See the
 ## Application catalog
 
 No personnel card is published: Compute API provider; host administration belongs to ANAS management.
+
+### Sync triggers during an active job
+
+`incus.ports.sync` and `incus.traefik.sync` use the existing job queue policy. A new trigger queues a subsequent
+execution even if an older sync is running, because that execution may already have read the previous deployment
+or container address. Event producers still debounce bursts. The regression test blocks a sync after its read,
+changes the desired state and verifies that a second execution observes the new value.
+
+Admission failures retain the pending trigger. The port watcher retries on its next poll and advances its
+observed activation only after successful admission; Traefik retries with its existing backoff even if no new
+container event arrives. This retries admission, without treating an already queued job as completed.
+
+## Provider image compiler
+
+The Provider image pins Go 1.26.10, matching go.mod and this acceptance security baseline. Shared-source
+compilation retains `GOPROXY=off`; a floating 1.26 tag must not silently select or download a toolchain.
+Formal-image acceptance records the actual base-image digest and compiled artifact. Runtime test data
+is excluded from build contexts.

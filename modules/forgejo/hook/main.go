@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/anas-project/ANAS/internal/localization"
@@ -166,9 +167,9 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	e["FORGEJO_SSH_CLONE_BASE"] = "ssh://git@" + e["FORGEJO_DOMAIN"] + ":" + e["FORGEJO_SSH_PORT"] + "/"
 
 	switch e["FORGEJO_DB_TYPE"] {
-	case "postgres", "mariadb":
+	case "postgres":
 	default:
-		return nil, fmt.Errorf("FORGEJO_DB_TYPE must be resolved to postgres or mariadb")
+		return nil, fmt.Errorf("Forgejo requires PostgreSQL; existing MySQL/MariaDB data is not migrated or deleted")
 	}
 	protocol := defaultValue(defaultValue(e[iamBindingPrefix+"INTERFACE"], e["FORGEJO_IAM_PROTOCOL"]), "oidc")
 	if protocol != "oidc" {
@@ -176,6 +177,10 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	}
 	e["FORGEJO_IAM_PROTOCOL"] = protocol
 
+	teamMap, err := groupTeamMap(e["FORGEJO_OIDC_GROUP_TEAM_MAP"])
+	if err != nil {
+		return nil, err
+	}
 	oidcSecret, err := secrets.Ensure("FORGEJO_OIDC_CLIENT_SECRET", func() (string, error) { return randomHex(32) })
 	if err != nil {
 		return nil, err
@@ -193,9 +198,20 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	}
 	e["FORGEJO_ACTIONS_CONTROLLER_PASSWORD"] = actionsPassword
 
+	adminGroup := defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
+	claimGroupSet := map[string]bool{adminGroup: true}
+	for group := range teamMap {
+		claimGroupSet[group] = true
+	}
+	claimGroups := make([]string, 0, len(claimGroupSet))
+	for group := range claimGroupSet {
+		claimGroups = append(claimGroups, group)
+	}
+	sort.Strings(claimGroups)
+	claimGroupsJSON, _ := json.Marshal(claimGroups)
 	allowGroups := ""
 	if e["SAMBA_DC_APP_FILTER"] == "true" {
-		allowGroups = "APP_forgejo,APP_all," + defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins")
+		allowGroups = "APP_forgejo,APP_all," + adminGroup
 	}
 	e[iamClientPrefix+"INTERFACE"] = "oidc"
 	e[iamClientPrefix+"CLIENT_ID"] = e["FORGEJO_OIDC_CLIENT_ID"]
@@ -203,6 +219,9 @@ func calculate(e map[string]string, secrets *secretStore) ([]string, error) {
 	e[iamClientPrefix+"REDIRECT_URIS"] = e["FORGEJO_DOMAIN_FULL"] + "/user/oauth2/anas/callback"
 	e[iamClientPrefix+"SCOPES"] = "openid,profile,email,groups"
 	e[iamClientPrefix+"ATTRIBUTES"] = "name:displayName:1,preferred_username:sAMAccountName:1,email:mail:1,groups:groups:0"
+	// Claim projection is independent from admission: team membership must
+	// not grant entry to Forgejo to an otherwise unauthorized directory user.
+	e[iamClientPrefix+"CLAIM_GROUPS"] = string(claimGroupsJSON)
 	e[iamClientPrefix+"ALLOW_GROUPS"] = allowGroups
 	e["FORGEJO_APPLICATION_URL"] = e["FORGEJO_DOMAIN_FULL"] + "/user/oauth2/anas"
 	e[iamClientPrefix+"DOMAIN"] = e["FORGEJO_DOMAIN"]
@@ -243,10 +262,8 @@ func renderEnv(e map[string]string) error {
 	switch e["FORGEJO_DB_TYPE"] {
 	case "postgres":
 		e["FORGEJO_DATABASE_TYPE"] = "postgres"
-	case "mariadb":
-		e["FORGEJO_DATABASE_TYPE"] = "mysql"
 	default:
-		return fmt.Errorf("FORGEJO_DB_TYPE must be resolved to postgres or mariadb")
+		return fmt.Errorf("Forgejo requires PostgreSQL; existing MySQL/MariaDB data is not migrated or deleted")
 	}
 
 	e["FORGEJO__SERVER__PROTOCOL"] = "http"
@@ -340,11 +357,12 @@ func invertBool(value string) string {
 }
 
 type oidcInput struct {
-	Name         string `json:"name"`
-	ClientID     string `json:"client_id"`
-	ClientSecret string `json:"client_secret"`
-	DiscoveryURL string `json:"discovery_url"`
-	AdminGroup   string `json:"admin_group"`
+	Name         string                         `json:"name"`
+	ClientID     string                         `json:"client_id"`
+	ClientSecret string                         `json:"client_secret"`
+	DiscoveryURL string                         `json:"discovery_url"`
+	AdminGroup   string                         `json:"admin_group"`
+	GroupTeamMap map[string]map[string][]string `json:"group_team_map"`
 }
 
 type localAdminInput struct {
@@ -355,14 +373,47 @@ type localAdminInput struct {
 
 var runContainerHelper = boundedContainerHelper
 
+func groupTeamMap(raw string) (map[string]map[string][]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		raw = "{}"
+	}
+	var groups map[string]map[string][]string
+	if len(raw) > 65536 || json.Unmarshal([]byte(raw), &groups) != nil || groups == nil {
+		return nil, fmt.Errorf("forgejo.oidc_group_team_map must be a JSON object mapping IAM groups to organizations and team arrays")
+	}
+	validName := func(name string) bool {
+		return name != "" && len(name) <= 255 && strings.TrimSpace(name) == name && !strings.ContainsAny(name, "\x00\r\n\t")
+	}
+	for group, organizations := range groups {
+		if !validName(group) || len(organizations) == 0 {
+			return nil, fmt.Errorf("forgejo.oidc_group_team_map contains an invalid group or organization map")
+		}
+		for organization, teams := range organizations {
+			if !validName(organization) || len(teams) == 0 {
+				return nil, fmt.Errorf("forgejo.oidc_group_team_map contains an invalid organization or empty team array")
+			}
+			for _, team := range teams {
+				if !validName(team) {
+					return nil, fmt.Errorf("forgejo.oidc_group_team_map contains an invalid team")
+				}
+			}
+		}
+	}
+	return groups, nil
+}
+
 func reconcileOIDC(e map[string]string) error {
 	for _, key := range []string{"CONTAINER_PREFIX", "FORGEJO_OIDC_CLIENT_ID", "FORGEJO_OIDC_CLIENT_SECRET", iamBindingPrefix + "OIDC_DISCOVERY_URL"} {
 		if e[key] == "" {
 			return fmt.Errorf("forgejo OIDC reconciliation is missing %s", key)
 		}
 	}
+	groups, err := groupTeamMap(e["FORGEJO_OIDC_GROUP_TEAM_MAP"])
+	if err != nil {
+		return err
+	}
 	payload, err := json.Marshal(oidcInput{
-		Name: "anas", ClientID: e["FORGEJO_OIDC_CLIENT_ID"], ClientSecret: e["FORGEJO_OIDC_CLIENT_SECRET"],
+		GroupTeamMap: groups, Name: "anas", ClientID: e["FORGEJO_OIDC_CLIENT_ID"], ClientSecret: e["FORGEJO_OIDC_CLIENT_SECRET"],
 		DiscoveryURL: e[iamBindingPrefix+"OIDC_DISCOVERY_URL"], AdminGroup: defaultValue(e["SAMBA_DC_ADMIN_GROUP_NAME"], "Admins"),
 	})
 	if err != nil {

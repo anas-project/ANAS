@@ -333,3 +333,90 @@ func TestForgejoRunnerRecipeIncludesEngineAdmissionWithoutTemplateExpansion(t *t
 		}
 	}
 }
+
+func TestForgejoRunnerVMInstallsSignedEFIBootEntries(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		for _, iface := range []string{"incus_container", "incus_vm"} {
+			body, err := ForgejoRunnerRecipe(Target{Architecture: arch, Interface: iface})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var recipe struct {
+				Actions []struct {
+					Trigger string   `yaml:"trigger"`
+					Types   []string `yaml:"types"`
+					Action  string   `yaml:"action"`
+				} `yaml:"actions"`
+			}
+			if err := yaml.Unmarshal(body, &recipe); err != nil {
+				t.Fatal(err)
+			}
+			found := 0
+			for _, action := range recipe.Actions {
+				if !strings.Contains(action.Action, "grub-install") {
+					continue
+				}
+				found++
+				if action.Trigger != "post-files" || len(action.Types) != 1 || action.Types[0] != "vm" {
+					t.Fatal("EFI setup must run on the mounted VM image after file generation")
+				}
+				target := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
+				for _, want := range []string{"--uefi-secure-boot --target=" + target + "-efi --no-nvram --removable", "--uefi-secure-boot --target=" + target + "-efi --no-nvram\n", "DISTROBUILDER_ROOT_UUID:?", "root=${DISTROBUILDER_ROOT_UUID}"} {
+					if !strings.Contains(action.Action, want) {
+						t.Errorf("%s missing VM boot prerequisite %s", arch, want)
+					}
+				}
+			}
+			if iface == "incus_vm" {
+				if found != 1 || !strings.Contains(string(body), "- shim-signed\n") || !strings.Contains(string(body), "- grub-efi-"+arch+"-signed\n") {
+					t.Fatal("VM image lacks its signed bootloader installation")
+				}
+			} else if found != 0 || strings.Contains(string(body), "shim-signed") {
+				t.Fatal("VM boot setup leaked into the container recipe")
+			}
+		}
+	}
+}
+
+func TestForgejoRunnerVMTargetPackagesCannotBeFilteredByUnmappedArchitecture(t *testing.T) {
+	for _, arch := range []string{"amd64", "arm64"} {
+		body, err := ForgejoRunnerRecipe(Target{Architecture: arch, Interface: "incus_vm"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var recipe struct {
+			Packages struct {
+				Sets []struct {
+					Action        string   `yaml:"action"`
+					Architectures []string `yaml:"architectures"`
+					Packages      []string `yaml:"packages"`
+				} `yaml:"sets"`
+			} `yaml:"packages"`
+		}
+		if err := yaml.Unmarshal(body, &recipe); err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, set := range recipe.Packages.Sets {
+			if !strings.Contains(strings.Join(set.Packages, "\n"), "linux-image-") {
+				continue
+			}
+			found = true
+			if set.Action != "install" || len(set.Architectures) != 0 {
+				t.Fatal("target-selected VM packages must not be silently filtered by mapped Debian architecture")
+			}
+			for _, want := range []string{"linux-image-" + arch, "grub-efi-" + arch, "grub-efi-" + arch + "-signed", "shim-signed"} {
+				matched := false
+				for _, name := range set.Packages {
+					matched = matched || name == want
+				}
+				if !matched {
+					t.Errorf("%s VM package set omits %s", arch, want)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("VM kernel package set missing")
+		}
+	}
+}

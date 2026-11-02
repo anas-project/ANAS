@@ -169,7 +169,8 @@ func actionName(job consolejobs.Job) string {
 }
 
 // InvokeSync queues a bounded sync action owned by the daemon itself. The
-// action coalesces, so a burst of triggers runs it once.
+// Each trigger queues a new read: a running sync may already have consumed
+// the previous configuration. Event producers may debounce before admission.
 func (s *HostActionService) InvokeSync(ctx context.Context, workspace, action string) (consolejobs.CreateResult, error) {
 	if s == nil || !s.actionAdmission(action) {
 		return consolejobs.CreateResult{}, hostaction.ErrUnavailable

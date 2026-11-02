@@ -34,13 +34,18 @@ func cloneState(in ControllerState) ControllerState {
 }
 
 type fakeForgejo struct {
-	jobs         []ActionJob
-	created      int
-	deleted      []int64
-	registration RunnerRegistration
-	listErr      error
+	runners       []ActionRunner
+	runnerListErr error
+	jobs          []ActionJob
+	created       int
+	deleted       []int64
+	registration  RunnerRegistration
+	listErr       error
 }
 
+func (f *fakeForgejo) ListRunners(context.Context, Scope) ([]ActionRunner, error) {
+	return append([]ActionRunner{}, f.runners...), f.runnerListErr
+}
 func (f *fakeForgejo) ListJobs(context.Context, Scope, string) ([]ActionJob, error) {
 	return append([]ActionJob{}, f.jobs...), f.listErr
 }
@@ -54,6 +59,8 @@ func (f *fakeForgejo) DeleteRunner(_ context.Context, _ Scope, id int64) error {
 }
 
 type fakeCompute struct {
+	managed []Instance
+	listErr error
 	created []InstanceSpec
 	started []string
 	deleted []string
@@ -84,7 +91,7 @@ func (f *fakeCompute) Delete(_ context.Context, id string) error {
 	f.deleted = append(f.deleted, id)
 	return nil
 }
-func (f *fakeCompute) ListManaged(context.Context) ([]Instance, error) { return nil, nil }
+func (f *fakeCompute) ListManaged(context.Context) ([]Instance, error) { return f.managed, f.listErr }
 
 func controllerFixture() (*Controller, *fakeForgejo, *fakeCompute, *memoryStore, time.Time) {
 	now := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
@@ -92,7 +99,8 @@ func controllerFixture() (*Controller, *fakeForgejo, *fakeCompute, *memoryStore,
 	compute := &fakeCompute{}
 	store := newMemoryStore()
 	cfg := Config{
-		Scopes: []Scope{{Owner: "team", Repo: "repo"}}, RunnerImage: strings.Repeat("b", 64),
+		Password: "test-controller-credential",
+		Scopes:   []Scope{{Owner: "team", Repo: "repo"}}, RunnerImage: strings.Repeat("b", 64),
 		RunnerLabel: "docker:docker://node:24", RunnerURL: "https://git.example.test/",
 		WaitingTTL: 10 * time.Minute, JobTimeout: time.Hour, OperationTTL: 2 * time.Minute, MaxConcurrent: 4,
 		MaxPerScope: 2,
@@ -211,5 +219,105 @@ func TestParseScopesRejectsGlobalAndInvalidScopes(t *testing.T) {
 	scopes, err := ParseScopes("team/repo,team")
 	if err != nil || len(scopes) != 2 {
 		t.Fatalf("valid scopes = %#v, %v", scopes, err)
+	}
+}
+
+func TestControllerRecoversLostStateWithoutDeletingForeignResources(t *testing.T) {
+	for _, cleanupOnly := range []bool{false, true} {
+		t.Run(map[bool]string{false: "reconcile", true: "cleanup"}[cleanupOnly], func(t *testing.T) {
+			c, api, compute, _, _ := controllerFixture()
+			scope := c.cfg.Scopes[0]
+			id := instanceIDFor("lost-state-job")
+			foreignScope := Scope{Owner: "someone", Repo: "else"}
+			api.runners = []ActionRunner{
+				{ID: 1, Name: c.runnerName(scope, id)},
+				{ID: 2, Name: id}, // legacy or manually named, not proof of ownership
+				{ID: 3, Name: c.runnerName(foreignScope, id)},
+				{ID: 4, Name: c.runnerName(scope, id)[:60] + "z"},
+			}
+			compute.managed = []Instance{
+				{ID: id, WorkloadID: "lost-state-job", State: "running"},
+				{ID: instanceIDFor("manual"), WorkloadID: "different-workload", State: "running"},
+				{ID: "operator-instance", WorkloadID: "manual", State: "running"},
+			}
+			for cycle := 0; cycle < 2; cycle++ {
+				var err error
+				if cleanupOnly {
+					err = c.CleanupAll(context.Background())
+				} else {
+					err = c.Reconcile(context.Background())
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !reflect.DeepEqual(api.deleted, []int64{1, 1}) || !reflect.DeepEqual(compute.deleted, []string{id, id}) {
+				t.Fatalf("deleted runners=%v instances=%v", api.deleted, compute.deleted)
+			}
+			if api.created != 0 || len(compute.created) != 0 {
+				t.Fatal("empty queue provisioned work")
+			}
+		})
+	}
+}
+
+func TestControllerOrphanSweepPreservesActiveState(t *testing.T) {
+	c, api, compute, store, now := controllerFixture()
+	id := instanceIDFor("active")
+	store.state.Workloads["active"] = Workload{Handle: "active", Scope: "team/repo", RunnerID: 1, InstanceID: id, Phase: "running", CreatedAt: now}
+	api.jobs = []ActionJob{{Handle: "active", Status: "running", TaskID: 1}}
+	api.runners = []ActionRunner{{ID: 1, Name: c.runnerName(c.cfg.Scopes[0], id)}}
+	compute.managed = []Instance{{ID: id, WorkloadID: "active", State: "running"}}
+	if err := c.Reconcile(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.deleted) != 0 || len(compute.deleted) != 0 {
+		t.Fatal("sweep retired an active tracked workload")
+	}
+}
+
+func TestControllerOrphanListingFailureBlocksProvisionAndStillRetiresExpiredWork(t *testing.T) {
+	for _, failed := range []string{"compute", "forgejo"} {
+		t.Run(failed, func(t *testing.T) {
+			c, api, compute, store, now := controllerFixture()
+			store.state.Workloads["expired"] = Workload{Handle: "expired", Scope: "team/repo", RunnerID: 8, CreatedAt: now.Add(-2 * time.Hour)}
+			if failed == "compute" {
+				compute.listErr = errors.New("list unavailable")
+			} else {
+				api.runnerListErr = errors.New("list unavailable")
+			}
+			api.jobs = []ActionJob{{Handle: "new", Status: "waiting", RunsOn: []string{"docker"}}}
+			if err := c.Reconcile(context.Background()); err == nil {
+				t.Fatal("listing failure hidden")
+			}
+			if api.created != 0 || len(compute.created) != 0 || !reflect.DeepEqual(api.deleted, []int64{8}) {
+				t.Fatalf("created=%d deleted=%v", api.created, api.deleted)
+			}
+		})
+	}
+}
+
+func TestRunnerOwnershipIsBoundToCredentialScopeAndLease(t *testing.T) {
+	c, _, _, _, _ := controllerFixture()
+	scope := c.cfg.Scopes[0]
+	name := c.runnerName(scope, instanceIDFor("job"))
+	if !c.ownsRunner(scope, name) {
+		t.Fatal("own registration rejected")
+	}
+	if c.ownsRunner(Scope{Owner: "team"}, name) {
+		t.Fatal("different scope accepted")
+	}
+	c.cfg.Lease.Sandbox = "another-lease"
+	if c.ownsRunner(scope, name) {
+		t.Fatal("different lease accepted")
+	}
+	c.cfg.Lease.Sandbox = ""
+	c.cfg.Password = "another-controller"
+	if c.ownsRunner(scope, name) {
+		t.Fatal("different controller accepted")
+	}
+	c.cfg.Password = ""
+	if c.ownsRunner(scope, name) {
+		t.Fatal("empty credential accepted")
 	}
 }

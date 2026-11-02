@@ -6,8 +6,8 @@ acl trusted-networks {
 
 options {
     directory "/var/cache/bind";
-    listen-on port 53 { 127.0.0.1; ${SAMBA_DC_DNS_SERVER}; };
-    listen-on-v6 { any; };
+    listen-on port 53 { ${SAMBA_DC_DNS_LISTEN_IPV4} };
+    listen-on-v6 { ${SAMBA_DC_DNS_LISTEN_IPV6} };
     auth-nxdomain no;
     // BIND sizes its cache at 90% of total host memory by default, which
     // assumes it owns the machine. Here it is one container among many on a

@@ -342,3 +342,9 @@ ANAS 显式组注册表也包含 Unix Admins。注册只表示所有权，不表
 
 
 `primaryGroupID` 属于准入和公司通讯录消费的字段，默认事件过滤及既有过滤的 Hook 升级均补齐它。单独调整 AD 主组也发布属性名，避免只能等待全量兜底；不发布属性值。生产者和邮件消费者分别有回归，实机最终收敛按根计划验收。
+
+## DNS 监听范围
+
+BIND 仅监听 IPv4/IPv6 回环地址和 `SAMBA_DC_DNS_SERVER` 指定的服务地址。启动脚本按服务地址所属协议生成 `listen-on` 与 `listen-on-v6`，不再使用 IPv6 的 `any`。这避免 host 网络模式下 BIND 抢占新建 Incus 网桥的 IPv6 DNS 地址，导致该网桥的 dnsmasq 无法启动；不关闭 Incus IPv6，也不增加用户配置项。DNS 查询来源限制仍由既有 trusted-networks ACL 控制。
+
+本次运行资产修复不手工提升仓库的正式 revision；正式编号由 image-release 流程计算。隔离 E2E 使用的临时 revision 与实验镜像须在验收计划中另记基线，不能当作已发布制品。

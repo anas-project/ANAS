@@ -2,7 +2,7 @@ runner:
   capacity: 1
   timeout: 1h
   envs:
-    DOCKER_HOST: unix:///run/anas-podman/podman.sock
+    DOCKER_HOST: unix:///var/run/docker.sock
 container:
   privileged: false
   options: --cpus=2 --memory=3072m --pids-limit=1024 --security-opt=no-new-privileges

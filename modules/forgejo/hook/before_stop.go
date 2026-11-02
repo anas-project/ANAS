@@ -12,8 +12,9 @@ var containerPrefix = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$`)
 
 // Only a stop of the old, independently observed controller. Its original
 // projection/network and the Forgejo API remain present until SIGTERM cleanup
-// finishes. No account mutation, lease copy, network removal or retry of failed
-// state occurs here; the new disabled deployment reconciles the password later.
+// finishes. A never-started disabled process must run its cleanup first. No
+// account mutation, lease copy, network removal or retry of failed state occurs
+// here; the new disabled deployment reconciles the password later.
 func drainActionsController(parent context.Context, env map[string]string) error {
 	if parent == nil || parent.Err() != nil || !containerPrefix.MatchString(env["CONTAINER_PREFIX"]) ||
 		(env["FORGEJO_ACTIONS_ENABLED"] != "true" && env["FORGEJO_ACTIONS_ENABLED"] != "false") {
@@ -37,17 +38,28 @@ func drainActionsController(parent context.Context, env map[string]string) error
 		return nil
 	}
 	mode := env["FORGEJO_ACTIONS_ENABLED"]
-	observed, exited, err := controllerModeObservation(ctx, id, mode)
+	observed, status, err := controllerProcessObservation(ctx, id, mode)
 	if err != nil || observed != id {
 		return errActionsAccountReconciliation
 	}
-	if !exited {
+	if mode == "false" && status == "created" {
+		// Compose creates this process before waiting for the application. If
+		// application readiness fails, Docker stop leaves it in Created and
+		// cannot establish a cleanup result. Disabled mode performs cleanup
+		// only; run that fixed, observed process and require its real success.
+		if _, err := runContainerHelper(ctx, nil, "docker", "start", id); err != nil {
+			return errActionsAccountReconciliation
+		}
+		if err := waitDisabledController(ctx, prefix, id, 100*time.Millisecond); err != nil {
+			return errActionsAccountReconciliation
+		}
+	} else if status != "exited" {
 		if _, err := runContainerHelper(ctx, nil, "docker", "stop", "--time", "125", id); err != nil {
 			return errActionsAccountReconciliation
 		}
 	}
 	for attempt := 0; attempt < 2; attempt++ {
-		observed, exited, err = controllerModeObservation(ctx, id, mode)
+		observed, exited, err := controllerModeObservation(ctx, id, mode)
 		if ctx.Err() != nil || err != nil || observed != id || !exited {
 			return errActionsAccountReconciliation
 		}

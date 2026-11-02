@@ -6,10 +6,10 @@ This reference distinguishes settings with a structured `config.yml` entry from 
 
 <!-- generated:configuration-summary:start -->
 - Built-in Modules: `26`
-- Declared parameters: `240` total (`18` global and `222` Module-owned; `218` structured Module parameters and `4` bare `env.*` parameters)
+- Declared parameters: `241` total (`18` global and `223` Module-owned; `219` structured Module parameters and `4` bare `env.*` parameters)
 - Resolution phases: `input_required` `2`, `must_resolve` `36`, unknown types `0`
-- Type distribution: `bool` `29`, `enum` `31`, `int` `36`, `string` `144`
-- Default-source distribution: `generated` `12`, `host` `8`, `inherited` `11`, `none` `9`, `runtime` `5`, `static` `195`
+- Type distribution: `bool` `29`, `enum` `31`, `int` `36`, `string` `145`
+- Default-source distribution: `generated` `12`, `host` `8`, `inherited` `11`, `none` `9`, `runtime` `5`, `static` `196`
 <!-- generated:configuration-summary:end -->
 - Control fields under `modules`, `administration`, `identity`, `dynamic_dns`, `rollback`, and `secrets` are structured but are not parameter-to-environment mappings, so they are not included in the parameter inventory.
 - Top-level `env:` is an intentionally open escape hatch for valid environment keys. Input is canonicalized to uppercase and must match `[A-Z_][A-Z0-9_]*`. The raw-only inventory below covers keys explicitly consumed by this repository, not every possible environment key.
@@ -199,7 +199,7 @@ configuration API, and Web forms must consume the same application-layer schema.
 only when that resolver cannot supply the value.
 
 <!-- generated:configuration-constraints:start -->
-Current explicit portable constraints: `41`.
+Current explicit portable constraints: `42`.
 
 | Parameter path | Portable constraints |
 | --- | --- |
@@ -215,6 +215,7 @@ Current explicit portable constraints: `41`.
 | `eturnal.port` | <code>minimum=1; maximum=65535</code> |
 | `forgejo.actions_runner_image` | <code>format=&#34;json_object&#34;</code> |
 | `forgejo.domain_prefix` | <code>min_length=1; max_length=63; pattern=&#34;^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$&#34;</code> |
+| `forgejo.oidc_group_team_map` | <code>max_length=65536; format=&#34;json_object&#34;</code> |
 | `forgejo.ssh_port` | <code>minimum=1; maximum=65535</code> |
 | `global.base_domain` | <code>format=&#34;dns_name&#34;</code> |
 | `global.default_language` | <code>format=&#34;language_tag&#34;</code> |
@@ -256,7 +257,7 @@ Current explicit portable constraints: `41`.
 | `ddns_go` | 10 | `ddns_go.dns_provider`<br>`ddns_go.domain_prefix`<br>`ddns_go.interval`<br>`ddns_go.ipv4_gettype`<br>`ddns_go.ipv4_interface`<br>`ddns_go.ipv4_urls`<br>`ddns_go.ipv6_gettype`<br>`ddns_go.ipv6_interface`<br>`ddns_go.ipv6_urls`<br>`ddns_go.web_enabled` |
 | `ddns_updater` | 10 | `ddns_updater.dns_provider`<br>`ddns_updater.domain_prefix`<br>`ddns_updater.forward_auth_interface`<br>`ddns_updater.publicip_dns_providers`<br>`ddns_updater.publicip_fetchers`<br>`ddns_updater.publicip_ipv4_providers`<br>`ddns_updater.publicip_ipv6_providers`<br>`ddns_updater.publicip_providers`<br>`ddns_updater.ttl`<br>`ddns_updater.zone_identifier` |
 | `eturnal` | 2 | `eturnal.domain_prefix`<br>`eturnal.port` |
-| `forgejo` | 12 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.ssh_port` |
+| `forgejo` | 13 | `forgejo.actions_allowed_scopes`<br>`forgejo.actions_enabled`<br>`forgejo.actions_isolation`<br>`forgejo.actions_runner_image`<br>`forgejo.custom_git_hooks_enabled`<br>`forgejo.db_name`<br>`forgejo.db_type`<br>`forgejo.domain_prefix`<br>`forgejo.iam_protocol`<br>`forgejo.language`<br>`forgejo.local_path_import_enabled`<br>`forgejo.oidc_group_team_map`<br>`forgejo.ssh_port` |
 | `immich` | 8 | `immich.browser_logout_return_url`<br>`immich.db_name`<br>`immich.db_type`<br>`immich.domain_prefix`<br>`immich.iam_protocol`<br>`immich.job_concurrency`<br>`immich.machine_learning`<br>`immich.video_concurrency` |
 | `incus` | 7 | `incus.admin_certificate_b64`<br>`incus.admin_key_b64`<br>`incus.endpoint`<br>`incus.image_architecture`<br>`incus.lan_extra_subnets`<br>`incus.server_certificate_b64`<br>`incus.storage_pool` |
 | `lam` | 3 | `lam.admin_password`<br>`lam.domain_prefix`<br>`lam.language` |
@@ -313,7 +314,7 @@ For example, `anas config set samba_fs.share_guest_read_only Yes` accepts the lo
 | `data_migrate` | 22 | Migrate persistent data, a database, or membership before activation |
 | `hot_reload` | 16 | Apply through the declared management command; the current executor may conservatively recreate the container |
 | `immutable` | 3 | Use a replacement or dedicated migration workflow |
-| `reconcile` | 20 | Reconcile application, API, or file state through the Module lifecycle |
+| `reconcile` | 21 | Reconcile application, API, or file state through the Module lifecycle |
 <!-- generated:configuration-effects:end -->
 
 ### Actual execution boundary in this release

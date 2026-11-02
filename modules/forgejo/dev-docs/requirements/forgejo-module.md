@@ -2,7 +2,7 @@
 doc_type: requirement
 status: current
 created: 2026-08-22
-updated: 2026-09-20
+updated: 2026-10-30
 ---
 
 # Forgejo Module 集成要求
@@ -22,6 +22,12 @@ Git Hooks 与 local-path import 是彼此独立的高风险能力，不属于 Ac
 任一项都不得扩大 Compose 宿主挂载范围。
 
 执行面有两档隔离，见 §3；Actions 开启后还会存在一个专用的控制面账号，见 §4。
+
+2026-10-30 用户确认本轮按 `17.0.1` 首次发布验收，不承担未发布开发版本的兼容责任。
+首次发布不要求从 15.x 开发版本升级/回滚或迁移旧无签名 Runner；新安装、数据往返与一致备份恢复
+仍须验收。以后存在已发布旧版本时，其升级/回滚重新适用 R-050，不沿用本次首发豁免。
+
+同日用户进一步确认本轮以 amd64/x86_64 通过为验收依据，ARM64 测试暂缓，不再作为本轮完成或发布结论的阻碍。通过结论限已验收的 amd64 范围；ARM64 保留为后续验收，不能记为本轮已测试。其余 x86、PostgreSQL、Actions 与安全门槛不变。
 
 ## 2. Actions 单开关模型
 
@@ -60,8 +66,8 @@ controller 实际只调用获批 scope 下的 `actions/runners` 列表、创建�
 
 | ID | 要求 | 验证方式 |
 | --- | --- | --- |
-| `FORGEJO-R-001` | Module 名为 `forgejo`、类别为 `app`、状态为 `developing`，固定 Forgejo `15.0.7` rootless 镜像与 ANAS revision，不得使用 `latest` | 静态 |
-| `FORGEJO-R-002` | Module 消费 `relational_database >=1.0.0 <2.0.0`，支持 PostgreSQL/MariaDB 并默认 PostgreSQL；不得读取数据库 Provider 管理员凭据 | 单元 |
+| `FORGEJO-R-001` | Module 名为 `forgejo`、类别为 `app`、状态为 `developing`，固定 Forgejo `17.0.1` rootless 镜像与 ANAS revision，不得使用 `latest` | 静态 |
+| `FORGEJO-R-002` | Module 消费 `relational_database >=1.0.0 <2.0.0`，只支持 PostgreSQL；旧 MySQL/MariaDB 配置明确拒绝，不自动迁移、改绑或删除旧数据；不得读取数据库 Provider 管理员凭据 | 单元 |
 | `FORGEJO-R-003` | 数据目录、数据库 Resource、Secret Store 与部署元数据必须形成一致备份恢复点，且文档必须写明哪些运行时状态（如 controller state volume）不在这个一致点内；修改数据库类型或名称不得宣称自动迁移 | 文档 |
 | `FORGEJO-R-004` | Forgejo 只通过通用 IAM OIDC binding 登录，首次登录 JIT 建号，不得按 LLNG、Authentik 或其他 Provider 名称分支 | 单元 |
 | `FORGEJO-R-005` | 应用过滤开启时只允许 `APP_forgejo`、`APP_all` 或管理员组进入；管理员组映射 site administrator | 单元 |
@@ -95,8 +101,8 @@ controller 实际只调用获批 scope 下的 `actions/runners` 列表、创建�
 | `FORGEJO-R-044` | 空队列基准持续 30 分钟时，controller RSS 必须不高于 128 MiB、平均 CPU 不高于单核 1%，每个 scope 的 job-queue 请求频率不得高于每 10 秒一次；测试必须同时记录 Actions 关闭时的 Forgejo 基线 | e2e |
 | `FORGEJO-R-045` | 已按 job handle 启动但因并发组等原因尚未领取任务的 one-job Runner 必须受 10 分钟 waiting TTL 约束；超时后注销 registration、销毁执行实例/root disk 并退避重试，不能无限轮询占用 VM | 单元 + e2e |
 | `FORGEJO-R-046` | controller state volume 丢失后仍必须能回收孤立执行实例与孤立 Runner registration；回收不得只依赖 state 中记录的 identity，也不得只发生在关闭开关时 | 单元 |
-| `FORGEJO-R-050` | PostgreSQL/MariaDB 与 amd64/arm64 必须分别完成真实启动、Git/LFS/Package smoke、备份恢复和升级回滚验收 | e2e |
-| `FORGEJO-R-051` | LLNG/Authentik 必须分别完成 OIDC 登录、Group 准入/拒绝、管理员映射、降权和 IAM-down 恢复验收 | e2e |
+| `FORGEJO-R-050` | 本轮首发必须在 PostgreSQL + amd64 完成真实启动、Git/LFS/Package smoke、备份恢复；ARM64 经用户确认暂缓且不列入本轮通过门槛，后续恢复该范围时同等验收；存在已发布旧版本后还必须完成其升级回滚，首发不要求未发布开发版本兼容 | e2e |
+| `FORGEJO-R-051` | LLNG/Casdoor 必须分别完成 OIDC 登录、Group 准入/拒绝、管理员映射、降权和 IAM-down 恢复验收 | e2e |
 | `FORGEJO-R-052` | Actions E2E 必须证明一个 `actions_enabled` 操作同时改变服务端和 Runner desired state，且系统不存在第二个用户可见 Runner 开关 | e2e |
 | `FORGEJO-R-053` | Actions E2E 必须证明获批 repo/org 能运行无 Secret 的容器构建，未获批仓库无 Runner，正常/失败/取消/controller crash 后不残留执行实例、磁盘或 token | e2e |
 | `FORGEJO-R-054` | 纯代码托管 Module 可以先于 Runner 执行面达到 `release`，但在 `FORGEJO-R-052` 与 `FORGEJO-R-053` 完成前不得把 Actions 功能标为可用或 release | 审阅 |

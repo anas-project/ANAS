@@ -44,6 +44,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 	maximumRecentSeconds := 300
 	maximumAuditCapacityMB := 1024
 	maximumJSONInteger := 9007199254740991
+	maximumGroupTeamMapBytes := 65536
 	runtimeListPattern := `^(?:[a-z][a-z0-9_-]{0,31}(?:,[a-z][a-z0-9_-]{0,31})*)?$`
 	egressPattern := `^(?:[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?(?:,[a-z0-9.*-]{1,253}(?::[0-9]{1,5})?)*)?$`
 	repositoryListPattern := `^(?:[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100}(?:,[A-Za-z0-9._-]{1,64}/[A-Za-z0-9._-]{1,100})*)?$`
@@ -62,6 +63,7 @@ func TestBundledParameterSchemaEvidenceInventory(t *testing.T) {
 		"ai_agent.repository_allowlist":       {Pattern: repositoryListPattern},
 		"casdoor.ldap_auto_sync_minutes":      {Minimum: &minimumOne},
 		"forgejo.actions_runner_image":        {Format: configschema.FormatJSONObject},
+		"forgejo.oidc_group_team_map":         {Format: configschema.FormatJSONObject, MaxLength: &maximumGroupTeamMapBytes},
 		"forgejo.domain_prefix":               {MinLength: &minimumDNSLabelLength, MaxLength: &maximumDNSLabelLength, Pattern: `^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`},
 		"forgejo.ssh_port":                    {Minimum: &minimumOne, Maximum: &maximumPort},
 		"global.base_domain":                  {Format: configschema.FormatDNSName},
