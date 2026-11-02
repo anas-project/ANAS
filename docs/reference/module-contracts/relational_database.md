@@ -86,9 +86,10 @@ Provider operation、Secret 边界、Schema 展开和文档生成流程见[技�
 | provider | `postgres` | `1.0.0` | `postgres` | `providers/relational_database/provider.yml` |
 | consumer | `ai_agent` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `casdoor` | `>=1.0.0 <2.0.0` | `postgres` | - |
-| consumer | `forgejo` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
+| consumer | `forgejo` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `immich` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `llng` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
+| consumer | `mail` | `>=1.0.0 <2.0.0` | `postgres` | - |
 | consumer | `meshcentral` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `nextcloud` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |
 | consumer | `vikunja` | `>=1.0.0 <2.0.0` | `postgres`, `mariadb` | - |

@@ -166,6 +166,14 @@ acceptance; targeted Runner tests prove input rejection, parameter projection, a
 Targeted validation: `go test ./internal/runner -run 'TestRelationalDatabase'`. PostgreSQL Module source documentation and test
 scripts cover real Provider checks and controlled upgrades; a Contract schema cannot establish those results.
 
+## Database engine change protection
+
+Configuration preparation checks the database engine in existing Resource state and the active deployment,
+including retained resources and an active deployment whose state file was lost. An engine change fails before
+credentials or Provider writes are prepared; unreadable records are not treated as fresh resources. For example,
+a Module resolving `auto` to PostgreSQL cannot silently rebind a prior MariaDB database to an empty database.
+Cross-engine migration is a separate operation. This guard neither migrates nor deletes data or changes prior records.
+
 ## Documentation generation pipeline
 
 1. Read `contract.yml` and validate `anas.contract/v1`.
@@ -176,3 +184,5 @@ scripts cover real Provider checks and controlled upgrades; a Contract schema ca
 6. Check bilingual structure, broken links, unknown `$ref` values, and undocumented fields in CI.
 
 Generated output never replaces source files: schemas are authoritative for fields, while technical documentation explains why and how.
+
+Relational database projections keep `<CONSUMER>_DB_*` and `<CONSUMER>_NETWORK_DB` for `primary_database`. Other resources within the same consumer include their stable resource ID: `webmail` uses `MAIL_WEBMAIL_DB_*` and `MAIL_WEBMAIL_NETWORK_DB`, preventing secondary resources from overwriting the primary connection. Existing independent credentials, retention and lifecycle operations apply; no new provider or database service is introduced.

@@ -285,7 +285,7 @@ func TestCalculateAutoRejectsUnsafeBundleFile(t *testing.T) {
 		"world readable": 0604,
 	} {
 		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "connection.json")
+			path := filepath.Join(hostBundleTestDir(t), "connection.json")
 			writeHostBundleFixtureAt(t, path, bundle, mode)
 			resetHostBundleTestSeam(t, path)
 			if err := calculateForTest("incus", map[string]string{"NETWORK_PREFIX": "anas_"}, map[string]string{}); err == nil {
@@ -294,7 +294,7 @@ func TestCalculateAutoRejectsUnsafeBundleFile(t *testing.T) {
 		})
 	}
 	t.Run("symlink", func(t *testing.T) {
-		dir := t.TempDir()
+		dir := hostBundleTestDir(t)
 		target := filepath.Join(dir, "target.json")
 		writeHostBundleFixtureAt(t, target, bundle, 0600)
 		link := filepath.Join(dir, "connection.json")
@@ -307,7 +307,7 @@ func TestCalculateAutoRejectsUnsafeBundleFile(t *testing.T) {
 		}
 	})
 	t.Run("duplicate JSON", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "connection.json")
+		path := filepath.Join(hostBundleTestDir(t), "connection.json")
 		if err := os.WriteFile(path, []byte(`{"schema":"anas.incus-connection-bundle/v2","schema":"anas.incus-connection-bundle/v2"}`), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -358,9 +358,37 @@ func hostConnectionBundleFixture(t *testing.T) hostConnectionBundle {
 	}
 }
 
+// The production reader rejects writable ancestors, including the usual Linux
+// /tmp. Keep fixtures under a verified private home path so negative cases
+// reach their intended file/content checks instead of all failing on /tmp.
+func hostBundleTestDir(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	home, err = filepath.EvalSymlinks(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSafeAncestors(home, uint32(os.Getuid())); err != nil {
+		t.Fatalf("host bundle fixture needs a safe home directory: %v", err)
+	}
+	dir, err := os.MkdirTemp(home, ".anas-host-bundle-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	return dir
+}
+
 func writeHostBundleFixture(t *testing.T, bundle hostConnectionBundle) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "connection.json")
+	path := filepath.Join(hostBundleTestDir(t), "connection.json")
 	writeHostBundleFixtureAt(t, path, bundle, 0600)
 	return path
 }

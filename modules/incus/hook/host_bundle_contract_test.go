@@ -27,7 +27,7 @@ func TestHostBundleProducerAndCalculateConsumerShareOneWireShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "connection.json")
+	path := filepath.Join(hostBundleTestDir(t), "connection.json")
 	if err := os.WriteFile(path, body, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestHostBundleProducerAndCalculateConsumerShareOneWireShape(t *testing.T) {
 }
 
 func TestExplicitRemoteConnectionDoesNotRequireAnyHostBundle(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "invalid.json")
+	path := filepath.Join(hostBundleTestDir(t), "invalid.json")
 	if err := os.WriteFile(path, []byte("not a bundle"), 0600); err != nil {
 		t.Fatal(err)
 	}
